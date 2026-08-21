@@ -1,0 +1,302 @@
+diff --git a/booking-confirmation-rollout-plan.md b/booking-confirmation-rollout-plan.md
+new file mode 100644
+index 0000000..276ade3
+--- /dev/null
++++ b/booking-confirmation-rollout-plan.md
+@@ -0,0 +1,296 @@
++# Booking Confirmation Data-Layer Rollout Plan
++
++## Repository Reality
++
++This workspace contains no application source files, only an empty Git repository. The plan below is therefore an implementation design for the frontend booking confirmation page rather than a code-specific diff.
++
++## Goals
++
++- Replace the booking confirmation page data layer without assuming a single successful full rollout.
++- Prevent duplicate bookings during the two-week period when legacy and new APIs coexist.
++- Support progressive delivery, fast rollback, and production diagnosis with minimal user-impacting ambiguity.
++
++## Non-Negotiable Safety Position
++
++The frontend must reduce duplicate submissions, but it cannot be the only control preventing duplicate bookings. A server-recognized idempotency key or equivalent booking token is required before traffic moves beyond internal testing. Without that, the rollout should be blocked.
++
++## Compatibility Boundary
++
++Define a narrow adapter boundary between page logic and transport:
++
++- `BookingConfirmationController`
++  - Owns submit lifecycle, retries, error states, and telemetry.
++- `BookingConfirmationDataSource`
++  - Stable frontend interface used by the page.
++  - Example operations:
++    - `loadConfirmationContext()`
++    - `submitBooking(request, requestContext)`
++    - `pollBookingStatus(bookingAttemptId)`
++- `LegacyBookingApiAdapter`
++  - Maps stable interface to the old API contract.
++- `NewBookingApiAdapter`
++  - Maps stable interface to the new API contract.
++- `ResponseNormalizer`
++  - Converts both responses into one canonical client shape.
++
++The page should not branch on raw old/new API fields. All branching belongs inside adapters. That keeps the blast radius inside one boundary and lets rollout happen via configuration instead of page rewrites.
++
++## Canonical Frontend Request Contract
++
++Every booking submission should carry a shared envelope, regardless of backend version:
++
++- `bookingAttemptId`
++  - Client-generated UUID created when the user first enters the confirmation page.
++  - Stable across retries, refresh recovery, and transport fallback for the same intent.
++- `idempotencyKey`
++  - Equal to or derived from `bookingAttemptId`.
++  - Must be honored server-side.
++- `checkoutSessionId`
++  - Existing session/cart identifier if present.
++- `schemaVersion`
++  - Distinguishes the canonical client contract from backend transport versions.
++- `traceId`
++  - For observability correlation.
++- `clientTimestamp`
++  - Diagnostic only, not used for uniqueness.
++
++Persist `bookingAttemptId` only for the active booking flow and expire it aggressively after terminal success/cancel.
++
++## Progressive Delivery Strategy
++
++Rollout should use separate controls for read path and write path. Do not tie them together.
++
++### Phase 0: Dark Launch
++
++- Ship adapter boundary with legacy API still serving writes.
++- Call new API in shadow mode only for non-authoritative reads or mirrored validation where safe.
++- Compare normalized response shape and error distribution offline.
++
++### Phase 1: Internal Write Canary
++
++- New write path enabled only for staff/internal accounts and synthetic monitoring flows.
++- Legacy remains default for all user traffic.
++- Success criterion:
++  - No unexplained booking status divergence.
++  - No rise in duplicate-attempt indicators.
++  - P95/P99 latency within agreed envelope.
++
++### Phase 2: Cohort-Based Canary
++
++- Route a small fixed cohort, for example:
++  - 1%
++  - 5%
++  - 10%
++  - 25%
++- Cohort assignment should be sticky by user/session/device bucket for the whole checkout session.
++- Rollout key should come from remote config / feature flag service, not a build-time switch.
++- Exclude high-risk segments initially:
++  - Guests if guest recovery is weak.
++  - Payment methods with delayed confirmation.
++  - Regions with stricter data handling rules if not yet validated.
++
++### Phase 3: Majority Traffic With Kill Switch
++
++- Keep instant rollback flag available until the full two-week coexistence window ends.
++- Maintain legacy adapter code until post-rollout audit confirms no hidden dependence remains.
++
++## Read/Write Routing Rules
++
++Use explicit routing modes:
++
++- `legacy_only`
++- `new_read_legacy_write`
++- `new_read_new_write`
++- `new_write_with_legacy_fallback_blocked`
++
++Recommended default during migration:
++
++- Reads may move earlier.
++- Writes move later and only after idempotency is proven.
++- Do not silently fail over a timed-out write from new API to old API using a new idempotency key. That is a duplicate-booking trap.
++
++If fallback is needed after an ambiguous write outcome:
++
++- Reuse the same `bookingAttemptId` and `idempotencyKey`.
++- Query booking status first.
++- Only resubmit if the backend explicitly states the attempt is absent and safe to retry.
++
++## Duplicate Submission and Idempotency Design
++
++### Client Controls
++
++- Disable the confirm CTA immediately on first submit.
++- Replace repeated clicks with a non-interactive pending state.
++- Guard against double-fire sources:
++  - button double-click
++  - Enter key repeat
++  - browser back/forward resubmission
++  - page refresh during in-flight request
++  - duplicate tabs
++- Use a client-side in-flight registry keyed by `bookingAttemptId`.
++- Persist the active attempt in session storage to restore state after refresh.
++
++### Cross-Tab Protection
++
++- Broadcast in-flight and terminal booking states with `BroadcastChannel` or storage events.
++- When another tab detects an active attempt for the same checkout session:
++  - block new submission
++  - show “booking in progress”
++  - offer status refresh instead of another submit
++
++### Ambiguous Result Handling
++
++Treat the following as `UNKNOWN_FINAL_STATE`, not as immediate failure:
++
++- request timeout after submission
++- network disconnect after request sent
++- 5xx after write entered downstream processing
++- client navigation during in-flight state
++
++For `UNKNOWN_FINAL_STATE`:
++
++- Lock further submits for that `bookingAttemptId`.
++- Start status reconciliation:
++  - poll booking status by `bookingAttemptId` or `checkoutSessionId`
++  - if confirmed success, render success
++  - if confirmed absent/failure, allow retry with same idempotency key or a new attempt only after explicit reset
++- Show user copy that avoids encouraging repeated submission.
++
++## Error Recovery Model
++
++Use explicit terminal and non-terminal states:
++
++- `idle`
++- `submitting`
++- `submitted_unknown`
++- `confirmed`
++- `failed_retryable`
++- `failed_terminal`
++
++Recovery rules:
++
++- Validation or 4xx contract mismatch:
++  - `failed_terminal`
++  - capture payload class and adapter version
++- Network failure before request dispatch is confirmed:
++  - `failed_retryable`
++- Network failure after dispatch uncertainty:
++  - `submitted_unknown`
++- Server 5xx:
++  - default to `submitted_unknown` unless server guarantees no side effects
++
++The page should never return from `submitted_unknown` to a fully fresh form with an enabled submit button without first reconciling booking status.
++
++## Production Signals Required
++
++### Core KPIs
++
++- booking submit success rate by adapter version
++- duplicate booking rate
++- ambiguous outcome rate (`submitted_unknown`)
++- retry rate per booking attempt
++- reconciliation success rate
++- fallback invocation rate
++- abandonment rate after submit
++- P50/P95/P99 submit latency
++
++### Guardrail Signals
++
++- count of multiple successful bookings sharing the same:
++  - idempotency key
++  - checkout session
++  - user + inventory + close time window
++- divergence between frontend terminal state and backend truth
++- old/new adapter response normalization errors
++- client-side double-submit prevention triggers
++- cross-tab collision count
++- feature flag cohort error skew
++
++### Logging Shape
++
++Emit structured events for:
++
++- `booking_confirmation_loaded`
++- `booking_submit_started`
++- `booking_submit_response`
++- `booking_submit_unknown_state`
++- `booking_status_reconciled`
++- `booking_submit_blocked_duplicate`
++- `booking_rollout_route_selected`
++
++Each event should include only the minimum needed diagnostics:
++
++- `traceId`
++- `bookingAttemptId`
++- adapter version
++- rollout cohort
++- normalized error category
++- latency buckets
++- region / platform / app version
++
++Do not log raw personal data or payment details.
++
++## Privacy Controls
++
++- Do not place PII in:
++  - feature flag targeting payloads
++  - client logs
++  - analytics event names or free text
++  - session storage / local storage keys or values
++- Prefer opaque identifiers:
++  - hashed user ID if needed
++  - checkout session ID
++  - booking attempt ID
++- Keep persisted client recovery state minimal:
++  - `bookingAttemptId`
++  - checkout session reference
++  - submit state
++- Expire recovery state on:
++  - terminal success
++  - explicit cancel
++  - TTL timeout
++- Redact server error bodies before telemetry if they may contain user or payment metadata.
++
++## Rollback Conditions
++
++Rollback must be a runtime config change, not a redeploy.
++
++Immediate rollback triggers:
++
++- any confirmed duplicate-booking pattern attributable to the new path
++- ambiguous outcome rate above agreed threshold for 5 to 10 minutes
++- reconciliation endpoint failing or lagging enough to strand users
++- submit success rate materially worse than legacy cohort
++- normalization bug causing wrong confirmation state
++- privacy regression in telemetry payloads
++
++Partial rollback options:
++
++- revert `new_write` to `legacy_write`, keep `new_read`
++- disable only risky payment methods / regions / guest traffic
++- keep canary only for internal users while investigating
++
++## Release Checklist
++
++- Backend confirms idempotency semantics for both old and new APIs.
++- Frontend adapters share one canonical normalized model.
++- Kill switch tested in production-like environment.
++- Synthetic test covers:
++  - normal success
++  - timeout after dispatch
++  - duplicate click
++  - refresh during submit
++  - second tab submit
++  - rollback during active canary
++- Dashboard and alert thresholds exist before traffic shift.
++- Support/runbook prepared for `submitted_unknown` incidents.
++
++## Recommended Decision
++
++Proceed only with a frontend adapter migration plus server-enforced idempotency and status reconciliation. Do not ship a write-path canary that relies only on disabling the button or client retries. The safe shape is:
++
++1. isolate old/new transports behind one frontend boundary
++2. dark launch reads first
++3. canary writes with sticky cohorts and runtime kill switch
++4. treat uncertain outcomes as recoverable reconciliation states, not clean failures
++5. rollback on duplicate indicators before waiting for broad business impact

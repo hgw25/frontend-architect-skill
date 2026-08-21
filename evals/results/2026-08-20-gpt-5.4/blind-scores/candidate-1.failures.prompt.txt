@@ -1,0 +1,486 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: group-by-api
+request: 请评审下面的 JavaScript groupBy 封装。判断它是否值得作为通用工具进入前端基础库， 指出实际正确性和 API 设计问题，并给出符合现代前端工程约束的建议。不要只改写循环语法。
+artifact: function groupBy(items, generateKey) {
+  if (typeof generateKey === 'string') {
+    const propertyName = generateKey
+    generateKey = (item) => item[propertyName]
+  }
+
+  const result = {}
+  let index = 0
+
+  for (const item of items) {
+    const key = generateKey(item, index++, items)
+    if (result[key]) result[key].push(item)
+    else result[key] = [item]
+  }
+
+  return result
+}
+
+failure_rules: ["只讨论 for、reduce、代码行数或语法风格", "在没有兼容性说明时宣称某一种返回结构永远正确"]
+
+RESPONSE:
+结论：**不建议把这版 `groupBy` 直接收进前端基础库。**  
+它既没有证明“值得做成基础设施”的稳定公共语义，也有实际正确性缺陷；即使修掉 bug，这个 API 形状本身也不够适合长期维护。
+
+**主要问题**
+
+1. **严重正确性缺陷：对象键冲突 / 原型链污染风险**  
+   代码用普通对象 `{}` 做累加器，且用 `if (result[key])` 判组是否存在。  
+   当 `key` 是 `constructor`、`toString`、`__proto__` 这类继承属性时，会命中原型链上的值而不是你自己的分组数组，随后 `push` 直接报错或产生异常行为。  
+   这不是边角 case，属于典型 adversarial input，基础库不能接受。
+
+2. **键语义不清，非字符串键会被静默压扁**  
+   这个实现表面上接受任意 `generateKey` 返回值，实际上结果是对象属性访问：
+   - `1` 和 `'1'` 会并组
+   - `true` 和 `'true'` 会并组
+   - 普通对象大多会落到 `'[object Object]'`
+   - `Symbol` 虽可作为属性键，但结果消费方式又和字符串键不同  
+   也就是说，API 承诺和真实行为不一致。作为通用工具，这会制造隐蔽 bug。
+
+3. **API 过早做“便捷重载”，但没有形成稳定契约**  
+   `generateKey` 既能传函数又能传字符串，并且函数参数被重新赋值成另一个函数。  
+   这类 shorthand 看起来省一行，代价是：
+   - 类型定义更复杂
+   - 文档更难讲清
+   - 后续扩展更容易继续堆重载
+   - 调试时调用约定不稳定  
+   基础库更应该优先选择单一、明确的 contract，而不是这种“顺手封装”。
+
+4. **返回值选型不适合作为默认通用抽象**  
+   通用 `groupBy` 默认返回对象，意味着它天然放弃了对象键身份、键类型精度和无歧义性。  
+   在现代 JS 里，如果你真要做通用分组，**`Map` 才是更稳的基础返回类型**；对象结果只适合“我明确要按字符串/属性键分组并且后续用对象访问”的场景。
+
+5. **缺少进入基础库所需的工程前提**  
+   基础库抽象需要先回答：
+   - 现在有哪些真实调用方？
+   - 它们是否真的共享同一语义？
+   - 目标运行环境是否已经支持原生能力？
+   - 需要兼容旧环境到什么程度？  
+   在当前材料里，看不到这些前提，因此更像“方便函数”，还达不到“公共基础设施”。
+
+**是否值得进入基础库**
+
+我的判断是：**现阶段不值得，以这版更不行。**
+
+更合理的决策顺序是：
+
+1. **先看是否可以直接用平台能力**  
+   现代环境优先考虑 `Object.groupBy()` / `Map.groupBy()`。MDN 当前标注二者为 **Baseline 2024**，自 **2024 年 3 月** 起已覆盖最新浏览器版本，但老设备/老浏览器未必可用。  
+   来源：  
+   `Map.groupBy`: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/groupBy  
+   `Object.groupBy`: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/groupBy
+
+2. **如果兼容矩阵不允许原生能力，不要先做“万能 groupBy”**  
+   先在使用点附近做小范围 fallback，或者做一个**语义明确**的 polyfill/wrapper。
+
+3. **如果业务里确实有多个调用方，且语义稳定，再考虑沉到基础库**  
+   但要拆清 contract，而不是保留这类模糊重载。
+
+**符合现代前端工程约束的建议**
+
+- 默认方案：**优先原生 `Map.groupBy` / `Object.groupBy`**，由兼容矩阵决定是否需要 polyfill。
+- 若必须自研基础工具：  
+  - 提供 **单一 callback API**，不要混入字符串 shorthand。  
+  - 默认返回 **`Map<K, T[]>`**，保留键身份和类型语义。  
+  - 如果确实需要对象结果，单独提供一个面向“属性键”的 API，例如 `groupByObject`，并明确只接受 `string | symbol` 键。  
+  - 对对象累加器必须使用 `Object.create(null)`，并用 own-property-safe 策略处理建组。  
+  - 在 TypeScript 中把“组可能不存在”表达清楚，不要伪装成完整 `Record`。
+
+**至少应验证的边界用例**
+
+- 空数组、单元素
+- key 为 `''`、`0`、`false`、`null`、`undefined`
+- key 为 `constructor`、`toString`、`__proto__`
+- key 为对象、数字、字符串、`Symbol`
+- 分组后是否保持输入遍历顺序
+
+如果你要，我可以下一步直接给出一个**适合基础库的最小 API 方案**：包括推荐签名、返回类型、兼容策略和测试清单。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: role-folder-growth
+request: 一个持续增长的电商前端目前只有 components、hooks、services、stores、types 和 utils 顶层目录。新增结算功能时，行为、状态、API、类型和测试要分散修改这些目录。 请提出渐进式模块重构方案，并说明模块边界、公开 API 和依赖方向；不能一次性重写项目。
+artifact: 
+failure_rules: ["机械创建完整的多层架构模板", "只移动文件而不约束依赖或所有权"]
+
+RESPONSE:
+结论：不要一次性把 `components/hooks/services/stores/types/utils` 全部改成 feature-first。先在现有结构上为“结算”建立一个可迁移的模块边界，把新增代码优先收口到 `checkout`，再逐步把旧的散落实现吸进去。这样能先解决“新增结算功能要跨 6 个目录改动”的问题，同时不给整个项目引入一次性重写风险。
+
+我检查到当前工作区里没有业务源码，只有任务说明和 `.frontend-architect` 参考文件，所以方案只能基于你描述的现状来设计，不会假设仓库里已经存在某些页面、框架约束或测试设施。
+
+**建议的目标结构**
+先引入“上层按业务模块、模块内再按职责细分”的混合结构，而不是立刻清理所有旧目录。
+
+```text
+src/
+  app/                      # 路由、全局 provider、页面装配
+  modules/
+    checkout/
+      api/
+        index.ts
+        place-order.ts
+        fetch-checkout.ts
+      model/
+        index.ts
+        checkout-store.ts
+        selectors.ts
+        commands.ts
+      ui/
+        index.ts
+        CheckoutPage.tsx
+        CheckoutSummary.tsx
+        PaymentMethodForm.tsx
+      types/
+        index.ts
+        checkout.ts
+      tests/
+        checkout-flow.test.ts
+      index.ts
+  shared/
+    ui/
+    http/
+    lib/
+```
+
+这里的关键决策是：
+- `checkout` 拥有结算的业务行为、状态、接口适配、业务类型和测试。
+- 旧的 `components/hooks/services/stores/types/utils` 不立刻删除，继续作为存量区。
+- 新代码默认进 `modules/checkout`，旧代码只在“碰到就迁”的节奏下逐步移动。
+
+**模块边界**
+`checkout` 应该只拥有和“结算流程”强相关的内容：
+
+- 归 `checkout`：
+  - 结算页状态
+  - 地址选择、支付方式、优惠券、订单确认这类结算规则
+  - 结算接口调用
+  - 结算专属类型
+  - 结算流程测试
+
+- 不归 `checkout`：
+  - 通用按钮、弹窗、输入框
+  - 通用 HTTP client
+  - 全站用户信息 store
+  - 商品实体的全局定义
+  - 纯通用工具函数
+
+判断标准很简单：如果这个代码的主要变化原因是“结算业务变了”，就放 `checkout`；如果它的变化原因和多个业务都相关，就留在 `shared` 或现有公共层。
+
+**公开 API**
+每个业务模块只暴露一个明确入口 `modules/checkout/index.ts`，不要让外部直接深链到内部文件。
+
+建议对外只公开三类东西：
+
+```ts
+// modules/checkout/index.ts
+export { CheckoutPage, CheckoutSummary } from './ui'
+export { useCheckoutStore, submitOrder, loadCheckout } from './model'
+export type {
+  CheckoutState,
+  CheckoutDraft,
+  PlaceOrderPayload,
+  PlaceOrderResult,
+} from './types'
+```
+
+不要公开：
+- 内部 selector 实现细节
+- 内部请求函数的拼装细节
+- 内部子组件目录路径
+- 临时兼容适配器
+
+这样做的目的，是以后你可以在模块内部继续拆分，而不影响调用方。
+
+**依赖方向**
+依赖方向必须单向，否则迁移一半就会重新缠回去。
+
+建议固定为：
+
+```text
+app -> modules/checkout -> shared
+```
+
+细化一下：
+
+```text
+ui -> model -> api -> shared/http
+ui -> shared/ui
+model -> types
+api -> types
+tests -> checkout public API
+```
+
+约束：
+- `shared` 不能反向 import `checkout`
+- 其他业务模块不能 import `checkout` 的内部文件，只能 import `modules/checkout`
+- `ui` 不直接调散落在全局 `services` 的函数，统一经 `checkout/api`
+- `ui` 不直接读写全局散落 store，统一经 `checkout/model`
+
+这比“所有地方都能调 services/store/utils”更重要，因为真正降低修改成本的是依赖方向，不是目录名本身。
+
+**渐进式重构步骤**
+按这个顺序做，风险最低：
+
+1. 新建 `modules/checkout`
+   - 只为新增结算功能建立新边界。
+   - 不动其他业务目录。
+
+2. 先做“模块门面”
+   - 在 `checkout/index.ts` 暴露公开 API。
+   - 页面和路由层以后只认这个入口。
+
+3. 把新增结算代码优先写进模块内
+   - 新的 UI、状态、API、类型、测试都放 `checkout`。
+   - 旧全局目录暂时继续存在。
+
+4. 对旧代码做“适配而不是硬迁”
+   - 如果现有 `services` 里已有下单接口，先在 `checkout/api` 里包一层调用。
+   - 如果现有 `stores` 里已有部分结算状态，先在 `checkout/model` 里做桥接。
+   - 先收口调用点，再收口实现。
+
+5. 碰到结算相关改动时再逐步搬迁
+   - `components` 里的结算专属组件移到 `checkout/ui`
+   - `hooks` 里的结算专属 hook 移到 `checkout/model` 或 `ui`
+   - `types` 里的结算类型移到 `checkout/types`
+   - `services` 里的结算 API 移到 `checkout/api`
+
+6. 迁完一个领域就切断旧入口
+   - 旧文件保留短期 re-export 或兼容层
+   - 调用方改完后删除兼容层
+   - 不要同时迁多个业务域
+
+**对现有顶层目录的处理建议**
+不是所有旧目录都要消失，建议分三类处理：
+
+- 保留并收缩为 `shared`：
+  - `components` 里真正通用的 UI primitive
+  - `utils` 里真正通用的无业务工具
+  - `services` 里真正基础设施层，如 `httpClient`
+
+- 逐步下沉进业务模块：
+  - 结算专属组件
+  - 结算专属 hooks
+  - 结算专属 store
+  - 结算专属类型
+  - 结算专属 API
+
+- 禁止继续扩张：
+  - 全局 `types`
+  - 全局 `utils`
+  - 全局 `stores`
+  
+这几个最容易继续变成 dumping ground。可以先从团队约定做起：新增业务代码不得再进入这些全局目录。
+
+**测试边界**
+测试也跟着模块走，不要继续散在全局。
+
+建议至少分三层：
+- `checkout/model` 的状态与命令测试
+- `checkout/api` 的接口契约测试
+- `checkout/tests` 的结算流程集成测试
+
+重点不是测试数量，而是让“改结算只看 checkout 模块里的测试”成为可能。
+
+**落地时的治理动作**
+不需要先上重工具，但至少要做两件事：
+
+- 代码评审规则：
+  - 新增结算逻辑不得落到全局 `services/stores/types/utils`
+- 导入约束：
+  - 先靠约定和 review
+  - 等模块数量上来后，再补 lint import rule，禁止跨模块内部路径引用
+
+**什么时候算迁移成功**
+不是“目录变好看了”，而是这几个信号出现了：
+
+- 新增一个结算需求，主要只改 `modules/checkout`
+- 结算开发不再同时改 `components/hooks/services/stores/types/utils`
+- 外部调用只依赖 `modules/checkout` 的公开入口
+- 结算内部重构时，影响面局限在模块内
+
+如果你愿意，我下一步可以把这个方案进一步落成一份更具体的目录迁移清单，包括：
+1. 每个现有顶层目录里哪些内容该迁入 `checkout`
+2. `index.ts` 公开 API 的精简规则
+3. 一个可执行的 PR 分批计划。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: small-project-structure
+request: 一个内部工具只有两个页面、十几个源文件，目前目录很浅。团队考虑立即引入完整的 feature/domain 分层。请判断是否应该这样做，并给出现在的结构建议以及未来触发迁移的信号。
+artifact: 
+failure_rules: ["以架构一致性为由创建大量单文件目录"]
+
+RESPONSE:
+结论：**现在不应该立即引入完整的 feature/domain 分层。**
+
+我检查了当前 workspace，实际只有 `.frontend-architect/*` 和 `.git/*`，没有提供应用源文件可供验证，所以这个判断只能基于你给出的规模前提来做：**两个页面、十几个源文件、目录很浅**。在这个体量下，完整的 feature/domain 体系大概率是“先付结构成本，后等问题出现”，收益不够。
+
+更合适的当前结构是：**保持浅层，按“app + pages + shared”组织，优先 colocate，而不是上来铺完整分层模板**。例如：
+
+```text
+src/
+  app/
+    router.tsx
+    providers.tsx
+  pages/
+    page-a/
+      index.tsx
+      components.tsx
+    page-b/
+      index.tsx
+      components.tsx
+  shared/
+    ui/
+    lib/
+    api/
+```
+
+原则是：
+- 页面私有逻辑先放页面旁边。
+- 真正跨页面复用、且语义稳定的东西，再进入 `shared/`。
+- 现在不要预设 `features/*/api/model/ui`、`domains/*`、`entities/*` 这类完整企业级骨架；只有当它们对应了真实的变更边界，才值得引入。
+
+未来触发迁移的信号可以看这几个：
+- 一个普通需求经常要同时改 `components/hooks/services/types` 多处，变更局部性很差。
+- 已经出现 3 个以上清晰的业务能力边界，而且它们多数独立演进。
+- 某些页面下的私有逻辑不断膨胀，开始自然形成稳定子模块。
+- `shared/` 开始变成杂物间，出现语义不清的 `utils/common/types` 堆积。
+- 跨页面复用的不再是“小工具”，而是带业务规则的整块能力。
+- 团队开始按产品区域分工，或路由级拆分、独立交付变得重要。
+
+到那时，再**增量迁移**到混合结构即可：顶层按 feature/domain，feature 内部再按 `ui/model/api` 细分。现在先保持浅、近、可改，比提前搭完整分层更合理。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: editor-paradigms
+request: 设计一个富文本编辑器模块。它包含 selection、history、纯文本转换、DOM 订阅、 协作连接和销毁清理。请判断哪些部分适合纯函数、Reducer、状态机、闭包或类， 并说明状态所有权、序列化、竞态和生命周期边界。不要把整个项目限定为纯 FP 或纯 OOP。
+artifact: 
+failure_rules: ["宣称前端应全部函数式", "把全部逻辑放入一个 Editor 类"]
+
+RESPONSE:
+结论：这个富文本编辑器模块最适合“函数式核心 + 命令式外壳”的混合设计，而不是把全部内容塞进纯 FP 或纯 OOP。
+
+仓库里没有现成编辑器实现可检查，只有 `.frontend-architect` 指南；所以这里给的是架构决策，不假设现有代码细节。
+
+| 部分 | 最合适的表示 | 原因 | 状态所有权 | 序列化 | 竞态/生命周期重点 |
+| --- | --- | --- | --- | --- | --- |
+| 文档内容转换、纯文本转换 | 纯函数 | 同输入应得同输出，易测、易复用 | 不持有状态 | 强，天然可序列化 | 无资源生命周期；注意不要偷偷读 DOM |
+| selection 的文本级变换 | 纯函数 + plain data | 光标/范围调整本质是确定性状态变换 | 由 editor state 持有，不由 DOM 持有真相 | 强，可进历史、可协作同步 | DOM selection 只是投影，避免双写 |
+| history（undo/redo） | Reducer | 关注事件驱动的可回放状态转移 | 由 editor session 或 store 持有 | 很强，适合快照/patch/event log | 必须定义合并策略、分支截断、远端操作是否进本地撤销栈 |
+| 协作连接状态 | 状态机 + 外层连接适配器 | 有明确连接态、重连、同步中、冲突、失效等合法/非法迁移 | 连接管理器持有 transport/session 状态；文档真相仍在 editor state/CRDT 层 | 部分可序列化：协议状态可快照，socket/peer 句柄不可序列化 | 最大竞态源：重连、乱序 ack、重复消息、离线恢复 |
+| DOM 订阅 | 闭包或小型类适配器 | 本质是资源订阅和 cleanup，不是领域状态 | 订阅器持有 listener、observer、dom refs | 弱，不应跨边界暴露 DOM 对象 | 必须显式 mount/unmount、解绑 observer/listener、防 stale ref |
+| 销毁清理 | 类或 closure-returned disposer | 这是资源生命周期问题，不是纯计算 | session/controller 拥有所有 disposer | 不需要序列化 | 必须幂等；允许多次调用 destroy 而不出错 |
+| 整体 editor session | 类，或闭包返回的 controller | 需要稳定 identity，统一持有订阅、连接、history、cleanup | 它是生命周期 owner，不一定是内容真相 owner | 自身不宜直接序列化；应导出 snapshot | 防止 framework 生命周期和 session 生命周期打架 |
+
+更具体的判断：
+
+1. `纯文本转换`
+用纯函数。比如 `editorState -> plainText`、`htmlFragment -> text`、`selection + insert -> nextState`。这些逻辑不该依赖 DOM、网络或时间。
+
+2. `history`
+优先用 reducer，不要做成到处可变的类方法集合。因为 undo/redo 天然要求“事件导致什么状态变化”可见、可回放、可测试。若 history 需要事务合并，也是在 reducer action 层表达，如 `applyLocalStep`、`commitTransaction`、`undo`、`redo`。
+
+3. `selection`
+分两层：
+一层是可序列化的领域 selection，比如 anchor/focus、path/offset，属于 editor state。
+另一层是 DOM selection 映射，属于命令式外壳。
+不要让 DOM selection 和内部 selection 同时做真相源，否则很快出现竞态和回写循环。
+
+4. `DOM 订阅`
+适合闭包或小类，不适合 reducer。因为它负责 `addEventListener`、`MutationObserver`、`SelectionChange` 这类外部资源同步。它应该把浏览器事件翻译成纯 action，再交给 reducer/state machine。
+
+5. `协作连接`
+拆成两块：
+一块是连接状态机：`disconnected -> connecting -> syncing -> ready -> reconnecting -> failed`。
+另一块是 transport adapter：WebSocket/WebRTC/SDK 包装，适合类或闭包。
+不要把 socket 实例塞进可序列化 editor state；那会混淆“文档状态”和“资源状态”。
+
+6. `销毁清理`
+集中到 session/controller 的 `destroy()`，不要让每个子模块各自偷偷清理。`destroy()` 应负责：
+取消 DOM 订阅、
+关闭协作连接、
+停止 timer/retry、
+释放 observer、
+阻止后续异步回调再提交状态。
+这个销毁必须幂等。
+
+**状态所有权**
+建议分三层：
+- `EditorState`：可序列化领域真相。内容、selection、history 指针、协作元数据中的纯数据部分。
+- `Session/Controller`：不可序列化运行时 owner。持有订阅、连接、disposer、节流器、请求 token。
+- `View/Framework component`：只持有 UI 层临时态，如 hover、IME 中间态、浮层开关；不要反向拥有核心文档状态。
+
+**序列化边界**
+应序列化：
+- 文档树或操作日志
+- selection 的领域表示
+- history 的快照或可回放事件
+- 协作所需版本号、clock、client id 这类 plain data
+
+不应序列化：
+- DOM 节点
+- Range/Selection 对象
+- Observer/listener
+- WebSocket/peer/AbortController
+- 定时器句柄
+
+**竞态重点**
+主要风险不是 reducer，而是边界层：
+- DOM 事件晚到，覆盖了更新后的 selection
+- 远端协作消息与本地 undo/redo 交错
+- 重连后旧连接的消息继续回写
+- destroy 后异步回调仍然 `dispatch`
+
+控制方法：
+- 给协作连接加 session token / generation id，旧回调直接丢弃
+- 区分本地事务和远端事务，定义 history 是否吸收远端变更
+- DOM 投影采用“内部状态推 DOM”，并防止回写环
+- 所有副作用入口检查 `isDestroyed`
+
+**生命周期边界**
+最清晰的边界是：
+
+- `pure functions`：无生命周期
+- `reducer`：跟随 editor state 生命周期
+- `state machine`：跟随连接/session 生命周期
+- `DOM adapter`：跟随挂载节点生命周期
+- `session/controller`：跟随整个编辑器实例生命周期
+
+如果要落成一个可维护的模块，我会选这个形状：
+- `editor-model/`：纯函数、类型、reducer
+- `editor-history/`：history reducer 或事务逻辑
+- `editor-collab/`：连接状态机 + transport adapter
+- `editor-dom/`：DOM 订阅与 selection 映射
+- `editor-session/`：类或闭包 controller，负责组装和 `destroy()`
+
+最重要的设计取舍只有一句话：可序列化的文档状态与不可序列化的运行时资源必须分层，前者偏函数/Reducer，后者偏状态机/闭包/类。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

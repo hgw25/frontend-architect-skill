@@ -1,0 +1,241 @@
+diff --git a/src/SearchPage.vue b/src/SearchPage.vue
+index 8ced088..193e218 100644
+--- a/src/SearchPage.vue
++++ b/src/SearchPage.vue
+@@ -1,5 +1,5 @@
+ <script setup lang="ts">
+-import { onMounted, ref } from 'vue'
++import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+ 
+ type SearchResult = {
+   id: string
+@@ -7,49 +7,216 @@ type SearchResult = {
+   price: number
+ }
+ 
+-const query = ref('')
+-const page = ref(1)
+-const locale = ref('en-US')
++const supportedLocales = ['en-US', 'fr-FR'] as const
++type SupportedLocale = (typeof supportedLocales)[number]
++
++type SearchState = {
++  query: string
++  page: number
++  locale: SupportedLocale
++}
++
++const messages = {
++  'en-US': {
++    title: 'Product search',
++    searchLabel: 'Search',
++    searchButton: 'Search',
++    localeLabel: 'Language',
++    error: 'Search failed',
++    results: {
++      one: '{count} result',
++      other: '{count} results',
++    },
++  },
++  'fr-FR': {
++    title: 'Recherche de produits',
++    searchLabel: 'Recherche',
++    searchButton: 'Rechercher',
++    localeLabel: 'Langue',
++    error: 'La recherche a échoué',
++    results: {
++      one: '{count} résultat',
++      other: '{count} résultats',
++    },
++  },
++} satisfies Record<
++  SupportedLocale,
++  {
++    title: string
++    searchLabel: string
++    searchButton: string
++    localeLabel: string
++    error: string
++    results: Partial<Record<Intl.LDMLPluralRule, string>> & { other: string }
++  }
++>
++
++function isSupportedLocale(value: string | null): value is SupportedLocale {
++  return supportedLocales.includes((value ?? '') as SupportedLocale)
++}
++
++function parsePage(value: string | null) {
++  const parsed = Number.parseInt(value ?? '', 10)
++  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
++}
++
++function readUrlState(): SearchState {
++  const params = new URLSearchParams(window.location.search)
++  const localeParam = params.get('locale')
++  return {
++    query: params.get('q') ?? '',
++    page: parsePage(params.get('page')),
++    locale: isSupportedLocale(localeParam) ? localeParam : 'en-US',
++  }
++}
++
++function writeUrlState(state: SearchState, mode: 'push' | 'replace' = 'push') {
++  const params = new URLSearchParams()
++  if (state.query) {
++    params.set('q', state.query)
++  }
++  params.set('page', String(state.page))
++  params.set('locale', state.locale)
++
++  const url = `${window.location.pathname}?${params.toString()}`
++  const method = mode === 'replace' ? history.replaceState : history.pushState
++  method.call(history, null, '', url)
++}
++
++function formatMessage(template: string, values: Record<string, string | number>) {
++  return Object.entries(values).reduce(
++    (message, [key, value]) => message.replace(`{${key}}`, String(value)),
++    template,
++  )
++}
++
++function createCurrencyFormatter(localeValue: SupportedLocale) {
++  return new Intl.NumberFormat(localeValue, {
++    style: 'currency',
++    currency: localeValue === 'fr-FR' ? 'EUR' : 'USD',
++  })
++}
++
++function createPluralRules(localeValue: SupportedLocale) {
++  return new Intl.PluralRules(localeValue)
++}
++
++const initialState = readUrlState()
++const query = ref(initialState.query)
++const page = ref(initialState.page)
++const locale = ref<SupportedLocale>(initialState.locale)
+ const results = ref<SearchResult[]>([])
+ const total = ref(0)
+ const error = ref('')
++let requestId = 0
++let activeController: AbortController | null = null
++
++const copy = computed(() => messages[locale.value])
++const pluralRules = computed(() => createPluralRules(locale.value))
++const currencyFormatter = computed(() => createCurrencyFormatter(locale.value))
++const totalLabel = computed(() => {
++  const rule = pluralRules.value.select(total.value)
++  const template = (copy.value.results as Partial<Record<Intl.LDMLPluralRule, string>> & {
++    other: string
++  })[rule] ?? copy.value.results.other
++  return formatMessage(template, {
++    count: total.value,
++  })
++})
++
++function applyState(nextState: SearchState) {
++  query.value = nextState.query
++  page.value = nextState.page
++  locale.value = nextState.locale
++}
++
++function syncDocumentLanguage() {
++  document.documentElement.lang = locale.value
++}
+ 
+ async function search() {
++  const currentRequestId = ++requestId
++  activeController?.abort()
++  const controller = new AbortController()
++  activeController = controller
+   error.value = ''
+   try {
+     const response = await fetch(
+       `/api/search?q=${encodeURIComponent(query.value)}&page=${page.value}`,
++      { signal: controller.signal },
+     )
+     const payload = (await response.json()) as {
+       items: SearchResult[]
+       total: number
+     }
++    if (currentRequestId !== requestId) {
++      return
++    }
+     results.value = payload.items
+     total.value = payload.total
+-  } catch {
+-    error.value = 'Search failed'
++  } catch (caught) {
++    if ((caught as Error).name === 'AbortError' || currentRequestId !== requestId) {
++      return
++    }
++    error.value = copy.value.error
+   }
+ }
+ 
+-onMounted(search)
++async function submitSearch() {
++  page.value = 1
++  writeUrlState({ query: query.value, page: page.value, locale: locale.value })
++  await search()
++}
++
++async function updateLocale() {
++  writeUrlState({ query: query.value, page: page.value, locale: locale.value })
++  await search()
++}
++
++async function handlePopState() {
++  applyState(readUrlState())
++  await search()
++}
++
++onMounted(async () => {
++  writeUrlState({ query: query.value, page: page.value, locale: locale.value }, 'replace')
++  syncDocumentLanguage()
++  window.addEventListener('popstate', handlePopState)
++  await search()
++})
++
++watch(locale, syncDocumentLanguage)
++
++onBeforeUnmount(() => {
++  activeController?.abort()
++  window.removeEventListener('popstate', handlePopState)
++})
+ </script>
+ 
+ <template>
+-  <main>
+-    <h1>Product search</h1>
+-    <form @submit.prevent="search">
++  <main :lang="locale">
++    <h1>{{ copy.title }}</h1>
++    <form @submit.prevent="submitSearch">
+       <label>
+-        Search
++        {{ copy.searchLabel }}
+         <input v-model="query" name="query" />
+       </label>
+-      <button type="submit">Search</button>
++      <label>
++        {{ copy.localeLabel }}
++        <select v-model="locale" name="locale" @change="updateLocale">
++          <option v-for="supportedLocale in supportedLocales" :key="supportedLocale" :value="supportedLocale">
++            {{ supportedLocale }}
++          </option>
++        </select>
++      </label>
++      <button type="submit">{{ copy.searchButton }}</button>
+     </form>
+ 
+     <p v-if="error" role="alert">{{ error }}</p>
+-    <p aria-live="polite">{{ total }} results</p>
++    <p aria-live="polite">{{ totalLabel }}</p>
+     <ul>
+       <li v-for="result in results" :key="result.id">
+-        {{ result.name }} — ${{ result.price }}
++        {{ result.name }} - {{ currencyFormatter.format(result.price) }}
+       </li>
+     </ul>
+   </main>

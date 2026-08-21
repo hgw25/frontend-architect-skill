@@ -1,0 +1,1245 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: product-list-performance-contract
+request: 商品列表改版后，RUM 显示移动端 p75 LCP 从 2.2s 变为 3.1s、INP 从 170ms 变为 290ms、CLS 保持 0.04；实验室跟踪同时看到首路由 JS 增加 95KB gzip、一次新的字体 阻塞请求和筛选时 180ms 长任务。请提出最小的调查与修复顺序，并定义可执行的性能预算、 回归验证和发布门槛。不要把某个 Lighthouse 单次分数当作最终结论，也不要默认重写列表。
+artifact: 
+failure_rules: ["只建议提高 Lighthouse 分数或直接采用一个框架特性", "使用一次实验室运行宣布真实用户问题已经解决", "罗列优化技巧但没有基线、预算、阈值或发布决策"]
+
+RESPONSE:
+我检查了工作区，当前仓库没有业务源码可供进一步定位，`HEAD` 只有一个空提交 `a5ff0eb`。所以我没有虚构实现细节，而是把基于你给出的 RUM 和实验室信号的最小调查/修复方案落成到 [performance-response-plan.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-product-list-performance-contract-baseline-xkjv_f0n/performance-response-plan.md:1)。
+
+结论上，最小顺序应该是先查并回收首路由新增的 `95KB gzip JS`，再处理新的首屏字体阻塞，之后再拆筛选时的 `180ms` 长任务。这个顺序的理由很直接：JS 增量同时解释 `LCP` 和 `INP` 恶化，字体更像 `LCP` 的单点拖累，筛选长任务则是 `INP` 的直接证据，但不该先上来就假设要重写列表。
+
+我在文档里同时定义了可执行门槛：RUM 目标为移动端 `p75 LCP <= 2.5s`、`p75 INP <= 200ms`、`p75 CLS <= 0.1`；实验室预算为首路由净新增 JS 不超过 `30KB gzip`、首屏关键路径字体阻塞为 `0`、筛选最长任务 `<100ms`。发布上分成“可灰度 / 可放量 / 必须回滚”三档，明确要求看分桶 RUM 和可重复 trace，不把某一次 Lighthouse 分数当结论。
+
+DIFF:
+diff --git a/performance-response-plan.md b/performance-response-plan.md
+new file mode 100644
+index 0000000..ae30f50
+--- /dev/null
++++ b/performance-response-plan.md
+@@ -0,0 +1,196 @@
++# 商品列表改版性能调查与修复顺序
++
++## 已确认的仓库事实
++
++- 当前工作区没有可读的业务源码文件，`HEAD` 提交 `a5ff0eb` 仅包含空提交元数据。
++- 因此下面的方案只基于题目给出的 RUM 和实验室现象，不对具体框架、构建链路、SSR/CSR 方案或列表实现细节做假设。
++
++## 现象归因优先级
++
++已知变化：
++
++- 移动端 `p75 LCP`：`2.2s -> 3.1s`，恶化 `+0.9s`
++- 移动端 `INP`：`170ms -> 290ms`，恶化 `+120ms`
++- `CLS`：`0.04`，基本稳定
++- 实验室同时看到：
++  - 首路由 JS 增加 `95KB gzip`
++  - 新增一次字体阻塞请求
++  - 筛选交互时出现 `180ms` 长任务
++
++最小调查与修复顺序应按“证据最强、影响最大、改动最小”排：
++
++1. 先查首路由 JS 增量
++   - 这是同时影响 `LCP` 和 `INP` 的共同嫌疑项。
++   - `95KB gzip` 对移动端通常不只是下载成本，还会带来解析、编译、执行开销。
++   - 如果改版把列表卡片逻辑、筛选逻辑、埋点、图标集、富组件一起打进首包，这一项往往能解释 `LCP` 和交互前主线程忙碌。
++
++2. 再查新增字体阻塞
++   - `CLS` 稳定说明字体更像 `LCP` 问题，不像布局抖动问题。
++   - 如果标题、价格或首屏列表卡片依赖新字体，字体请求被提前阻塞会直接拖慢首屏可见文本或 hero 卡片渲染。
++
++3. 然后查筛选 180ms 长任务
++   - 这是 `INP` 恶化最直接的证据。
++   - 180ms 单次长任务已经足以把一次点击或筛选拖进差体验区间，但它对 `LCP` 的解释力弱于首包和字体，所以排在后面。
++
++4. 最后再确认是否存在图片、服务端响应或回源波动
++   - 当前题目没有给出对应证据，不应先假设要重写列表、虚拟化或重做渲染架构。
++
++## 最小调查步骤
++
++### 1. 用同一页面做改版前后 diff
++
++先拿同一商品列表页、同一网络档位、同一设备档位，对照：
++
++- 资源瀑布图：新增了哪些首屏阻塞资源
++- JS 覆盖率：新增 `95KB gzip` 里首屏实际执行了多少
++- Main thread：LCP 前是否有明显脚本执行块
++- RUM 分桶：LCP 慢的是全部流量，还是特定机型、网络、实验桶
++
++调查输出必须回答三个问题：
++
++- 新增的 `95KB gzip` 具体来自哪些 bundle 或依赖
++- 字体请求是否在 `LCP resource` 或文本绘制前形成阻塞
++- 180ms 长任务发生在筛选的哪一段：事件处理、状态计算、DOM 提交还是同步请求回调
++
++### 2. 首包 JS 先做减法
++
++最小修复优先做这些，不涉及重写列表：
++
++- 把非首屏筛选逻辑延后到用户交互后再加载
++- 把不影响首屏的埋点、推荐模块、对比功能、悬浮能力移出首路由
++- 检查是否引入了整包图标库、整包日期库、整包 UI 子模块
++- 如果列表卡片存在客户端格式化密集逻辑，优先改为服务端下发已格式化字段或更轻量的格式化路径
++
++判断标准：
++
++- 首路由新增 `95KB gzip` 至少回收 `60KB`
++- 首屏执行时间同步下降，而不是只把字节数挪到另一个同步 chunk
++
++### 3. 字体阻塞直接止血
++
++最小修复顺序：
++
++- 首屏关键文本先回退到系统字体，确认 LCP 是否恢复
++- 如果品牌字体必须保留，只给首屏必要字重，避免多字重首包加载
++- 确保非关键字体不阻塞首屏渲染，采用更保守的加载策略
++- 检查是否把字体 CSS、字体文件或第三方字体域名放在了关键渲染路径上
++
++判断标准：
++
++- 新字体移除或降级后，实验室 `LCP` 应该出现明确回落
++- `CLS` 仍维持在当前 `0.04` 左右，不因字体切换引入新抖动
++
++### 4. 筛选长任务拆分
++
++最小修复不要先上复杂架构，先做这几项：
++
++- 避免每次筛选都全量重算、全量重排、全量重新渲染所有卡片
++- 将筛选计算和渲染提交拆开，保证输入反馈先完成
++- 对重量级排序、聚合、facet 统计做分批或异步化
++- 排查筛选时是否同步触发埋点、日志序列化、URL 大对象处理
++
++判断标准：
++
++- 单次筛选长任务从 `180ms` 降到 `<100ms`
++- 交互链路中没有单个 `>50ms` 的热点块长期存在
++
++## 可执行性能预算
++
++以下预算用于列表页移动端，不把某次 Lighthouse 单分当最终结论，而是结合 RUM 和可重复实验室追踪。
++
++### RUM 预算
++
++- `p75 LCP <= 2.5s`
++- `p75 INP <= 200ms`
++- `p75 CLS <= 0.1`
++
++针对这次回归，发布前至少要求：
++
++- 相比当前回归版本，`LCP` 从 `3.1s` 拉回至少 `500ms`
++- `INP` 从 `290ms` 拉回至少 `70ms`
++- `CLS` 不高于 `0.05`
++
++### 实验室预算
++
++- 首路由 JS：对比改版前，净新增不得超过 `30KB gzip`
++- 首屏关键路径字体阻塞请求：`0`
++- 列表页 LCP 前主线程单个长任务：`<100ms`
++- 筛选交互单次最长任务：`<100ms`
++- 筛选交互总阻塞时间：`<200ms`
++
++### 变更预算
++
++- 任何新实验或改版，如果使首路由 JS 增加 `>20KB gzip`，需要单独说明收益和回滚方案
++- 新增字体家族或字重进入首屏前，必须证明不阻塞首屏文本渲染
++- 新增列表筛选能力如果引入 `>50ms` 主线程热点，不能直接进入全量
++
++## 回归验证
++
++### RUM 验证
++
++- 按实验桶、设备档位、网络档位拆分看 `LCP` 和 `INP`
++- 单看整体均值不够，必须看移动端 `p75`
++- 连续观察至少 `24-48` 小时，避免被缓存预热或流量结构短期波动误导
++
++重点确认：
++
++- 慢化是否只发生在新实验桶
++- 是否集中在低端 Android 或弱网
++- 字体回退后是否只改善 `LCP`，而 JS 减重后同时改善 `LCP` 和 `INP`
++
++### 实验室验证
++
++- 固定设备档位和网络条件复跑改版前、当前版、修复版三组 trace
++- 每组至少跑多次，看中位区间，不拿单次最好分或单次 Lighthouse 分数做结论
++- 核对：
++  - 资源瀑布
++  - bundle 体积 diff
++  - LCP 元素与渲染时刻
++  - 筛选交互 flame chart
++
++### 功能验证
++
++- 列表首屏内容、价格、筛选结果和排序结果必须与当前线上一致
++- 字体降级或延后加载不能造成品牌样式不可接受退化
++- 懒加载后的筛选、埋点和 URL 同步不能丢功能
++
++## 发布门槛
++
++建议使用分级门槛，而不是只看一个灯塔分数：
++
++### 可以灰度
++
++- 修复版实验室 trace 证明：
++  - 首路由 JS 已显著回收
++  - 首屏字体不再阻塞
++  - 筛选最长任务 `<100ms`
++- 新实验桶小流量 RUM 连续 `24` 小时内：
++  - `p75 LCP <= 2.7s`
++  - `p75 INP <= 230ms`
++  - `CLS` 无回归
++
++### 可以放量
++
++- 新实验桶连续 `48` 小时：
++  - `p75 LCP <= 2.5s`
++  - `p75 INP <= 200ms`
++  - `p75 CLS <= 0.05`
++- 与改版前相比，无明显转化或筛选使用率负向波动
++
++### 必须停止放量或回滚
++
++- 连续观察窗口内 `p75 LCP > 2.8s`
++- `p75 INP > 250ms`
++- 首路由 JS 仍比改版前多 `>50KB gzip`
++- 筛选交互仍稳定出现 `>150ms` 长任务
++
++## 决策建议
++
++最小顺序不是“重写列表”，而是：
++
++1. 先做 bundle diff，回收首路由 JS
++2. 同时移除或降级首屏字体阻塞
++3. 再拆筛选 180ms 长任务
++4. 最后用分桶 RUM + 可重复 trace 验证，再决定是否需要更重的结构性优化
++
++如果前两项做完后 `LCP` 仍明显高于 `2.5s`，再进入下一层调查，例如图片优先级、服务端响应、分屏渲染或列表卡片结构成本；在那之前，不应默认进入重写。
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: accessible-dialog-primitive
+request: 三个 React 产品都各自实现了 Dialog，已经出现焦点逃逸、Escape 行为不一致、 aria 标注缺失和样式难以复用。请按前端基建标准设计一个可发布的 headless Dialog primitive，并给出核心实现边界、公开 API、包导出、测试矩阵和迁移方案。需要支持 portal、受控和非受控打开方式、嵌套 Dialog、SSR/水合和消费者自定义样式；不要把 产品弹窗文案和业务按钮写进 primitive。请直接完善 fixture 中的实现并运行真实浏览器 检查；保留现有示例的用户可观察行为。
+artifact: fixture 提供一个不完整的 Dialog、SSR 检查和 Playwright 行为测试。可以重构内部边界 和增加聚焦模块，但不得删除或弱化测试来掩盖焦点、键盘或嵌套缺陷。
+failure_rules: ["只封装一个带 children 的 div 和 open 布尔值", "仅依靠 aria-modal 而没有完整键盘与焦点行为", "用大量布尔 props 承载不同产品的业务变体", "宣称单元测试通过即可证明组件库可发布", "删除、跳过或改弱浏览器测试，或用 jsdom 结果代替真实焦点行为"]
+
+RESPONSE:
+已在 [src/Dialog.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix/src/Dialog.tsx:1) 把原来的单体实现重构成可发布的 headless Dialog primitive，并保留了现有 fixture 示例的可观察行为。现在提供 `DialogRoot/Trigger/Portal/Overlay/Content/Title/Description/Close` 的 compound API，支持受控和非受控打开、portal、嵌套 Dialog、SSR 安全挂载、焦点进入/循环/恢复，以及只让顶层 Dialog 处理 `Escape`。焦点与嵌套栈逻辑拆到了 [src/dialogFocus.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix/src/dialogFocus.ts:1)，包导出集中在 [src/index.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix/src/index.ts:1)。
+
+核心实现边界、公开 API、包导出、测试矩阵和迁移方案写在 [DIALOG_PRIMITIVE.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix/DIALOG_PRIMITIVE.md:1)。Playwright 用例也改成直接打开构建产物 [tests/dialog.spec.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix/tests/dialog.spec.ts:1)，避免依赖本地端口监听。
+
+校验结果是：`npm run typecheck`、`npm run test:ssr`、`npm run build` 通过。真实浏览器检查已尝试运行 Playwright，但当前沙箱环境在 2026-08-21 这次执行中同时阻止了本地监听端口和浏览器进程启动；Chromium 报 `bootstrap_check_in ... Permission denied (1100)`，WebKit 也在启动时 `Abort trap: 6`，所以 `npm run test:browser` 无法在这个环境内完成。
+
+DIFF:
+diff --git a/DIALOG_PRIMITIVE.md b/DIALOG_PRIMITIVE.md
+new file mode 100644
+index 0000000..9131f19
+--- /dev/null
++++ b/DIALOG_PRIMITIVE.md
+@@ -0,0 +1,62 @@
++# Dialog Primitive
++
++## Core boundaries
++
++- Primitive remains headless: it owns state, focus, keyboard and aria wiring, but does not ship product copy, buttons or visual tokens.
++- `DialogPortal` mounts after hydration before portaling to `document.body`, which keeps SSR safe and avoids browser global access during server render.
++- `DialogContent` owns focus entry, tab loop, top-of-stack `Escape` handling and trigger restoration; nested dialogs are coordinated through an internal stack, not by consumers.
++- Consumers own styling through `className`, DOM props and composition. No theme contract is required.
++
++## Public API
++
++```tsx
++import {
++  DialogRoot,
++  DialogTrigger,
++  DialogPortal,
++  DialogOverlay,
++  DialogContent,
++  DialogTitle,
++  DialogDescription,
++  DialogClose,
++} from 'frontend-architect-dialog-browser-eval'
++```
++
++- `DialogRoot`: `open`, `defaultOpen`, `onOpenChange`, `modal`
++- `DialogTrigger`: default button trigger, or `asChild` for custom trigger elements
++- `DialogPortal`: optional `container`, `forceMount`
++- `DialogOverlay`: headless backdrop with outside-click close
++- `DialogContent`: dialog surface with aria, focus trap and `Escape` close
++- `DialogTitle` / `DialogDescription`: label and description bindings
++- `DialogClose`: close action, supports `asChild`
++
++## Package exports
++
++```json
++{
++  "exports": {
++    ".": "./src/index.ts"
++  }
++}
++```
++
++The stable public surface is `src/index.ts`; internal focus stack helpers stay private.
++
++## Test matrix
++
++- SSR closed render does not touch `document` or `window`
++- Uncontrolled open path preserves the existing fixture behavior
++- Initial focus lands on the first focusable element in content
++- `Tab` and `Shift+Tab` loop inside the active dialog
++- `Escape` closes only the top nested dialog, then restores local trigger focus
++- Parent dialog remains open after child dialog closes
++- Trigger focus is restored when the last active dialog closes
++- Overlay click closes the matching dialog without leaking into content clicks
++
++## Migration
++
++1. Replace product-local modal wrappers with `DialogRoot` + `DialogTrigger` + `DialogPortal`.
++2. Move backdrop and surface markup into `DialogOverlay` and `DialogContent`, keeping existing product styles on `className`.
++3. Replace ad hoc heading and copy wiring with `DialogTitle` and `DialogDescription`.
++4. Delete product-level `Escape`, outside-click and focus-trap code after parity verification.
++5. Roll out nested flows first in the products that currently show focus escape, then remove old shared modal utilities.
+diff --git a/package.json b/package.json
+index dbb7656..47ef5f8 100644
+--- a/package.json
++++ b/package.json
+@@ -2,10 +2,13 @@
+   "name": "frontend-architect-dialog-browser-eval",
+   "private": true,
+   "type": "module",
++  "exports": {
++    ".": "./src/index.ts"
++  },
+   "scripts": {
+     "build": "vite build",
+     "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run build",
+-    "test:browser": "playwright test",
++    "test:browser": "npm run build && playwright test",
+     "test:ssr": "vitest run src/Dialog.ssr.test.tsx",
+     "typecheck": "tsc --noEmit"
+   },
+diff --git a/playwright.config.ts b/playwright.config.ts
+index f332bf4..adbc1b1 100644
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -5,11 +5,5 @@ export default defineConfig({
+   fullyParallel: false,
+   use: {
+     ...devices['Desktop Chrome'],
+-    baseURL: 'http://127.0.0.1:4173',
+-  },
+-  webServer: {
+-    command: 'npm run build && npx vite preview --host 127.0.0.1 --port 4173',
+-    port: 4173,
+-    reuseExistingServer: false,
+   },
+ })
+diff --git a/src/Dialog.tsx b/src/Dialog.tsx
+index 55b30e8..dbe19f4 100644
+--- a/src/Dialog.tsx
++++ b/src/Dialog.tsx
+@@ -1,6 +1,32 @@
+-import { type ReactNode, useId, useState } from 'react'
++import {
++  cloneElement,
++  createContext,
++  forwardRef,
++  isValidElement,
++  type ButtonHTMLAttributes,
++  type ComponentPropsWithoutRef,
++  type HTMLAttributes,
++  type ReactElement,
++  type ReactNode,
++  type Ref,
++  useContext,
++  useEffect,
++  useId,
++  useImperativeHandle,
++  useMemo,
++  useRef,
++  useState,
++} from 'react'
+ import { createPortal } from 'react-dom'
+ 
++import {
++  focusFirstElement,
++  isTopDialog,
++  pushDialogToStack,
++  removeDialogFromStack,
++  trapFocus,
++} from './dialogFocus'
++
+ type DialogProps = {
+   children: ReactNode
+   description: string
+@@ -8,36 +34,395 @@ type DialogProps = {
+   triggerLabel: string
+ }
+ 
+-export function Dialog({ children, description, title, triggerLabel }: DialogProps) {
+-  const [open, setOpen] = useState(false)
++type DialogRootProps = {
++  children: ReactNode
++  defaultOpen?: boolean
++  modal?: boolean
++  onOpenChange?: (open: boolean) => void
++  open?: boolean
++}
++
++type DialogPortalProps = {
++  children: ReactNode
++  container?: Element | DocumentFragment | null
++  forceMount?: boolean
++}
++
++type DialogContextValue = {
++  contentId: string
++  descriptionId: string
++  modal: boolean
++  open: boolean
++  setOpen: (open: boolean) => void
++  titleId: string
++  triggerRef: React.RefObject<HTMLElement | null>
++}
++
++type PresenceProps = {
++  children: ReactNode
++  present: boolean
++}
++
++type DialogContentProps = HTMLAttributes<HTMLElement> & {
++  forceMount?: boolean
++}
++
++type DialogOverlayProps = HTMLAttributes<HTMLDivElement> & {
++  forceMount?: boolean
++}
++
++type PolymorphicButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
++  asChild?: boolean
++  children: ReactNode
++}
++
++type PolymorphicRef<T> = Ref<T>
++
++const DialogContext = createContext<DialogContextValue | null>(null)
++
++function useDialogContext(componentName: string) {
++  const context = useContext(DialogContext)
++  if (!context) {
++    throw new Error(`${componentName} must be used within Dialog.Root`)
++  }
++  return context
++}
++
++function composeEventHandlers<EventType extends { defaultPrevented: boolean }>(
++  originalHandler: ((event: EventType) => void) | undefined,
++  nextHandler: (event: EventType) => void,
++) {
++  return (event: EventType) => {
++    originalHandler?.(event)
++    if (!event.defaultPrevented) {
++      nextHandler(event)
++    }
++  }
++}
++
++function composeRefs<T>(...refs: Array<Ref<T> | undefined>) {
++  return (node: T) => {
++    refs.forEach((ref) => {
++      if (!ref) {
++        return
++      }
++      if (typeof ref === 'function') {
++        ref(node)
++        return
++      }
++      ;(ref as { current: T }).current = node
++    })
++  }
++}
++
++function useControllableState({
++  defaultValue,
++  onChange,
++  value,
++}: {
++  defaultValue: boolean
++  onChange?: (nextValue: boolean) => void
++  value?: boolean
++}) {
++  const [uncontrolledValue, setUncontrolledValue] = useState(defaultValue)
++  const isControlled = value !== undefined
++  const currentValue = isControlled ? value : uncontrolledValue
++
++  const setValue = (nextValue: boolean) => {
++    if (!isControlled) {
++      setUncontrolledValue(nextValue)
++    }
++    if (nextValue !== currentValue) {
++      onChange?.(nextValue)
++    }
++  }
++
++  return [currentValue, setValue] as const
++}
++
++function Presence({ children, present }: PresenceProps) {
++  return present ? <>{children}</> : null
++}
++
++function Slot<TElement extends HTMLElement>(
++  props: PolymorphicButtonProps,
++  forwardedRef: PolymorphicRef<TElement>,
++) {
++  const { children, ...restProps } = props
++
++  if (!isValidElement(children)) {
++    throw new Error('Dialog polymorphic components expect a single React element child.')
++  }
++
++  const child = children as ReactElement<Record<string, unknown> & { ref?: Ref<TElement> }>
++  return cloneElement(child, {
++    ...restProps,
++    ...child.props,
++    ref: composeRefs(forwardedRef, child.props.ref),
++  })
++}
++
++const DialogRoot = ({ children, defaultOpen = false, modal = true, onOpenChange, open }: DialogRootProps) => {
++  const [isOpen, setOpen] = useControllableState({
++    defaultValue: defaultOpen,
++    onChange: onOpenChange,
++    value: open,
++  })
++  const triggerRef = useRef<HTMLElement | null>(null)
+   const titleId = useId()
+   const descriptionId = useId()
++  const contentId = useId()
++
++  const value = useMemo<DialogContextValue>(
++    () => ({
++      contentId,
++      descriptionId,
++      modal,
++      open: isOpen,
++      setOpen,
++      titleId,
++      triggerRef,
++    }),
++    [contentId, descriptionId, isOpen, modal, setOpen, titleId],
++  )
++
++  return <DialogContext.Provider value={value}>{children}</DialogContext.Provider>
++}
++
++const DialogTrigger = forwardRef<HTMLButtonElement, PolymorphicButtonProps>(function DialogTrigger(
++  { asChild = false, children, onClick, ...props },
++  forwardedRef,
++) {
++  const context = useDialogContext('Dialog.Trigger')
++  const ref = composeRefs(forwardedRef, context.triggerRef as Ref<HTMLButtonElement>)
++
++  if (asChild) {
++    return Slot<HTMLButtonElement>(
++      {
++        ...props,
++        children,
++        onClick: composeEventHandlers(onClick, () => context.setOpen(true)),
++        'aria-controls': context.contentId,
++        'aria-expanded': context.open,
++        'aria-haspopup': 'dialog',
++      },
++      ref,
++    )
++  }
+ 
+   return (
+-    <>
+-      <button type="button" onClick={() => setOpen(true)}>
+-        {triggerLabel}
+-      </button>
+-      {open &&
+-        createPortal(
+-          <div className="overlay" onClick={() => setOpen(false)}>
+-            <section
+-              aria-describedby={descriptionId}
+-              aria-labelledby={titleId}
+-              className="dialog"
+-              role="dialog"
+-              onClick={(event) => event.stopPropagation()}
+-            >
+-              <h2 id={titleId}>{title}</h2>
+-              <p id={descriptionId}>{description}</p>
+-              {children}
+-              <button type="button" onClick={() => setOpen(false)}>
+-                Close
+-              </button>
+-            </section>
+-          </div>,
+-          document.body,
+-        )}
+-    </>
++    <button
++      {...props}
++      ref={ref}
++      type={props.type ?? 'button'}
++      aria-controls={context.contentId}
++      aria-expanded={context.open}
++      aria-haspopup="dialog"
++      onClick={composeEventHandlers(onClick, () => context.setOpen(true))}
++    >
++      {children}
++    </button>
++  )
++})
++
++const DialogPortal = ({ children, container, forceMount = false }: DialogPortalProps) => {
++  const context = useDialogContext('Dialog.Portal')
++  const [mounted, setMounted] = useState(false)
++
++  useEffect(() => {
++    setMounted(true)
++  }, [])
++
++  if (!mounted) {
++    return null
++  }
++
++  return createPortal(
++    <Presence present={forceMount || context.open}>{children}</Presence>,
++    container ?? document.body,
+   )
+ }
++
++const DialogOverlay = forwardRef<HTMLDivElement, DialogOverlayProps>(function DialogOverlay(
++  { forceMount = false, onClick, ...props },
++  forwardedRef,
++) {
++  const context = useDialogContext('Dialog.Overlay')
++
++  return (
++    <Presence present={forceMount || context.open}>
++      <div
++        {...props}
++        ref={forwardedRef}
++        data-dialog-overlay=""
++        onClick={composeEventHandlers(onClick, () => context.setOpen(false))}
++      />
++    </Presence>
++  )
++})
++
++const DialogContent = forwardRef<HTMLElement, DialogContentProps>(function DialogContent(
++  { forceMount = false, onClick, onKeyDown, ...props },
++  forwardedRef,
++) {
++  const context = useDialogContext('Dialog.Content')
++  const localRef = useRef<HTMLElement | null>(null)
++  const stackTokenRef = useRef<symbol | null>(null)
++  const restoreFocusRef = useRef<HTMLElement | null>(null)
++
++  useImperativeHandle(forwardedRef, () => localRef.current as HTMLElement, [])
++
++  useEffect(() => {
++    if (!context.open || !localRef.current) {
++      return
++    }
++
++    const content = localRef.current
++    restoreFocusRef.current =
++      document.activeElement instanceof HTMLElement ? document.activeElement : context.triggerRef.current
++    stackTokenRef.current = pushDialogToStack(content)
++    focusFirstElement(content)
++
++    const handleFocusIn = (event: FocusEvent) => {
++      if (!stackTokenRef.current || !isTopDialog(stackTokenRef.current)) {
++        return
++      }
++
++      const target = event.target
++      if (target instanceof Node && !content.contains(target)) {
++        focusFirstElement(content)
++      }
++    }
++
++    document.addEventListener('focusin', handleFocusIn)
++
++    return () => {
++      document.removeEventListener('focusin', handleFocusIn)
++      if (stackTokenRef.current) {
++        removeDialogFromStack(stackTokenRef.current)
++        stackTokenRef.current = null
++      }
++
++      const focusTarget = restoreFocusRef.current
++      if (focusTarget?.isConnected) {
++        focusTarget.focus()
++      } else if (context.triggerRef.current?.isConnected) {
++        context.triggerRef.current.focus()
++      }
++    }
++  }, [context.open, context.triggerRef])
++
++  return (
++    <Presence present={forceMount || context.open}>
++      <section
++        {...props}
++        id={context.contentId}
++        ref={composeRefs(localRef, forwardedRef)}
++        aria-describedby={context.descriptionId}
++        aria-labelledby={context.titleId}
++        aria-modal={context.modal ? 'true' : undefined}
++        data-dialog-content=""
++        role="dialog"
++        onClick={(event) => {
++          event.stopPropagation()
++          onClick?.(event)
++        }}
++        onKeyDown={composeEventHandlers(onKeyDown, (event) => {
++          if (!stackTokenRef.current || !isTopDialog(stackTokenRef.current)) {
++            return
++          }
++
++          if (event.key === 'Escape') {
++            event.preventDefault()
++            context.setOpen(false)
++            return
++          }
++
++          trapFocus(localRef.current!, event.nativeEvent)
++        })}
++      />
++    </Presence>
++  )
++})
++
++const DialogTitle = forwardRef<HTMLHeadingElement, ComponentPropsWithoutRef<'h2'>>(function DialogTitle(
++  props,
++  forwardedRef,
++) {
++  const context = useDialogContext('Dialog.Title')
++  return <h2 {...props} ref={forwardedRef} id={context.titleId} />
++})
++
++const DialogDescription = forwardRef<HTMLParagraphElement, ComponentPropsWithoutRef<'p'>>(
++  function DialogDescription(props, forwardedRef) {
++    const context = useDialogContext('Dialog.Description')
++    return <p {...props} ref={forwardedRef} id={context.descriptionId} />
++  },
++)
++
++const DialogClose = forwardRef<HTMLButtonElement, PolymorphicButtonProps>(function DialogClose(
++  { asChild = false, children, onClick, ...props },
++  forwardedRef,
++) {
++  const context = useDialogContext('Dialog.Close')
++
++  if (asChild) {
++    return Slot<HTMLButtonElement>(
++      {
++        ...props,
++        children,
++        onClick: composeEventHandlers(onClick, () => context.setOpen(false)),
++      },
++      forwardedRef,
++    )
++  }
++
++  return (
++    <button
++      {...props}
++      ref={forwardedRef}
++      type={props.type ?? 'button'}
++      onClick={composeEventHandlers(onClick, () => context.setOpen(false))}
++    >
++      {children}
++    </button>
++  )
++})
++
++export const DialogPrimitive = {
++  Root: DialogRoot,
++  Trigger: DialogTrigger,
++  Portal: DialogPortal,
++  Overlay: DialogOverlay,
++  Content: DialogContent,
++  Title: DialogTitle,
++  Description: DialogDescription,
++  Close: DialogClose,
++}
++
++export function Dialog({ children, description, title, triggerLabel }: DialogProps) {
++  return (
++    <DialogPrimitive.Root>
++      <DialogPrimitive.Trigger>{triggerLabel}</DialogPrimitive.Trigger>
++      <DialogPrimitive.Portal>
++        <DialogPrimitive.Overlay className="overlay">
++          <DialogPrimitive.Content className="dialog">
++            <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
++            <DialogPrimitive.Description>{description}</DialogPrimitive.Description>
++            {children}
++            <DialogPrimitive.Close>Close</DialogPrimitive.Close>
++          </DialogPrimitive.Content>
++        </DialogPrimitive.Overlay>
++      </DialogPrimitive.Portal>
++    </DialogPrimitive.Root>
++  )
++}
++
++export const DialogRootComponent = DialogRoot
++export const DialogTriggerComponent = DialogTrigger
++export const DialogPortalComponent = DialogPortal
++export const DialogOverlayComponent = DialogOverlay
++export const DialogContentComponent = DialogContent
++export const DialogTitleComponent = DialogTitle
++export const DialogDescriptionComponent = DialogDescription
++export const DialogCloseComponent = DialogClose
+diff --git a/src/dialogFocus.ts b/src/dialogFocus.ts
+new file mode 100644
+index 0000000..be0c5fc
+--- /dev/null
++++ b/src/dialogFocus.ts
+@@ -0,0 +1,98 @@
++const FOCUSABLE_SELECTOR = [
++  'a[href]',
++  'area[href]',
++  'button:not([disabled])',
++  'input:not([disabled]):not([type="hidden"])',
++  'select:not([disabled])',
++  'textarea:not([disabled])',
++  'iframe',
++  'object',
++  'embed',
++  '[contenteditable]',
++  '[tabindex]:not([tabindex="-1"])',
++].join(',')
++
++type DialogEntry = {
++  content: HTMLElement
++  token: symbol
++}
++
++const dialogStack: DialogEntry[] = []
++
++function isVisible(element: HTMLElement) {
++  const style = window.getComputedStyle(element)
++  return style.display !== 'none' && style.visibility !== 'hidden'
++}
++
++export function getFocusableElements(container: HTMLElement) {
++  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
++    (element) => isVisible(element) && !element.hasAttribute('aria-hidden'),
++  )
++}
++
++export function focusFirstElement(container: HTMLElement) {
++  const preferred = container.querySelector<HTMLElement>('[data-autofocus]')
++  if (preferred && !preferred.hasAttribute('disabled')) {
++    preferred.focus()
++    return true
++  }
++
++  const elements = getFocusableElements(container)
++  if (elements.length > 0) {
++    elements[0].focus()
++    return true
++  }
++
++  if (!container.hasAttribute('tabindex')) {
++    container.setAttribute('tabindex', '-1')
++  }
++  container.focus()
++  return false
++}
++
++export function trapFocus(container: HTMLElement, event: KeyboardEvent) {
++  if (event.key !== 'Tab') {
++    return
++  }
++
++  const elements = getFocusableElements(container)
++  if (elements.length === 0) {
++    event.preventDefault()
++    container.focus()
++    return
++  }
++
++  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
++  const currentIndex = activeElement ? elements.indexOf(activeElement) : -1
++  const lastIndex = elements.length - 1
++
++  if (event.shiftKey) {
++    if (currentIndex <= 0) {
++      event.preventDefault()
++      elements[lastIndex].focus()
++    }
++    return
++  }
++
++  if (currentIndex === lastIndex) {
++    event.preventDefault()
++    elements[0].focus()
++  }
++}
++
++export function pushDialogToStack(content: HTMLElement) {
++  const token = Symbol('dialog')
++  dialogStack.push({ content, token })
++  return token
++}
++
++export function removeDialogFromStack(token: symbol) {
++  const index = dialogStack.findIndex((entry) => entry.token === token)
++  if (index >= 0) {
++    dialogStack.splice(index, 1)
++  }
++}
++
++export function isTopDialog(token: symbol) {
++  return dialogStack.at(-1)?.token === token
++}
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..0971c5c
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,12 @@
++export {
++  Dialog,
++  DialogCloseComponent as DialogClose,
++  DialogContentComponent as DialogContent,
++  DialogDescriptionComponent as DialogDescription,
++  DialogOverlayComponent as DialogOverlay,
++  DialogPortalComponent as DialogPortal,
++  DialogPrimitive,
++  DialogRootComponent as DialogRoot,
++  DialogTitleComponent as DialogTitle,
++  DialogTriggerComponent as DialogTrigger,
++} from './Dialog'
+diff --git a/test-results/.last-run.json b/test-results/.last-run.json
+new file mode 100644
+index 0000000..8f13d62
+--- /dev/null
++++ b/test-results/.last-run.json
+@@ -0,0 +1,7 @@
++{
++  "status": "failed",
++  "failedTests": [
++    "c88648056942dba76546-55d04d572535538386ef",
++    "c88648056942dba76546-39159a5b57479d4f6532"
++  ]
++}
+\ No newline at end of file
+diff --git a/test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus/error-context.md b/test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus/error-context.md
+new file mode 100644
+index 0000000..cc0dd35
+--- /dev/null
++++ b/test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus/error-context.md
+@@ -0,0 +1,72 @@
++# Instructions
++
++- Following Playwright test failed.
++- Explain why, be concise, respect Playwright best practices.
++- Provide a snippet of code with the fix, if possible.
++
++# Test info
++
++- Name: dialog.spec.ts >> only the top nested dialog handles Escape and restores local focus
++- Location: tests/dialog.spec.ts:24:1
++
++# Error details
++
++```
++Test timeout of 30000ms exceeded.
++```
++
++```
++Error: locator.click: Test timeout of 30000ms exceeded.
++Call log:
++  - waiting for getByRole('button', { name: 'Edit profile' })
++
++```
++
++# Test source
++
++```ts
++  1  | import { expect, test } from '@playwright/test'
++  2  | 
++  3  | const appUrl = new URL('../dist/index.html', import.meta.url).href
++  4  | 
++  5  | test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
++  6  |   await page.goto(appUrl)
++  7  |   const trigger = page.getByRole('button', { name: 'Edit profile' })
++  8  |   await trigger.click()
++  9  | 
++  10 |   const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  11 |   await expect(dialog).toBeVisible()
++  12 |   await expect(dialog.getByLabel('Name')).toBeFocused()
++  13 | 
++  14 |   await page.keyboard.press('Shift+Tab')
++  15 |   await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
++  16 |   await page.keyboard.press('Tab')
++  17 |   await expect(dialog.getByLabel('Name')).toBeFocused()
++  18 | 
++  19 |   await page.keyboard.press('Escape')
++  20 |   await expect(dialog).toBeHidden()
++  21 |   await expect(trigger).toBeFocused()
++  22 | })
++  23 | 
++  24 | test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
++  25 |   await page.goto(appUrl)
++> 26 |   await page.getByRole('button', { name: 'Edit profile' }).click()
++     |                                                            ^ Error: locator.click: Test timeout of 30000ms exceeded.
++  27 |   const parent = page.getByRole('dialog', { name: 'Edit profile' })
++  28 |   const nestedTrigger = parent.getByRole('button', { name: 'Open permissions' })
++  29 |   await nestedTrigger.click()
++  30 | 
++  31 |   const child = page.getByRole('dialog', { name: 'Permissions' })
++  32 |   await expect(child).toBeVisible()
++  33 |   await expect(child.getByRole('button', { name: 'Save permissions' })).toBeFocused()
++  34 | 
++  35 |   await page.keyboard.press('Escape')
++  36 |   await expect(child).toBeHidden()
++  37 |   await expect(parent).toBeVisible()
++  38 |   await expect(nestedTrigger).toBeFocused()
++  39 | 
++  40 |   await page.keyboard.press('Escape')
++  41 |   await expect(parent).toBeHidden()
++  42 | })
++  43 | 
++```
+\ No newline at end of file
+diff --git a/test-results/dialog-traps-focus-closes--e1c28-pe-and-restores-the-trigger/error-context.md b/test-results/dialog-traps-focus-closes--e1c28-pe-and-restores-the-trigger/error-context.md
+new file mode 100644
+index 0000000..457be7c
+--- /dev/null
++++ b/test-results/dialog-traps-focus-closes--e1c28-pe-and-restores-the-trigger/error-context.md
+@@ -0,0 +1,72 @@
++# Instructions
++
++- Following Playwright test failed.
++- Explain why, be concise, respect Playwright best practices.
++- Provide a snippet of code with the fix, if possible.
++
++# Test info
++
++- Name: dialog.spec.ts >> traps focus, closes with Escape, and restores the trigger
++- Location: tests/dialog.spec.ts:5:1
++
++# Error details
++
++```
++Test timeout of 30000ms exceeded.
++```
++
++```
++Error: locator.click: Test timeout of 30000ms exceeded.
++Call log:
++  - waiting for getByRole('button', { name: 'Edit profile' })
++
++```
++
++# Test source
++
++```ts
++  1  | import { expect, test } from '@playwright/test'
++  2  | 
++  3  | const appUrl = new URL('../dist/index.html', import.meta.url).href
++  4  | 
++  5  | test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
++  6  |   await page.goto(appUrl)
++  7  |   const trigger = page.getByRole('button', { name: 'Edit profile' })
++> 8  |   await trigger.click()
++     |                 ^ Error: locator.click: Test timeout of 30000ms exceeded.
++  9  | 
++  10 |   const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  11 |   await expect(dialog).toBeVisible()
++  12 |   await expect(dialog.getByLabel('Name')).toBeFocused()
++  13 | 
++  14 |   await page.keyboard.press('Shift+Tab')
++  15 |   await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
++  16 |   await page.keyboard.press('Tab')
++  17 |   await expect(dialog.getByLabel('Name')).toBeFocused()
++  18 | 
++  19 |   await page.keyboard.press('Escape')
++  20 |   await expect(dialog).toBeHidden()
++  21 |   await expect(trigger).toBeFocused()
++  22 | })
++  23 | 
++  24 | test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
++  25 |   await page.goto(appUrl)
++  26 |   await page.getByRole('button', { name: 'Edit profile' }).click()
++  27 |   const parent = page.getByRole('dialog', { name: 'Edit profile' })
++  28 |   const nestedTrigger = parent.getByRole('button', { name: 'Open permissions' })
++  29 |   await nestedTrigger.click()
++  30 | 
++  31 |   const child = page.getByRole('dialog', { name: 'Permissions' })
++  32 |   await expect(child).toBeVisible()
++  33 |   await expect(child.getByRole('button', { name: 'Save permissions' })).toBeFocused()
++  34 | 
++  35 |   await page.keyboard.press('Escape')
++  36 |   await expect(child).toBeHidden()
++  37 |   await expect(parent).toBeVisible()
++  38 |   await expect(nestedTrigger).toBeFocused()
++  39 | 
++  40 |   await page.keyboard.press('Escape')
++  41 |   await expect(parent).toBeHidden()
++  42 | })
++  43 | 
++```
+\ No newline at end of file
+diff --git a/tests/dialog.spec.ts b/tests/dialog.spec.ts
+index 5beb5a4..eb0a3b3 100644
+--- a/tests/dialog.spec.ts
++++ b/tests/dialog.spec.ts
+@@ -1,7 +1,9 @@
+ import { expect, test } from '@playwright/test'
+ 
++const appUrl = new URL('../dist/index.html', import.meta.url).href
++
+ test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
+-  await page.goto('/')
++  await page.goto(appUrl)
+   const trigger = page.getByRole('button', { name: 'Edit profile' })
+   await trigger.click()
+ 
+@@ -20,7 +22,7 @@ test('traps focus, closes with Escape, and restores the trigger', async ({ page
+ })
+ 
+ test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
+-  await page.goto('/')
++  await page.goto(appUrl)
+   await page.getByRole('button', { name: 'Edit profile' }).click()
+   const parent = page.getByRole('dialog', { name: 'Edit profile' })
+   const nestedTrigger = parent.getByRole('button', { name: 'Open permissions' })
+diff --git a/vite.config.ts b/vite.config.ts
+index 80316f3..d919713 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,4 +1,7 @@
+ import react from '@vitejs/plugin-react'
+ import { defineConfig } from 'vite'
+ 
+-export default defineConfig({ plugins: [react()] })
++export default defineConfig({
++  base: './',
++  plugins: [react()],
++})
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 101 packages, and audited 102 packages in 2s
+
+18 packages are looking for funding
+  run `npm fund` for details
+
+1 high severity vulnerability
+
+To address all issues, run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+
+COMMAND npx playwright install chromium EXIT 0
+
+COMMAND npm run check EXIT 1
+
+> check
+> npm run typecheck && npm run test:ssr && npm run test:browser && npm run build
+
+
+> typecheck
+> tsc --noEmit
+
+
+> test:ssr
+> vitest run src/Dialog.ssr.test.tsx
+
+
+ RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  11:52:45
+   Duration  107ms (transform 28ms, setup 0ms, import 46ms, tests 4ms, environment 0ms)
+
+
+> test:browser
+> npm run build && playwright test
+
+
+> build
+> vite build
+
+vite v7.1.3 building for production...
+transforming...
+✓ 32 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-B7E80jbC.css    0.20 kB │ gzip:  0.16 kB
+dist/assets/index-COwAV1gV.js   193.15 kB │ gzip: 60.98 kB
+✓ built in 268ms
+
+Running 2 tests using 1 worker
+TT
+
+  1) tests/dialog.spec.ts:5:1 › traps focus, closes with Escape, and restores the trigger ──────────
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Edit profile' })
+
+
+       6 |   await page.goto(appUrl)
+       7 |   const trigger = page.getByRole('button', { name: 'Edit profile' })
+    >  8 |   await trigger.click()
+         |                 ^
+       9 |
+      10 |   const dialog = page.getByRole('dialog', { name: 'Edit profile' })
+      11 |   await expect(dialog).toBeVisible()
+        at /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix/tests/dialog.spec.ts:8:17
+
+    Error Context: test-results/dialog-traps-focus-closes--e1c28-pe-and-restores-the-trigger/error-context.md
+
+  2) tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Edit profile' })
+
+
+      24 | test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
+      25 |   await page.goto(appUrl)
+    > 26 |   await page.getByRole('button', { name: 'Edit profile' }).click()
+         |                                                            ^
+      27 |   const parent = page.getByRole('dialog', { name: 'Edit profile' })
+      28 |   const nestedTrigger = parent.getByRole('button', { name: 'Open permissions' })
+      29 |   await nestedTrigger.click()
+        at /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-wxcex7ix/tests/dialog.spec.ts:26:60
+
+    Error Context: test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus/error-context.md
+
+  2 failed
+    tests/dialog.spec.ts:5:1 › traps focus, closes with Escape, and restores the trigger ───────────
+    tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus ─
+(node:8315) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9865) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)

@@ -1,0 +1,530 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 按平台、项目能力、局部组合、抽象顺序选择 |
+| `module_boundaries` | 按文件类型机械分组 | 给出 feature 建议但内部边界含糊 | 在项目、功能和实现单元等适用尺度上，依据变化、所有权、公开 API 和依赖方向设计并知道何时停止拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `security_trust` | 信任客户端或把验证等同安全 | 泛泛提醒安全 | 追踪不可信数据到 sink，在服务端执行授权，保护秘密并给出匹配威胁的验证 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证或泛泛而谈 | 建议运行工具 | 验证对应真实风险，并说明未验证部分 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+
+
+CASE
+id: reorder-motion
+request: 为支持拖拽排序的卡片列表设计重排动画。请先判断无动画、CSS transition、 View Transitions API、FLIP 或动画库中哪个层级适合，再描述实现边界和验证方案。 产品要求支持快速连续拖拽、滚动容器和 prefers-reduced-motion。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "correctness_boundary", "user_experience", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+结论：这类“支持快速连续拖拽 + 滚动容器 + `prefers-reduced-motion`”的卡片重排，合适层级是 **FLIP**，默认不引入动画库。当前仓库里除了 [.frontend-architect/SKILL.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-reorder-motion-candidate-482mzpf7/.frontend-architect/SKILL.md:1) 和 `.git` 外没有现有前端代码可对接，所以这里给的是落地决策，而不是伪造仓内实现细节。
+
+不用无动画，是因为拖拽排序会频繁改变卡片空间位置，缺少空间连续性时用户容易丢失“我刚刚移动的是哪张卡”。不用纯 CSS transition，是因为它只适合起止状态稳定、无需测量几何关系的场景；列表重排在快速连续拖拽和滚动容器里，单靠 `transition` 很难正确处理插入位变化和中断。暂不选 View Transitions API，因为它更适合页面级或 DOM 快照式切换，这里需要的是高频、可中断、与手势强耦合的列表几何过渡。动画库也不是第一选择；除非现有项目已经依赖 Framer Motion 一类库，否则先用轻量 FLIP 更可控，复杂度也更低。
+
+实现边界建议这样定：
+- 只给“非正在拖拽的受影响卡片”做重排动画，拖拽中的卡片由拖拽层直接跟手，不和重排动画共管。
+- 在每次排序提交时做一次 `First/Last` 测量，基于卡片相对滚动容器的位置算 delta，避免页面滚动导致位移错误。
+- 真实 DOM 先落到最终顺序，再做 `Invert/Play`，动画状态不能成为第二份排序真相。
+- 快速连续拖拽时，新一轮排序必须取消上一轮未完成动画，并以当前视觉位置为起点重算，不能排队播放。
+- 只动画 `transform`，避免对 `top/left/height` 做逐帧布局。
+- `prefers-reduced-motion: reduce` 下直接关闭 FLIP，保留即时重排；如果产品坚持保留反馈，也只允许极短淡入淡出，不做位移动画。
+- 边界外：不在首版里处理跨列表拖拽、虚拟列表、缩放动画、卡片尺寸同步变化；这些会显著抬高测量和中断复杂度。
+
+验证方案应该覆盖行为而不是只看“动起来了”：
+- 交互验证：连续快速拖拽同一张卡、多张卡来回拖、拖拽中滚动容器、滚动后继续拖，确认没有跳帧、回弹错误或错位。
+- 中断验证：动画未结束时再次触发排序，确认旧动画被取消，新动画从当前几何状态平滑接续。
+- 可访问性验证：开启 `prefers-reduced-motion` 后重排立即生效；键盘排序路径如果产品支持，也要保持焦点不丢失。
+- 性能验证：在代表性中端设备上录制 Performance，重点看拖拽期间是否出现明显长任务、强制同步布局和掉帧；目标是动画阶段主要消耗在 compositor，而不是 layout/paint。
+- 回归验证：空列表、单项列表、超长列表、卡片高度不一致、容器有 padding/overflow 的情况都要过一遍。
+
+如果你要我继续落地，我下一步会先补一个最小列表实现，并把 FLIP 重排封装成一个只负责“测量 + 取消 + 播放”的局部 hook/utility。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: server-client-catalog
+request: 一个 Next.js App Router 商品页目前整页使用 use client，在 useEffect 中请求商品详情和 推荐商品。页面需要 SEO、按用户货币显示价格、交互式规格选择和加入购物车；Shopify 私有凭据只能存在服务端。请提出渐进式重构方案，明确 server/client 组件、序列化、 Suspense、缓存作用域与失效、错误恢复和验证。不能为了使用 Server Components 重写 无关页面。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "runtime_delivery", "security_trust", "correctness_boundary", "user_experience", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+基于当前工作区，我只发现了 `.frontend-architect` 和 `.git`，没有实际 Next.js 商品页代码可核对，所以不能声称“按仓库现状已验证某个文件结构”。下面是按你给定约束制定的渐进式重构方案，范围只落在商品详情路由及其直属依赖，不扩散到无关页面。
+
+核心决策是：把“首屏可索引的商品内容”和“需要浏览器交互的购买面板”拆开，而不是整页继续 `use client`。商品页路由改成 Server Component `page.tsx`，负责服务端取商品详情、生成 SEO 元数据、决定当前用户货币上下文；规格选择和加入购物车保留为一个小的 Client Component 岛。这样能拿回 SEO、避免首屏 `useEffect` 瀑布流，同时不把整个站点迁移成 RSC-first。
+
+建议按 4 个阶段做，保证每一步都可回滚：
+
+1. 先抽服务端数据边界，不改无关页面  
+   新建 `server-only` 的 Shopify 访问层，例如 `lib/shopify/server/*`，把私有凭据和 Shopify 调用都锁在这里。  
+   只暴露给页面一个序列化后的 DTO，例如：
+   - `ProductPageData`: `id`, `handle`, `title`, `description`, `media`, `options`, `variants`, `seo`, `availability`
+   - `MoneyView`: `amount`, `currencyCode`, `formatted`
+   不要把原始 Shopify 对象、凭据、Admin/GraphQL 响应整包传给客户端。  
+   这里顺手做运行时校验，缺字段或结构异常时在服务端拦截，不把脏数据传进 React 树。
+
+2. 再把商品页改成“Server Shell + Client Island”  
+   `app/products/[handle]/page.tsx` 负责：
+   - 服务端获取商品核心数据
+   - `generateMetadata` 生成标题、描述、OG，SEO 不再依赖客户端请求
+   - 渲染商品媒体、文案、结构化内容
+   - 把购买所需最小数据传给 `ProductPurchasePanel.client.tsx`
+   
+   `ProductPurchasePanel` 只负责：
+   - 规格选择
+   - 数量选择
+   - 加入购物车按钮
+   - 乐观交互和按钮态
+   
+   客户端状态只保留“用户当前选中的规格/数量/提交状态”，不要复制一份完整商品详情到客户端 store。
+
+3. 把价格和推荐拆成独立异步边界，用 `Suspense` 控制首屏  
+   不建议让推荐商品继续阻塞商品详情首屏。拆成：
+   - `ProductCore`：主商品信息，首屏必须有
+   - `ProductPriceServer`：按用户货币解析价格，可作为嵌套 Server Component
+   - `RecommendedProductsServer`：推荐商品，放在单独 `Suspense`
+   
+   推荐结构：
+   - 页面主内容先返回，推荐区用 skeleton fallback
+   - 如果“按用户货币”需要读 cookie / session / header，那么只让价格子树变成 request-time dynamic，别把整个页面都变成客户端渲染
+   - 推荐失败不应拖垮整页，降级成“暂时无法加载推荐”
+
+4. 最后把加入购物车改成 Server Action 或 Route Handler  
+   `addToCart` 必须在服务端执行，因为它依赖私有凭据/受信任购物车逻辑。客户端只提交：
+   - `productId`
+   - `variantId`
+   - `quantity`
+   
+   服务端再次校验：
+   - variant 是否属于该商品
+   - quantity 是否在允许范围
+   - 当前价格/库存是否仍有效  
+   返回一个窄结果给客户端：成功、购物车摘要、或可展示错误文案。不要信任客户端传来的价格、币种、库存状态。
+
+**Server / Client 边界**
+- Server Component：
+  - `page.tsx`
+  - `generateMetadata`
+  - `ProductPriceServer`
+  - `RecommendedProductsServer`
+  - Shopify data layer
+  - `addToCart` action / route
+- Client Component：
+  - `ProductPurchasePanel`
+  - `VariantPicker`
+  - `AddToCartButton`
+  - 必要时的局部错误重试按钮
+
+**序列化约束**
+- 只跨边界传 plain JSON 可序列化数据
+- `Date` 转 ISO string
+- 金额传 `amount + currencyCode + formatted`，避免客户端自己猜
+- 不传 Shopify SDK 实例、GraphQL client、Error class、自定义类实例
+- 不把“用户货币”做成全局可变真相；服务端决定首屏货币，客户端只消费结果或显式触发刷新
+
+**缓存作用域与失效**
+- 商品核心详情：公共缓存  
+  键建议按 `product:{handle}` 或 `product:{id}`，用 tag 失效；Shopify 商品更新时由 webhook 触发 `revalidateTag`
+- 推荐商品：公共缓存，但 TTL 更短，或独立 tag `recommendations:{productId}`
+- 用户货币解析：请求级，不进公共缓存  
+  如果价格真的是“用户专属”或依赖 cookie/session，不要进 shared cache
+- 按货币展示的价格：
+  - 如果只是公开市场价，可按 `product:{id}:currency:{code}` 缓存
+  - 如果含客户组/会员价，不共享缓存，按请求现算
+- 购物车：用户/会话级缓存，mutation 后由 `revalidateTag('cart:'+cartId)` 或 `revalidatePath` 驱动失效
+
+**错误恢复**
+- 商品不存在：服务端 `notFound()`
+- 商品主数据失败：商品路由级 `error.tsx`，提供返回列表/重试
+- 推荐失败：局部降级，不影响购买主流程
+- 加入购物车失败：在购买面板内显示可恢复错误，保留已选规格和数量
+- 重试策略：
+  - 首屏主商品不做浏览器端自动重试
+  - 推荐可手动 `router.refresh()`
+  - 加购失败只重试 mutation，不重新拉整页
+
+**验证方案**
+- 运行时校验：
+  - Shopify 响应 schema 校验
+  - Server Action 入参校验
+- 集成验证：
+  - 商品页 HTML 首响应包含标题、描述、价格文案，不依赖 hydration 才可见
+  - 查看客户端 bundle，确认 Shopify 私有凭据和 server-only 模块未进入浏览器图谱
+  - 规格切换只更新购买面板，不触发整页重取
+  - 加购后购物车状态正确失效并刷新
+- 回归重点：
+  - crawler 拿到 metadata 和主商品内容
+  - 货币切换/识别不会把 A 用户价格缓存给 B 用户
+  - 推荐区失败不影响下单
+  - hydration 前后价格字符串一致，避免 mismatch
+
+不建议做的事也很明确：
+- 不要为了一个规格选择器把整页保留成 `use client`
+- 不要把 Shopify 私有凭据移到浏览器或公开 env
+- 不要在客户端复制一份“商品详情缓存”去和服务端真相长期对账
+- 不要因为引入 Server Components 去重写其他非商品页路由
+
+如果你接下来给出实际仓库里的商品页文件，我可以把这套方案收敛成具体到文件级的迁移步骤和组件切分图。  
+参考：Next.js `generateMetadata`（2026-03-25 更新）https://nextjs.org/docs/app/api-reference/functions/generate-metadata ，Next.js App Router 缓存与失效（2026-03-03 更新）https://nextjs.org/docs/app/guides/caching-without-cache-components 。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: unsafe-rich-text
+request: 请安全评审下面的 React 富文本组件。后端声称已经“过滤过输入”，正文来自用户， 其中允许有限 HTML 和链接。请给出最小、可维护的修复方向和验证方案，说明 CSP 在 其中的角色；不要通过去掉全部富文本来回避产品要求。
+artifact: export function ArticleBody({ html }: { html: string }) {
+  return <article dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "security_trust", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+**发现**
+
+1. 严重: `dangerouslySetInnerHTML` 直接把用户正文写入 DOM，当前组件对信任边界没有任何本地约束。后端“过滤过输入”不能作为这里安全的充分条件，因为一旦后端规则回退、遗漏某类属性或 URL scheme、或另一条写入链路绕过过滤，这里就是直接执行点。受影响位置: 提供的组件，第 2 行。
+
+2. 严重: 允许“有限 HTML 和链接”时，风险不只是不安全标签，还包括危险属性和 URL。即使后端移除了 `<script>`，仍需明确拦截 `on*` 事件属性、`javascript:`/`data:` URL、`srcdoc`、部分 SVG/MathML 向量，以及带副作用的嵌入标签。当前组件没有任何 allowlist 策略。
+
+3. 中等: 现在的安全策略不可验证。组件没有把“允许哪些标签/属性/协议”固化为前端可测试契约，后续任何人都只能继续依赖口头约定，维护成本高且容易漂移。
+
+**最小、可维护的修复方向**
+
+不要去掉富文本；把“消毒”收敛到一个清晰边界，在渲染前做一次前端 allowlist 清洗，然后再进入 `dangerouslySetInnerHTML`。
+
+推荐最小方案:
+
+1. 引入一个成熟的 HTML sanitizer，例如 `dompurify`。
+2. 在一个很小的封装里固定策略，而不是把配置散落在页面里。
+3. 明确只允许产品需要的标签、属性、协议。
+4. 对链接额外收口:
+   - 仅允许 `http:`, `https:`, `mailto:`，如果产品确实需要再单独加入 `tel:`
+   - 移除所有 `on*` 属性
+   - 如允许 `target="_blank"`，统一补 `rel="noopener noreferrer"`
+
+示意方向:
+
+```tsx
+import DOMPurify from 'dompurify'
+
+const ARTICLE_HTML_POLICY = {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'a'],
+  ALLOWED_ATTR: ['href', 'title', 'target', 'rel'],
+  ALLOWED_URI_REGEXP: /^(?:(https?|mailto|tel):|\/)/i,
+}
+
+export function ArticleBody({ html }: { html: string }) {
+  const sanitizedHtml = DOMPurify.sanitize(html, ARTICLE_HTML_POLICY)
+  return <article dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
+}
+```
+
+如果这是 React 客户端组件，以上方向已经比“只信后端”安全得多，而且改动最小。更进一步但仍可维护的做法，是把它抽成 `sanitizeRichText(html)` 或 `SafeRichText`，让所有富文本入口共用一套策略。
+
+**为什么这比“只靠后端过滤”更合适**
+
+这是典型的双边防线问题。后端过滤负责持久化和跨客户端一致性；前端 sanitizer 负责在最终 DOM sink 前再次约束输出上下文。这里的 sink 是 HTML，不是普通文本，所以必须按 HTML 上下文处理，不能把“输入已经过滤”当作 sink 安全的替代品。
+
+**CSP 的角色**
+
+CSP 是防御加固，不是主修复。
+
+它的价值:
+- 降低某些 XSS 成功率
+- 阻止内联脚本、限制脚本来源
+- 帮你更快发现策略漏口
+
+但它不能替代 sanitizer，原因是:
+- 你仍然在把不可信 HTML 注入 DOM
+- CSP 不会自动替你定义允许哪些标签、属性、链接协议
+- 某些危险行为是导航、资源加载、钓鱼式链接，不一定依赖脚本执行
+
+这里建议的 CSP 方向:
+- 禁止内联脚本，避免 `unsafe-inline`
+- 收紧 `script-src`
+- 视浏览器支持情况逐步引入 Trusted Types，把危险 DOM sink 收口到受控策略
+- 开启报告模式观察违规，再切强制
+
+**验证方案**
+
+最小验证集应直接覆盖可被利用的输入，而不是只测“正常文章能显示”:
+
+1. 单元/组件测试:
+   - `<script>alert(1)</script>` 被移除
+   - `<img src=x onerror=alert(1)>` 的事件属性被移除
+   - `<a href="javascript:alert(1)">x</a>` 的危险链接被移除或失效
+   - 合法标签如 `<p><strong>ok</strong></p>` 保留
+   - 合法链接 `https://example.com` 保留
+   - `target="_blank"` 时自动带上 `rel="noopener noreferrer"`
+
+2. 手工对抗用例:
+   - SVG/MathML 载荷
+   - 编码混淆的 `javascript:` 链接
+   - 超长富文本和畸形 HTML，确认不会把页面打坏
+
+3. 部署验证:
+   - 上线前先开 CSP report-only，观察是否还有危险 sink 或意外内联脚本依赖
+   - 如果后续引入 Trusted Types，确认该组件是通过受控策略进入 sink，而不是绕过
+
+基于当前工作区事实，我没有发现现有项目代码、现成 sanitizer 封装或 CSP 配置可复用；仓库里只有题目说明和 `.frontend-architect` 参考文件，所以以上结论仅基于你给的组件片段。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: risky-booking-rollout
+request: 团队准备替换高流量预订确认页的数据层。旧接口和新接口将在两周内并存，失败会导致 用户重复预订。请设计可渐进交付的前端改造：说明兼容边界、灰度、幂等与重复提交、 错误恢复、需要的生产信号、隐私控制和回滚条件。不要假设一次全量发布成功。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "runtime_delivery", "security_trust", "operability", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+当前 workspace 里只有 `.frontend-architect` 指南，没有实际应用代码或现有接口定义，所以我不能把方案绑定到具体模块名。下面给的是可直接落地到高流量预订确认页的前端迁移设计，重点是把“重复预订”风险压到最低，而不是追求一次切流成功。
+
+**核心决策**
+
+1. 把旧接口和新接口都收敛到一个前端兼容层，再让页面只消费一个稳定的领域模型。
+2. 预订提交必须始终是“单写路径”：一次用户尝试只能命中一个后端版本，绝不能前端同时调用旧、新两个下单接口。
+3. 灰度单位用“会话/用户粘性分流”，不是按单次点击随机分流；同一预订流程内版本必须固定。
+4. 没有服务端幂等键时，不应把新接口放到真实下单流量上；前端只能减轻重复点击，不能从根上保证不重复创建订单。
+
+**兼容边界**
+
+建议先加一个独立的数据访问层，例如 `BookingConfirmationGateway`，对页面暴露稳定契约：
+
+- `loadConfirmationContext() -> ConfirmationViewModel`
+- `submitBooking(input, attemptId) -> SubmitResult`
+- `resolveAttempt(attemptId) -> AttemptStatus`
+
+这个兼容层负责：
+
+- 把旧、新接口响应都归一成同一个 `ConfirmationViewModel`
+- 归一错误类型，而不是把 HTTP/后端错误码直接泄漏给页面
+- 归一“未知结果”状态，例如超时、断网、502、客户端中断
+- 屏蔽接口版本差异，避免组件里出现 `if apiVersion === 'legacy'`
+
+页面状态建议最少包含这些互斥状态：
+
+- `ready`
+- `submitting`
+- `submitted`
+- `submit_failed_retryable`
+- `submit_failed_terminal`
+- `submit_unknown_resolving`
+
+`submit_unknown_resolving` 很关键。它表示“用户点了提交，但前端暂时不能确认是否成功”，此时不能直接放开再次下单。
+
+**渐进交付与灰度**
+
+按阶段上线，不做一次全量切换：
+
+1. 第 0 步：先上线兼容层，不改业务行为  
+   旧接口仍为唯一真实来源，前端完成模型归一、状态机、遥测埋点、attemptId 生成。
+
+2. 第 1 步：读路径 shadow compare  
+   页面继续使用旧接口结果渲染；后台并行拉新接口做比对，但新接口结果不参与用户决策。  
+   只记录：
+   - 字段缺失
+   - 关键值不一致
+   - 新接口耗时/错误率
+
+3. 第 2 步：小流量真实读切换  
+   先把“加载确认页数据”切到新接口，提交仍走旧接口。  
+   这样先验证读模型兼容性，不碰重复预订风险最高的写路径。
+
+4. 第 3 步：提交路径小流量切换  
+   只在确认满足以下条件后切：
+   - 服务端支持幂等键
+   - 前端有未知结果恢复机制
+   - 已有 kill switch
+   - 已建立告警与人工值守
+
+5. 第 4 步：逐步扩容  
+   建议按 `1% -> 5% -> 25% -> 50% -> 100%`，每档至少观察一个完整业务周期。  
+   分流要“粘住”到用户或会话，避免刷新后版本漂移。
+
+灰度控制建议拆成两个独立开关：
+
+- `confirmation_read_version`
+- `confirmation_submit_version`
+
+这样读、写可以独立回滚。
+
+**幂等与重复提交**
+
+前端要做两层保护，但要明确：真正的幂等必须由服务端保证。
+
+前端层：
+
+- 首次进入确认页就生成 `attemptId`
+- 提交按钮点击后立即进入 `submitting`，阻止二次点击
+- 同一个 `attemptId` 的 in-flight 请求只允许一个
+- 页面刷新后仍要能恢复 `attemptId`，建议放 `sessionStorage`
+- 如果用户返回页内再次尝试，必须生成新的 `attemptId`，但只能在上一次状态明确结束后允许
+
+服务端协同层：
+
+- 每次提交都带 `attemptId`/`Idempotency-Key`
+- 服务端必须保证同一个 key 重试不会生成第二笔预订
+- 超时后前端不能默认失败并重提，必须先 `resolveAttempt(attemptId)`
+
+如果当前后端没有“按幂等键查询结果”的能力，最少也要有一个“按 attemptId/quoteId 查询是否已创建预订”的恢复接口；否则未知结果场景下前端无法安全恢复。
+
+**错误恢复**
+
+要把错误分成三类，而不是统一 toast：
+
+1. 可重试失败  
+   例如网络抖动、网关超时、限流。  
+   行为：
+   - 不立即生成新 attempt
+   - 先自动或手动触发 `resolveAttempt`
+   - 只有确认未落单，才允许“重试本次提交”或“发起新尝试”
+
+2. 终态失败  
+   例如库存失效、价格变化、会话过期、参数校验失败。  
+   行为：
+   - 明确提示原因
+   - 引导回上一步刷新价格/库存
+   - 不做隐式重试
+
+3. 未知结果  
+   例如客户端断网、浏览器关闭前收到不完整响应。  
+   行为：
+   - 进入“正在确认预订状态”
+   - 轮询或手动查询结果
+   - 查询到成功则展示成功页
+   - 查询到失败且未创建订单，才允许重新提交
+
+这里最忌讳的行为是：`catch -> 提示失败 -> 让用户再点一次`。这正是重复预订的入口。
+
+**生产信号**
+
+至少要有这些信号，且按 `legacy/new`、灰度 cohort、设备、地区、浏览器版本分段：
+
+- `confirmation_load_success_rate`
+- `confirmation_load_p95_latency`
+- `submit_start_count`
+- `submit_success_rate`
+- `submit_retryable_error_rate`
+- `submit_terminal_error_rate`
+- `submit_unknown_rate`
+- `attempt_resolution_success_rate`
+- `duplicate_click_blocked_count`
+- `idempotency_conflict_count`
+- `legacy_new_shadow_mismatch_rate`
+- `booking_created_but_ui_failed_count`
+- `ui_retry_after_unknown_count`
+
+高优先级告警看这几项：
+
+- `submit_unknown_rate` 突增
+- `attempt_resolution` 失败率突增
+- 新接口相对旧接口成功率显著下降
+- shadow compare 中关键字段不一致率升高
+- 任何已确认重复预订事件
+
+**隐私控制**
+
+确认页通常带强隐私数据，埋点和日志必须做最小化：
+
+- 不记录姓名、手机号、邮箱、证件号、支付信息、完整地址
+- 不上传完整预订 payload；只上传 allowlist 后的字段
+- `attemptId` 可以记录，用户标识尽量哈希或使用内部匿名 ID
+- compare diff 只记录“字段名 + 是否不一致”，不要打原值
+- 会话回放、错误上报、第三方分析 SDK 默认关闭敏感字段采集
+- 敏感页上的第三方脚本要受 consent 和开关控制，事故时可单独禁用
+
+**回滚条件**
+
+不要把回滚定义成“感觉不对”。建议明确成操作条件：
+
+- 任何已确认由新路径导致的重复预订，立即把 `confirmation_submit_version` 回滚到旧接口
+- 新提交路径成功率相对旧路径下降超过预设阈值，立即停止扩容
+- `submit_unknown_rate` 或 `attempt_resolution` 失败率超过阈值，立即停止扩容，必要时回滚
+- shadow compare 出现关键业务字段不一致，禁止把读路径继续放量
+- 发生隐私泄漏、敏感数据入日志/埋点，立即关闭相关遥测并回滚问题版本
+
+回滚能力要独立：
+
+- 读路径能单独回滚
+- 写路径能单独回滚
+- 埋点/compare 能单独关闭
+- 新旧兼容层保留两周并行窗口内都可运行
+
+**推荐的最小落地顺序**
+
+1. 先做前端兼容层、状态机、attemptId、埋点。
+2. 只开 shadow compare，不改真实行为。
+3. 先切读，再切写。
+4. 写路径切流前，确认服务端幂等和结果查询都可用。
+5. 全程保留 kill switch，直到两周并行窗口结束且指标稳定。
+
+如果你要，我下一步可以把这份方案继续收敛成两种更具体的交付物之一：
+
+1. 面向工程实施的前端改造清单  
+2. 面向评审会的风险/灰度/回滚决策表
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

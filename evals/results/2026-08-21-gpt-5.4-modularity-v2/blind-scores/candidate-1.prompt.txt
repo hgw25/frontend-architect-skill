@@ -1,0 +1,313 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 按平台、项目能力、局部组合、抽象顺序选择 |
+| `module_boundaries` | 按文件类型机械分组 | 给出 feature 建议但内部边界含糊 | 在项目、功能和实现单元等适用尺度上，依据变化、所有权、公开 API 和依赖方向设计并知道何时停止拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `security_trust` | 信任客户端或把验证等同安全 | 泛泛提醒安全 | 追踪不可信数据到 sink，在服务端执行授权，保护秘密并给出匹配威胁的验证 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证或泛泛而谈 | 建议运行工具 | 验证对应真实风险，并说明未验证部分 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+
+
+CASE
+id: feature-internal-decomposition
+request: 一个 React 结算功能已经集中到 features/checkout，但 CheckoutPage.tsx 接近 900 行： 它同时处理表单草稿、价格与优惠计算、优惠券请求、库存订阅、支付 SDK 生命周期、 提交竞态、错误提示和全部 JSX。团队准备机械拆成 components、hooks、services、utils。 请根据实际职责给出细致但不过度的内部模块划分，说明公开 API、状态与副作用所有权、 内部依赖方向、测试放置和停止继续拆分的条件。不要以文件行数作为主要理由。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+我检查了当前 workspace：只有 `.frontend-architect/` 和 `.git/`，没有 `features/checkout`、`CheckoutPage.tsx` 或任何 React 源码可供核对，所以不能声称“这是基于现有实现细节得出的唯一拆分方案”。下面给的是在你描述的职责集合下，一个适合放在 `features/checkout` 内部、且避免机械按 `components/hooks/services/utils` 平铺的拆分方案。
+
+**建议的内部边界**
+
+先按“能力所有权”拆，不按技术角色拆。`CheckoutPage` 不应继续同时拥有 6 类独立生命周期：表单草稿、价格计算、优惠券请求、库存订阅、支付 SDK、最终提交。
+
+```text
+features/checkout/
+  index.ts
+  page/
+    CheckoutPage.tsx
+    CheckoutPage.test.tsx
+  flow/
+    useCheckoutFlow.ts
+    useCheckoutFlow.test.ts
+  draft/
+    useCheckoutDraft.ts
+    draftSchema.ts
+    draftMappers.ts
+    useCheckoutDraft.test.ts
+  pricing/
+    pricing.ts
+    pricing.test.ts
+  coupon/
+    useCouponRedemption.ts
+    couponApi.ts
+    couponApi.test.ts
+  inventory/
+    useInventoryAvailability.ts
+    inventoryGateway.ts
+    useInventoryAvailability.test.ts
+  payment/
+    usePaymentSession.ts
+    paymentSdkClient.ts
+    usePaymentSession.test.ts
+  submit/
+    useCheckoutSubmission.ts
+    submitOrder.ts
+    useCheckoutSubmission.test.ts
+  ui/
+    CheckoutForm.tsx
+    OrderSummary.tsx
+    CouponField.tsx
+    PaymentSection.tsx
+    SubmitBar.tsx
+```
+
+这里的关键决定是：
+
+- `pricing/` 是纯领域规则，不依赖 React、SDK、网络。
+- `coupon/`、`inventory/`、`payment/`、`submit/` 各自拥有自己的副作用与并发策略。
+- `flow/` 只做编排，不重新拥有下层状态。
+- `ui/` 只承接语义明确的交互单元，不把每个 JSX 区块都拆成组件。
+
+**公开 API 与所有权**
+
+对外只暴露很小的入口：
+
+```ts
+// features/checkout/index.ts
+export { CheckoutPage } from './page/CheckoutPage'
+```
+
+功能内部 API 建议如下：
+
+```ts
+// draft/useCheckoutDraft.ts
+type CheckoutDraft = { ... }
+type CheckoutDraftApi = {
+  draft: CheckoutDraft
+  updateField(name: DraftFieldName, value: string): void
+  setShippingAddress(address: Address): void
+  validate(): DraftValidationResult
+  reset(next?: Partial<CheckoutDraft>): void
+}
+```
+
+`draft/` 拥有：
+- 用户输入中的“未提交事实”
+- 本地校验
+- 表单默认值和草稿到提交 payload 的映射
+
+不拥有：
+- 最终价格
+- 优惠券远程状态
+- 支付 SDK 状态
+- 提交 loading/error
+
+```ts
+// pricing/pricing.ts
+type PricingInput = {
+  items: CartItem[]
+  shippingMethod: ShippingMethod
+  coupon?: AppliedCoupon
+}
+type PricingSummary = { subtotal: Money; discount: Money; shipping: Money; total: Money }
+
+export function calculatePricing(input: PricingInput): PricingSummary
+```
+
+`pricing/` 只拥有纯计算；它不请求优惠券，也不读 React state。
+
+```ts
+// coupon/useCouponRedemption.ts
+type CouponState =
+  | { status: 'idle' }
+  | { status: 'applying' }
+  | { status: 'applied'; coupon: AppliedCoupon }
+  | { status: 'invalid'; message: string }
+  | { status: 'error'; message: string }
+
+type CouponApi = {
+  state: CouponState
+  apply(code: string, context: CouponContext): Promise<void>
+  remove(): void
+}
+```
+
+`coupon/` 拥有：
+- coupon 请求身份
+- 重复点击/过期响应处理
+- coupon 结果态
+
+不拥有：
+- 表单字段本身
+- 价格总计展示
+- 最终下单
+
+```ts
+// inventory/useInventoryAvailability.ts
+type InventoryApi = {
+  availability: InventorySnapshot
+  refresh(): Promise<void>
+}
+```
+
+`inventory/` 拥有：
+- 订阅建立与清理
+- 库存快照和失效态
+- 订阅源切换时的取消/重连
+
+不拥有：
+- 缺货提示文案之外的页面 toast 策略
+- 提交流程
+
+```ts
+// payment/usePaymentSession.ts
+type PaymentSessionApi = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  mount(container: HTMLElement): void
+  confirm(): Promise<PaymentConfirmationResult>
+  teardown(): void
+}
+```
+
+`payment/` 拥有：
+- SDK 初始化、挂载、销毁
+- SDK readiness
+- SDK 级错误归一化
+
+不拥有：
+- 订单 payload 组装
+- 提交去重
+- 页面级错误合并
+
+```ts
+// submit/useCheckoutSubmission.ts
+type CheckoutSubmissionApi = {
+  state: 'idle' | 'submitting' | 'success' | 'error'
+  error: CheckoutSubmitError | null
+  submit(input: SubmitCheckoutInput): Promise<SubmitCheckoutResult>
+}
+```
+
+`submit/` 拥有：
+- 最终提交命令
+- 幂等键/重复提交防护
+- 提交时序和取消
+- 服务端错误到领域错误的转换
+
+**编排层与依赖方向**
+
+`useCheckoutFlow` 是唯一建议保留的“总协调器”，但它只能编排，不能二次持有下层真相。它的职责是：
+
+- 从 `draft` 读取草稿
+- 从 `coupon` 读取已应用优惠
+- 调用 `calculatePricing`
+- 结合 `inventory` 和 `payment` 决定 `canSubmit`
+- 在 `submit` 前顺序执行 `validate -> inventory guard -> payment confirm -> submitOrder`
+
+依赖方向应保持单向：
+
+```text
+page -> flow
+flow -> draft, coupon, inventory, payment, submit, pricing
+ui -> flow 提供的值和命令
+submit/coupon/inventory/payment -> 各自 adapter
+pricing -> 无副作用依赖
+```
+
+避免这些反向依赖：
+
+- `pricing` 导入 coupon API
+- `ui` 直接调用 SDK client
+- `payment` 导入页面 toast
+- `submit` 读写 draft store
+- `flow` 把所有子模块状态复制成一个新的 mega-state
+
+**测试放置**
+
+按拥有者 colocate：
+
+- `pricing/pricing.test.ts`
+  覆盖金额计算、优惠叠加、边界值。这是纯单测。
+- `coupon/useCouponRedemption.test.ts`
+  覆盖重复 apply、过期响应、invalid/error 分流。
+- `inventory/useInventoryAvailability.test.ts`
+  覆盖订阅清理、重连、卸载后不再更新。
+- `payment/usePaymentSession.test.ts`
+  覆盖 SDK init/teardown、ready 前禁止 confirm、错误归一化。
+- `submit/useCheckoutSubmission.test.ts`
+  覆盖双击提交、失败重试、幂等与竞态。
+- `page/CheckoutPage.test.tsx`
+  覆盖关键用户路径：填单、用券、库存变化、支付失败、成功下单。
+
+测试重点不是层层都测，而是测各自对外合同。不要为私有 helper 单独建测试，除非它已经成为稳定纯规则。
+
+**什么时候停止继续拆**
+
+到这里就该停，如果再拆会出现下面任一信号：
+
+- 新文件只是把一段 JSX 移走，没有独立交互或可理解语义。
+- 新 hook 只是把原页面里的若干 `useState/useEffect` 打包，仍然混合多个外部生命周期。
+- `utils.ts`、`services.ts` 开始收纳互不相关的残余代码。
+- 编排层开始重新镜像子模块状态，形成第二份真相。
+- 一个边界拿掉后，并不会让 ownership 或 change locality 更差。
+
+换句话说，停止条件不是“文件够短了”，而是“每个留下的模块都已经有清楚的事实所有权、明确的副作用边界、稳定的对外合同”。如果你把实际 `CheckoutPage.tsx` 和 `features/checkout` 结构放进 workspace，我可以基于真实代码把这份方案收敛成更具体的目录和 API。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

@@ -1,0 +1,491 @@
+diff --git a/examples/consumer/package.json b/examples/consumer/package.json
+index 5f6ed7c..e4a0e4d 100644
+--- a/examples/consumer/package.json
++++ b/examples/consumer/package.json
+@@ -3,6 +3,6 @@
+   "private": true,
+   "type": "module",
+   "dependencies": {
+-    "@frontend-architect-eval/feature-flags": "0.0.0"
++    "@frontend-architect-eval/feature-flags": "workspace:*"
+   }
+ }
+diff --git a/examples/consumer/src/feature-flags.d.ts b/examples/consumer/src/feature-flags.d.ts
+new file mode 100644
+index 0000000..9e64fb8
+--- /dev/null
++++ b/examples/consumer/src/feature-flags.d.ts
+@@ -0,0 +1,8 @@
++import '@frontend-architect-eval/feature-flags'
++
++declare module '@frontend-architect-eval/feature-flags' {
++  interface FeatureFlagsRegistry {
++    checkoutV2: boolean
++    theme: string
++  }
++}
+diff --git a/examples/consumer/src/flags.ts b/examples/consumer/src/flags.ts
+index 4d752f9..1009dc0 100644
+--- a/examples/consumer/src/flags.ts
++++ b/examples/consumer/src/flags.ts
+@@ -1,3 +1,9 @@
+ import { flags } from 'virtual:feature-flags'
+ 
++const checkoutV2: boolean = flags.checkoutV2
++const theme: string = flags.theme
++
++void checkoutV2
++void theme
++
+ export { flags }
+diff --git a/examples/consumer/tsconfig.json b/examples/consumer/tsconfig.json
+index 98526f3..90eaf18 100644
+--- a/examples/consumer/tsconfig.json
++++ b/examples/consumer/tsconfig.json
+@@ -7,5 +7,5 @@
+     "noEmit": true,
+     "types": ["@frontend-architect-eval/feature-flags/virtual"]
+   },
+-  "include": ["src/**/*.ts", "vite.config.ts"]
++  "include": ["src/**/*.ts", "src/**/*.d.ts", "vite.config.ts"]
+ }
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..7e5b64f
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,98 @@
++# @frontend-architect-eval/feature-flags
++
++Vite plugin that exposes a typed `virtual:feature-flags` module from a server-owned JSON source while only shipping an explicit public allowlist to the client.
++
++## Usage
++
++```ts
++// vite.config.ts
++import { fileURLToPath } from 'node:url'
++
++import { featureFlags } from '@frontend-architect-eval/feature-flags'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  plugins: [
++    featureFlags({
++      source: fileURLToPath(new URL('./flags.json', import.meta.url)),
++      expose: ['checkoutV2', 'theme'] as const,
++    }),
++  ],
++})
++```
++
++```ts
++// src/feature-flags.d.ts
++import '@frontend-architect-eval/feature-flags'
++
++declare module '@frontend-architect-eval/feature-flags' {
++  interface FeatureFlagsRegistry {
++    checkoutV2: boolean
++    theme: string
++  }
++}
++```
++
++```ts
++import { flags } from 'virtual:feature-flags'
++
++flags.checkoutV2
++flags.theme
++```
++
++## Public types
++
++- `FeatureFlagPrimitive`: values allowed to cross the client boundary.
++- `FeatureFlagsRecord`: reusable `Record<string, FeatureFlagPrimitive>` alias.
++- `FeatureFlagsRegistry`: augmentation point for consumer-owned public flag typing.
++- `FeatureFlagsShape`: readonly view used by `virtual:feature-flags`.
++- `FeatureFlagsOptions`: plugin configuration contract.
++
++The package keeps runtime configuration and public TypeScript shape decoupled on purpose. Build tools can load JSON at runtime, but TypeScript cannot safely infer JSON allowlists from `vite.config.ts` without a code generation step. Module augmentation keeps editor and CI typing explicit and stable across dev, build and published package consumption.
++
++## Package exports
++
++- `.`: plugin runtime and public types.
++- `./virtual`: type-only entry used from `tsconfig.compilerOptions.types`.
++- `./package.json`: export preserved for tooling and pack verification.
++
++`virtual:feature-flags` is resolved by Vite at runtime; `./virtual` exists only to give TypeScript a stable ambient declaration.
++
++## Diagnostics
++
++The plugin throws actionable errors when:
++
++- the source file is not valid JSON
++- the source JSON is not an object
++- `expose` references a missing key
++- `expose` contains duplicates or empty names
++- an exposed value is not `boolean | number | string`
++
++Each message includes the flag name or source path and the next action to take.
++
++## Secrets boundary
++
++Only keys listed in `expose` are serialized into the virtual module. All other keys remain server-side and never enter dev responses, production bundles or HMR payloads.
++
++## Source maps
++
++The generated virtual module returns a source map whose source points back to the JSON input file. Consumers can debug the virtual module in devtools while package consumers still get `.js.map`, `.d.ts`, and `.d.ts.map` from the published build.
++
++## Cache and HMR
++
++The plugin caches the raw JSON text and parsed public subset. Re-reads only happen when the watched source file changes. On HMR, the plugin invalidates the virtual module and its importers, so dev behavior stays aligned with build output. If no importer is registered yet, it falls back to a full reload.
++
++## Integration tests
++
++Repository checks cover:
++
++- `test:build`: production bundle contains public flags and excludes secrets
++- `test:dev`: Vite dev server reloads updated flags through the virtual module
++- `test:diagnostics`: misconfigured exposure fails with actionable messaging
++- `test:package`: packed tarball includes runtime, types and source maps
++
++## Version evolution
++
++- Patch: diagnostics wording, internal caching changes, non-breaking HMR fixes.
++- Minor: additive public types, new optional plugin options, new diagnostics.
++- Major: changes to virtual module shape, TypeScript augmentation contract, or stricter runtime validation defaults.
+diff --git a/packages/plugin/package.json b/packages/plugin/package.json
+index f5b6fe3..0867a3b 100644
+--- a/packages/plugin/package.json
++++ b/packages/plugin/package.json
+@@ -1,11 +1,14 @@
+ {
+   "name": "@frontend-architect-eval/feature-flags",
+-  "version": "0.0.0",
+-  "private": true,
++  "version": "0.1.0",
++  "description": "Typed Vite feature flags virtual module with safe public exposure and HMR support.",
+   "type": "module",
++  "sideEffects": false,
+   "files": [
+-    "dist"
++    "dist",
++    "README.md"
+   ],
++  "types": "./dist/index.d.ts",
+   "exports": {
+     ".": {
+       "types": "./dist/index.d.ts",
+@@ -14,8 +17,32 @@
+     "./virtual": {
+       "types": "./dist/virtual.d.ts",
+       "import": "./dist/empty.js"
+-    }
++    },
++    "./package.json": "./package.json"
++  },
++  "publishConfig": {
++    "access": "restricted"
++  },
++  "engines": {
++    "node": ">=20.19.0"
++  },
++  "keywords": [
++    "vite",
++    "feature-flags",
++    "virtual-module",
++    "frontend-infra"
++  ],
++  "repository": {
++    "type": "git",
++    "url": "https://example.invalid/company/frontend-infra.git",
++    "directory": "packages/plugin"
++  },
++  "bugs": {
++    "url": "https://example.invalid/company/frontend-infra/issues"
+   },
++  "homepage": "https://example.invalid/company/frontend-infra/tree/main/packages/plugin",
++  "license": "UNLICENSED",
++  "packageManager": "npm@10.9.3",
+   "scripts": {
+     "build": "tsc -p tsconfig.build.json && node scripts/copy-static.mjs"
+   },
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..e22f9a0 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,242 @@
+-import type { Plugin } from 'vite'
++import { readFile } from 'node:fs/promises'
++import { fileURLToPath } from 'node:url'
++import path from 'node:path'
++
++import type { HmrContext, Plugin, ResolvedConfig, ViteDevServer } from 'vite'
++
++const PLUGIN_NAME = 'feature-flags'
++const VIRTUAL_MODULE_ID = 'virtual:feature-flags'
++const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`
++
++export type FeatureFlagPrimitive = boolean | number | string
++export type FeatureFlagsRecord = Record<string, FeatureFlagPrimitive>
++
++export interface FeatureFlagsRegistry extends FeatureFlagsRecord {}
++
++export type FeatureFlagsShape = Readonly<FeatureFlagsRegistry>
++
++export interface FeatureFlagsOptions<TExpose extends readonly string[] = readonly string[]> {
++  source: string | URL
++  expose: TExpose
++  moduleId?: string
++}
++
++interface FlagsCacheEntry {
++  raw: string
++  publicFlags: FeatureFlagsRecord
++}
++
++function error(message: string): Error {
++  return new Error(`[${PLUGIN_NAME}] ${message}`)
++}
++
++function normalizeSourcePath(source: string | URL, config: ResolvedConfig): string {
++  if (source instanceof URL) {
++    return fileURLToPath(source)
++  }
++
++  if (path.isAbsolute(source)) {
++    return path.normalize(source)
++  }
++
++  return path.resolve(config.root, source)
++}
++
++function validateExpose(expose: readonly string[], sourcePath: string): void {
++  const seen = new Set<string>()
++
++  for (const flagName of expose) {
++    if (!flagName) {
++      throw error(`"expose" in ${sourcePath} cannot contain an empty flag name.`)
++    }
++
++    if (seen.has(flagName)) {
++      throw error(`"expose" contains "${flagName}" more than once for ${sourcePath}. Remove the duplicate entry.`)
++    }
++
++    seen.add(flagName)
++  }
++}
++
++function isFeatureFlagPrimitive(value: unknown): value is FeatureFlagPrimitive {
++  return typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string'
++}
++
++function toModuleCode(publicFlags: FeatureFlagsRecord): string {
++  const serialized = JSON.stringify(publicFlags, null, 2)
++
++  return [
++    `const flags = Object.freeze(${serialized})`,
++    '',
++    'export { flags }',
++    'export default flags',
++    '',
++  ].join('\n')
++}
++
++function toSourceMap(sourcePath: string, raw: string, moduleId: string) {
++  return {
++    version: 3,
++    file: moduleId,
++    names: [],
++    sources: [sourcePath],
++    sourcesContent: [raw],
++    mappings: '',
++  }
++}
++
++function collectAffectedModules(server: ViteDevServer, moduleId: string) {
++  const entry = server.moduleGraph.getModuleById(moduleId)
++
++  if (!entry) {
++    return []
++  }
++
++  const affected = new Set([entry])
++  const queue = [entry]
++
++  while (queue.length > 0) {
++    const current = queue.shift()
++    if (!current) {
++      continue
++    }
++
++    for (const importer of current.importers) {
++      if (affected.has(importer)) {
++        continue
++      }
++
++      affected.add(importer)
++      queue.push(importer)
++    }
++  }
++
++  for (const mod of affected) {
++    server.moduleGraph.invalidateModule(mod)
++  }
++
++  return [...affected]
++}
++
++export function featureFlags(options: FeatureFlagsOptions): Plugin {
++  let config: ResolvedConfig | undefined
++  let sourcePath = ''
++  let cache: FlagsCacheEntry | undefined
++  const moduleId = options.moduleId ?? VIRTUAL_MODULE_ID
++  const resolvedModuleId = `\0${moduleId}`
++
++  async function loadFlags(): Promise<FlagsCacheEntry> {
++    if (!config) {
++      throw error('Vite config has not been resolved yet.')
++    }
++
++    const raw = await readFile(sourcePath, 'utf8')
++    if (cache?.raw === raw) {
++      return cache
++    }
++
++    let parsed: unknown
++    try {
++      parsed = JSON.parse(raw)
++    } catch (cause) {
++      throw error(`Failed to parse ${sourcePath} as JSON. Fix the file syntax before restarting the build.\nCause: ${String(cause)}`)
++    }
++
++    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
++      throw error(`Expected ${sourcePath} to contain a JSON object of flags, but received ${Array.isArray(parsed) ? 'an array' : typeof parsed}.`)
++    }
++
++    const record = parsed as Record<string, unknown>
++    const publicFlags: FeatureFlagsRecord = {}
++
++    for (const flagName of options.expose) {
++      if (!(flagName in record)) {
++        throw error(`Flag "${flagName}" is listed in "expose" but is missing from ${sourcePath}. Add the flag or remove it from "expose".`)
++      }
++
++      const value = record[flagName]
++      if (!isFeatureFlagPrimitive(value)) {
++        throw error(
++          `Flag "${flagName}" in ${sourcePath} must be a boolean, number, or string to be exposed to the client. Received ${value === null ? 'null' : typeof value}.`,
++        )
++      }
++
++      publicFlags[flagName] = value
++    }
++
++    cache = {
++      raw,
++      publicFlags,
++    }
++
++    return cache
++  }
++
++  function clearCache(file?: string): void {
++    if (!file || path.normalize(file) === sourcePath) {
++      cache = undefined
++    }
++  }
++
++  function handleSourceChange(server: ViteDevServer): ReturnType<NonNullable<Plugin['handleHotUpdate']>> {
++    const affected = collectAffectedModules(server, resolvedModuleId)
++    if (affected.length > 0) {
++      return affected
++    }
++
++    server.ws.send({ type: 'full-reload' })
++    return []
++  }
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+-    name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++    name: PLUGIN_NAME,
++    enforce: 'pre',
++    configResolved(resolvedConfig) {
++      config = resolvedConfig
++      sourcePath = normalizeSourcePath(options.source, resolvedConfig)
++      validateExpose(options.expose, sourcePath)
++    },
++    buildStart() {
++      if (!sourcePath) {
++        throw error('Failed to resolve "source". Pass an absolute path, a file URL, or a path relative to the Vite root.')
++      }
++
++      this.addWatchFile(sourcePath)
++    },
++    configureServer(server) {
++      server.watcher.add(sourcePath)
++    },
++    resolveId(id) {
++      if (id === moduleId) {
++        return resolvedModuleId
++      }
++
++      return null
++    },
++    async load(id) {
++      if (id !== resolvedModuleId) {
++        return null
++      }
++
++      const { publicFlags, raw } = await loadFlags()
++      return {
++        code: toModuleCode(publicFlags),
++        map: toSourceMap(sourcePath, raw, moduleId),
++      }
++    },
++    watchChange(id) {
++      clearCache(id)
++    },
++    handleHotUpdate(context: HmrContext) {
++      if (path.normalize(context.file) !== sourcePath) {
++        return
++      }
++
++      clearCache(context.file)
++      return handleSourceChange(context.server)
+     },
+   }
+ }
++
++export const featureFlagsModuleId = VIRTUAL_MODULE_ID
++export const resolvedFeatureFlagsModuleId = RESOLVED_VIRTUAL_MODULE_ID
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..e5d881f 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,6 @@
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
+-  export const flags: Readonly<Record<string, FeatureFlagValue>>
++  import type { FeatureFlagsShape } from '@frontend-architect-eval/feature-flags'
++
++  export const flags: FeatureFlagsShape
++  export default flags
+ }
+diff --git a/scripts/check-package.mjs b/scripts/check-package.mjs
+index 05a131b..92be1a2 100644
+--- a/scripts/check-package.mjs
++++ b/scripts/check-package.mjs
+@@ -17,7 +17,10 @@ for (const expected of [
+   'dist/index.js',
+   'dist/index.js.map',
+   'dist/index.d.ts',
++  'dist/index.d.ts.map',
+   'dist/virtual.d.ts',
++  'dist/empty.js',
++  'README.md',
+ ]) {
+   assert.ok(files.has(expected), `packed package is missing ${expected}`)
+ }

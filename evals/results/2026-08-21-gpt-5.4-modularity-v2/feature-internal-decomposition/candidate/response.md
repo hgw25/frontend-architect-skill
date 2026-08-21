@@ -1,0 +1,238 @@
+我检查了当前 workspace：只有 `.frontend-architect/` 和 `.git/`，没有 `features/checkout`、`CheckoutPage.tsx` 或任何 React 源码可供核对，所以不能声称“这是基于现有实现细节得出的唯一拆分方案”。下面给的是在你描述的职责集合下，一个适合放在 `features/checkout` 内部、且避免机械按 `components/hooks/services/utils` 平铺的拆分方案。
+
+**建议的内部边界**
+
+先按“能力所有权”拆，不按技术角色拆。`CheckoutPage` 不应继续同时拥有 6 类独立生命周期：表单草稿、价格计算、优惠券请求、库存订阅、支付 SDK、最终提交。
+
+```text
+features/checkout/
+  index.ts
+  page/
+    CheckoutPage.tsx
+    CheckoutPage.test.tsx
+  flow/
+    useCheckoutFlow.ts
+    useCheckoutFlow.test.ts
+  draft/
+    useCheckoutDraft.ts
+    draftSchema.ts
+    draftMappers.ts
+    useCheckoutDraft.test.ts
+  pricing/
+    pricing.ts
+    pricing.test.ts
+  coupon/
+    useCouponRedemption.ts
+    couponApi.ts
+    couponApi.test.ts
+  inventory/
+    useInventoryAvailability.ts
+    inventoryGateway.ts
+    useInventoryAvailability.test.ts
+  payment/
+    usePaymentSession.ts
+    paymentSdkClient.ts
+    usePaymentSession.test.ts
+  submit/
+    useCheckoutSubmission.ts
+    submitOrder.ts
+    useCheckoutSubmission.test.ts
+  ui/
+    CheckoutForm.tsx
+    OrderSummary.tsx
+    CouponField.tsx
+    PaymentSection.tsx
+    SubmitBar.tsx
+```
+
+这里的关键决定是：
+
+- `pricing/` 是纯领域规则，不依赖 React、SDK、网络。
+- `coupon/`、`inventory/`、`payment/`、`submit/` 各自拥有自己的副作用与并发策略。
+- `flow/` 只做编排，不重新拥有下层状态。
+- `ui/` 只承接语义明确的交互单元，不把每个 JSX 区块都拆成组件。
+
+**公开 API 与所有权**
+
+对外只暴露很小的入口：
+
+```ts
+// features/checkout/index.ts
+export { CheckoutPage } from './page/CheckoutPage'
+```
+
+功能内部 API 建议如下：
+
+```ts
+// draft/useCheckoutDraft.ts
+type CheckoutDraft = { ... }
+type CheckoutDraftApi = {
+  draft: CheckoutDraft
+  updateField(name: DraftFieldName, value: string): void
+  setShippingAddress(address: Address): void
+  validate(): DraftValidationResult
+  reset(next?: Partial<CheckoutDraft>): void
+}
+```
+
+`draft/` 拥有：
+- 用户输入中的“未提交事实”
+- 本地校验
+- 表单默认值和草稿到提交 payload 的映射
+
+不拥有：
+- 最终价格
+- 优惠券远程状态
+- 支付 SDK 状态
+- 提交 loading/error
+
+```ts
+// pricing/pricing.ts
+type PricingInput = {
+  items: CartItem[]
+  shippingMethod: ShippingMethod
+  coupon?: AppliedCoupon
+}
+type PricingSummary = { subtotal: Money; discount: Money; shipping: Money; total: Money }
+
+export function calculatePricing(input: PricingInput): PricingSummary
+```
+
+`pricing/` 只拥有纯计算；它不请求优惠券，也不读 React state。
+
+```ts
+// coupon/useCouponRedemption.ts
+type CouponState =
+  | { status: 'idle' }
+  | { status: 'applying' }
+  | { status: 'applied'; coupon: AppliedCoupon }
+  | { status: 'invalid'; message: string }
+  | { status: 'error'; message: string }
+
+type CouponApi = {
+  state: CouponState
+  apply(code: string, context: CouponContext): Promise<void>
+  remove(): void
+}
+```
+
+`coupon/` 拥有：
+- coupon 请求身份
+- 重复点击/过期响应处理
+- coupon 结果态
+
+不拥有：
+- 表单字段本身
+- 价格总计展示
+- 最终下单
+
+```ts
+// inventory/useInventoryAvailability.ts
+type InventoryApi = {
+  availability: InventorySnapshot
+  refresh(): Promise<void>
+}
+```
+
+`inventory/` 拥有：
+- 订阅建立与清理
+- 库存快照和失效态
+- 订阅源切换时的取消/重连
+
+不拥有：
+- 缺货提示文案之外的页面 toast 策略
+- 提交流程
+
+```ts
+// payment/usePaymentSession.ts
+type PaymentSessionApi = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  mount(container: HTMLElement): void
+  confirm(): Promise<PaymentConfirmationResult>
+  teardown(): void
+}
+```
+
+`payment/` 拥有：
+- SDK 初始化、挂载、销毁
+- SDK readiness
+- SDK 级错误归一化
+
+不拥有：
+- 订单 payload 组装
+- 提交去重
+- 页面级错误合并
+
+```ts
+// submit/useCheckoutSubmission.ts
+type CheckoutSubmissionApi = {
+  state: 'idle' | 'submitting' | 'success' | 'error'
+  error: CheckoutSubmitError | null
+  submit(input: SubmitCheckoutInput): Promise<SubmitCheckoutResult>
+}
+```
+
+`submit/` 拥有：
+- 最终提交命令
+- 幂等键/重复提交防护
+- 提交时序和取消
+- 服务端错误到领域错误的转换
+
+**编排层与依赖方向**
+
+`useCheckoutFlow` 是唯一建议保留的“总协调器”，但它只能编排，不能二次持有下层真相。它的职责是：
+
+- 从 `draft` 读取草稿
+- 从 `coupon` 读取已应用优惠
+- 调用 `calculatePricing`
+- 结合 `inventory` 和 `payment` 决定 `canSubmit`
+- 在 `submit` 前顺序执行 `validate -> inventory guard -> payment confirm -> submitOrder`
+
+依赖方向应保持单向：
+
+```text
+page -> flow
+flow -> draft, coupon, inventory, payment, submit, pricing
+ui -> flow 提供的值和命令
+submit/coupon/inventory/payment -> 各自 adapter
+pricing -> 无副作用依赖
+```
+
+避免这些反向依赖：
+
+- `pricing` 导入 coupon API
+- `ui` 直接调用 SDK client
+- `payment` 导入页面 toast
+- `submit` 读写 draft store
+- `flow` 把所有子模块状态复制成一个新的 mega-state
+
+**测试放置**
+
+按拥有者 colocate：
+
+- `pricing/pricing.test.ts`
+  覆盖金额计算、优惠叠加、边界值。这是纯单测。
+- `coupon/useCouponRedemption.test.ts`
+  覆盖重复 apply、过期响应、invalid/error 分流。
+- `inventory/useInventoryAvailability.test.ts`
+  覆盖订阅清理、重连、卸载后不再更新。
+- `payment/usePaymentSession.test.ts`
+  覆盖 SDK init/teardown、ready 前禁止 confirm、错误归一化。
+- `submit/useCheckoutSubmission.test.ts`
+  覆盖双击提交、失败重试、幂等与竞态。
+- `page/CheckoutPage.test.tsx`
+  覆盖关键用户路径：填单、用券、库存变化、支付失败、成功下单。
+
+测试重点不是层层都测，而是测各自对外合同。不要为私有 helper 单独建测试，除非它已经成为稳定纯规则。
+
+**什么时候停止继续拆**
+
+到这里就该停，如果再拆会出现下面任一信号：
+
+- 新文件只是把一段 JSX 移走，没有独立交互或可理解语义。
+- 新 hook 只是把原页面里的若干 `useState/useEffect` 打包，仍然混合多个外部生命周期。
+- `utils.ts`、`services.ts` 开始收纳互不相关的残余代码。
+- 编排层开始重新镜像子模块状态，形成第二份真相。
+- 一个边界拿掉后，并不会让 ownership 或 change locality 更差。
+
+换句话说，停止条件不是“文件够短了”，而是“每个留下的模块都已经有清楚的事实所有权、明确的副作用边界、稳定的对外合同”。如果你把实际 `CheckoutPage.tsx` 和 `features/checkout` 结构放进 workspace，我可以基于真实代码把这份方案收敛成更具体的目录和 API。

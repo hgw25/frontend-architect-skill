@@ -1,0 +1,180 @@
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 2ba023d..218fed0 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,15 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { render, screen } from '@testing-library/react'
++import { cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
++import type { Mock } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -66,3 +68,60 @@ test('restores the authoritative name when a successful response has an invalid
+   )
+   expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
+ })
++
++test('ignores stale responses from earlier submissions', async () => {
++  const pendingRequests: Array<{
++    resolve: (response: Response) => void
++  }> = []
++
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(
++      () =>
++        new Promise<Response>((resolve) => {
++          pendingRequests.push({ resolve })
++        }),
++    ),
++  )
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Lin')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(pendingRequests).toHaveLength(2)
++
++  pendingRequests[1].resolve(
++    new Response(JSON.stringify({ id: 'p1', displayName: 'Lin', version: 2 }), {
++      status: 200,
++      headers: { 'content-type': 'application/json' },
++    }),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Lin',
++  )
++
++  pendingRequests[0].resolve(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Grace', version: 3 }),
++      {
++        status: 200,
++        headers: { 'content-type': 'application/json' },
++      },
++    ),
++  )
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++  expect((fetch as Mock).mock.calls).toHaveLength(2)
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..491ed52 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,20 +1,48 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
+   const [displayName, setDisplayName] = useState(profile.displayName)
++  const [authoritativeProfile, setAuthoritativeProfile] = useState(profile)
+   const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [errorMessage, setErrorMessage] = useState('')
++  const latestSubmissionId = useRef(0)
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++
++    const optimisticName = displayName
++    const authoritativeName = authoritativeProfile.displayName
++    const submissionId = latestSubmissionId.current + 1
++
++    latestSubmissionId.current = submissionId
++    setErrorMessage('')
++    setVisibleName(optimisticName)
++
++    try {
++      const nextProfile = await updateProfile(optimisticName)
++
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setAuthoritativeProfile(nextProfile)
++      setVisibleName(nextProfile.displayName)
++    } catch {
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setVisibleName(authoritativeName)
++      setErrorMessage('Save failed. Please retry.')
++    }
+   }
+ 
+   return (
+     <form onSubmit={handleSubmit}>
+       <p aria-label="Current profile name">{visibleName}</p>
++      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+       <label>
+         Display name
+         <input
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..3511177 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,20 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const candidate = value as Record<string, unknown>
++
++  return (
++    typeof candidate.id === 'string' &&
++    typeof candidate.displayName === 'string' &&
++    typeof candidate.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +25,15 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error(`Profile update failed with status ${response.status}`)
++  }
++
++  const payload: unknown = await response.json()
++
++  if (!isProfile(payload)) {
++    throw new Error('Profile update returned an invalid payload')
++  }
++
++  return payload
+ }

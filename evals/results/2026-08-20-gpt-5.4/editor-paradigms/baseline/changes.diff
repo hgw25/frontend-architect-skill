@@ -1,0 +1,373 @@
+diff --git a/EDITOR_ARCHITECTURE.md b/EDITOR_ARCHITECTURE.md
+new file mode 100644
+index 0000000..0a70abf
+--- /dev/null
++++ b/EDITOR_ARCHITECTURE.md
+@@ -0,0 +1,367 @@
++# 富文本编辑器模块设计
++
++当前仓库没有现成前端代码，因此这里给出一个不绑定具体框架的模块级设计。目标不是把编辑器强行做成纯 FP 或纯 OOP，而是按问题性质选最合适的范式。
++
++## 结论先行
++
++| 模块 | 推荐范式 | 原因 | 状态所有权 |
++| --- | --- | --- | --- |
++| document model / transform | 纯函数 | 输入输出清晰，便于测试、回放、协作合并 | `EditorState` 持有文档快照 |
++| selection state | Reducer + 少量纯函数 | 选择变化频繁，但规则可枚举；需要和事务一起演进 | `EditorState` 持有逻辑 selection，DOM 只持有临时原生 selection |
++| history | Reducer | undo/redo 是典型可回放状态迁移 | `HistoryState` 归编辑器核心持有 |
++| plain text conversion | 纯函数 | 本质是投影/序列化，不应依赖副作用 | 无长期状态 |
++| DOM subscription | 闭包或小型类 | 要封装事件监听、解绑、节流、浏览器差异 | 订阅器私有持有 listener / observer 引用 |
++| collaboration connection | 状态机 + 效果层类/闭包 | 连接生命周期复杂，存在重连、ack、同步中间态 | `CollabMachineState` 归协作模块持有 |
++| destroy / cleanup | 类或显式 `Disposable` 聚合器 | 需要集中管理资源释放顺序 | `EditorRuntime` 持有所有 disposable |
++
++## 推荐分层
++
++1. `EditorState`
++   - 纯数据对象。
++   - 包含 `doc`、`selection`、`history`、`version`、`pendingLocalOps`。
++   - 可序列化，但不包含 DOM 节点、observer、socket、timer。
++
++2. `EditorReducer`
++   - 接收意图层 action，例如 `insertText`、`applyRemoteOps`、`setSelection`、`undo`。
++   - 输出新状态和副作用描述，不直接操作 DOM 或网络。
++
++3. `EditorRuntime`
++   - 负责把副作用描述落地到 DOM、协作连接、剪贴板、输入法事件。
++   - 适合用类或模块闭包，因为它要持有不可序列化资源。
++
++这个切法的核心是: 可回放的留在 state/reducer，不可回放的留在 runtime/effects。
++
++## 各模块判断
++
++### 1. Selection
++
++适合: `Reducer + 纯函数`
++
++原因:
++- selection 既是用户可见状态，也是编辑事务的一部分。
++- 它经常随插入、删除、格式化一起变化，应该和文档变换共用同一条事务链。
++- 但 DOM Selection API 有浏览器瞬时状态，不应直接作为真相源。
++
++建议:
++- 维护一个逻辑 selection，例如:
++
++```ts
++type Selection = {
++  anchor: PathPoint;
++  focus: PathPoint;
++  direction: "forward" | "backward";
++};
++```
++
++- 使用纯函数:
++  - `mapSelectionThroughOps(selection, ops)`
++  - `normalizeSelection(doc, selection)`
++  - `selectionFromDomRange(...)`
++  - `domRangeFromSelection(...)`
++
++- 使用 reducer 管理:
++  - 用户输入导致的 selection 更新
++  - 文档变换后的 selection 映射
++  - 远端协作操作后的 selection 重定位
++
++状态所有权:
++- 逻辑 selection: 编辑器核心持有。
++- 原生 DOM selection: 浏览器持有，但只作为 IO 边界，不作为业务真相。
++
++生命周期边界:
++- DOM focus/blur 时允许原生 selection 暂时为空。
++- 编辑器恢复 focus 时，由 runtime 把逻辑 selection 重新投射到 DOM。
++
++### 2. History
++
++适合: `Reducer`
++
++原因:
++- undo/redo 是离散状态迁移，天然适合 reducer。
++- 需要明确合并策略，例如连续输入合并、组合输入法阶段不入栈、远端操作不进入本地 undo 栈。
++
++建议结构:
++
++```ts
++type HistoryState = {
++  undoStack: HistoryEntry[];
++  redoStack: HistoryEntry[];
++};
++```
++
++`HistoryEntry` 建议保存:
++- 变更前后 selection
++- inverse ops
++- 时间戳
++- group id
++
++状态所有权:
++- 历史栈归编辑器核心持有。
++- 协作层不能直接改历史，只能通过 action 提交“本地已确认事务”。
++
++序列化:
++- history 可选择不持久化，或只持久化最近 N 条。
++- 若要持久化，必须只存 ops/inverse ops 和 selection，不存函数引用或 DOM。
++
++竞态:
++- 本地输入尚未发到服务端前，undo 操作的是本地 optimistic state。
++- 远端操作到来时，不能简单清空历史；需要通过 OT/CRDT 映射历史条目中的 selection 与 inverse ops。
++
++### 3. 纯文本转换
++
++适合: `纯函数`
++
++原因:
++- 富文本到纯文本是纯投影，不需要内部状态。
++- 反向从纯文本导入富文本也应是纯转换。
++
++建议函数:
++- `toPlainText(doc): string`
++- `fromPlainText(text): DocNode`
++- `sliceToPlainText(doc, selection): string`
++
++序列化:
++- 这是天然序列化边界，可用于复制、搜索、索引、草稿快照。
++
++注意:
++- 明确 block 分隔规则、软换行规则、列表/表格的降级规则。
++- 这些规则应固化在纯函数里，而不是散落在组件事件里。
++
++### 4. DOM 订阅
++
++适合: `闭包或小型类`
++
++原因:
++- 需要持有 `addEventListener`、`MutationObserver`、`ResizeObserver`、定时器句柄。
++- 这是典型资源管理，不适合塞进 reducer。
++
++推荐形态:
++
++```ts
++type DomSubscription = {
++  start(): void;
++  stop(): void;
++};
++```
++
++或:
++
++```ts
++class EditorDomBridge {
++  mount(root: HTMLElement): void;
++  unmount(): void;
++}
++```
++
++闭包适用场景:
++- 只有少量监听器，依赖注入简单。
++
++类适用场景:
++- 需要多阶段 mount/unmount、缓存 DOM 引用、暴露多个 bridge 方法。
++
++状态所有权:
++- DOM bridge 只拥有“订阅状态”和“节点引用”。
++- 它不能拥有文档真相，只能把 DOM 事件翻译成 action。
++
++生命周期边界:
++- `mount(root)` 后才能订阅。
++- `unmount()` 必须幂等。
++- observer 回调晚到时要检查 `destroyed` 标记，避免销毁后写状态。
++
++### 5. 协作连接
++
++适合: `状态机 + 效果层类/闭包`
++
++原因:
++- 协作连接有明确生命周期状态: 未连接、连接中、同步中、在线、重连中、关闭、失败。
++- 这里如果只用随意布尔值，竞态会很快失控。
++
++建议状态机:
++
++```ts
++type CollabStatus =
++  | "idle"
++  | "connecting"
++  | "handshaking"
++  | "syncing"
++  | "ready"
++  | "reconnecting"
++  | "closed"
++  | "error";
++```
++
++状态机负责:
++- 哪些事件在当前状态合法
++- 是否允许发送本地 ops
++- 是否需要排队、重试、丢弃
++
++效果层类/闭包负责:
++- socket/websocket 实例
++- 心跳 timer
++- 重连退避
++- 发包与 ack 跟踪
++
++状态所有权:
++- 可序列化连接状态: 协作模块状态机持有。
++- 不可序列化资源: 连接 runtime 持有。
++
++竞态重点:
++- `connect()` 重复调用: 必须幂等，后续调用复用已有流程或直接忽略。
++- 本地 ops 在 `syncing` 期间产生: 需要先入待发送队列。
++- 远端快照与本地未确认 ops 并发: 必须有 rebase 或 transform 层。
++- 旧连接的晚到消息: 用 `sessionId` / `epoch` 丢弃，避免污染新连接。
++
++序列化:
++- 可以序列化:
++  - 当前文档版本
++  - 未确认本地 ops
++  - 最近一次服务端 ack version
++  - connection status
++- 不应序列化:
++  - socket 对象
++  - Promise
++  - timer id
++
++### 6. 销毁清理
++
++适合: `类或显式 Disposable 聚合器`
++
++原因:
++- 资源释放是 runtime 关注点，通常要保证顺序、幂等和跨模块收口。
++
++建议:
++
++```ts
++interface Disposable {
++  dispose(): void;
++}
++```
++
++由 `EditorRuntime` 统一注册:
++- DOM listeners
++- observers
++- collaboration connection
++- pending timers
++- async task abort controller
++
++生命周期边界:
++- `dispose()` 必须幂等。
++- 销毁后任何异步回调都应短路。
++- 销毁顺序建议:
++  1. 先标记 `destroyed = true`
++  2. 停止输入与外部订阅
++  3. 关闭协作连接
++  4. 断开 observers / timers
++  5. 释放 DOM 引用
++
++## 状态所有权
++
++推荐把状态分成三层:
++
++### 1. 可序列化核心状态
++
++由 `EditorState` 持有:
++- `doc`
++- `selection`
++- `history`
++- `version`
++- `pendingLocalOps`
++
++特点:
++- 可测试
++- 可回放
++- 可持久化
++- 可用于 SSR/草稿恢复
++
++### 2. 会话态 runtime 状态
++
++由 `EditorRuntime` 持有:
++- DOM root 引用
++- 原生 selection 缓存
++- observers / event listeners
++- websocket 实例
++- timers
++- abort controllers
++
++特点:
++- 不可序列化
++- 生命周期严格绑定页面实例
++
++### 3. 外部宿主状态
++
++由页面或应用层持有:
++- 当前文档 id
++- 当前用户信息
++- 权限
++- 是否只读
++- 持久化策略
++
++不要把这些宿主状态塞进编辑器核心，否则模块会失去复用性。
++
++## 序列化边界
++
++适合序列化:
++- `doc`
++- `selection`
++- `history`（可选）
++- `pendingLocalOps`
++- `collab version metadata`
++
++不适合序列化:
++- DOM Range / Node
++- observer / event listener
++- websocket / promise / timer
++- 函数闭包
++
++一个实用原则:
++- “刷新页面后还能恢复并继续编辑”的数据，放在可序列化核心状态。
++- “刷新页面后天然失效，需要重新挂载或重连”的数据，放在 runtime。
++
++## 竞态边界
++
++最关键的竞态有四类:
++
++1. DOM 事件与 reducer 提交错位
++   - DOM `selectionchange` 可能在一次事务中触发多次。
++   - 解决: runtime 做微任务级合并，只提交最终稳定 selection。
++
++2. 本地输入与远端协作操作交错
++   - 解决: 所有 ops 进入统一事务队列；未确认本地 ops 与远端 ops 做 transform/rebase。
++
++3. 异步回调晚于销毁
++   - 解决: 所有 bridge/connection 回调先检查 `destroyed` 或 `sessionId`。
++
++4. 重连期间旧连接消息串入
++   - 解决: 为每次连接分配 `epoch`，只接收当前 epoch 的消息。
++
++## 建议的组合方式
++
++不要选“全函数式”或“全类式”，建议这样混合:
++
++- 用纯函数定义文档变换、selection 映射、纯文本转换。
++- 用 reducer 管理可回放核心状态。
++- 用状态机管理协作连接生命周期。
++- 用闭包或类封装 DOM 订阅和网络资源。
++- 用一个 runtime/disposable 聚合器负责挂载与销毁。
++
++## 一个足够稳妥的模块边界
++
++```ts
++type EditorCore = {
++  getState(): EditorState;
++  dispatch(action: EditorAction): void;
++  subscribe(listener: () => void): () => void;
++};
++
++type EditorRuntime = {
++  mount(root: HTMLElement): void;
++  connectCollab(config: CollabConfig): void;
++  dispose(): void;
++};
++```
++
++其中:
++- `EditorCore` 偏纯，负责状态真相。
++- `EditorRuntime` 偏副作用，负责环境接入。
++
++这是这类编辑器最稳的中间路线: 核心状态像 reducer 系统一样可推导，环境层像对象系统一样可控地持有资源。

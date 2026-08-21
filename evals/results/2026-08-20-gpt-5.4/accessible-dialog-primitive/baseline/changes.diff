@@ -1,0 +1,612 @@
+diff --git a/docs/dialog-primitive-spec.md b/docs/dialog-primitive-spec.md
+new file mode 100644
+index 0000000..50e6d2b
+--- /dev/null
++++ b/docs/dialog-primitive-spec.md
+@@ -0,0 +1,606 @@
++# Headless Dialog Primitive Spec
++
++## Context
++
++三个 React 产品各自维护 Dialog，已经出现以下共性问题：
++
++- 焦点可逃逸到遮罩层外或页面底层
++- `Escape` 行为不一致，含嵌套弹层时更明显
++- `aria-*` 标注缺失，屏幕阅读器体验不稳定
++- 样式和动画实现散落在业务侧，难以复用
++
++目标是在前端基建层发布一个可复用的 headless Dialog primitive，统一可访问性、交互语义和状态模型，同时把视觉风格留给消费者。
++
++## Scope
++
++本 primitive 必须支持：
++
++- React 18+
++- `portal`
++- 受控和非受控打开方式
++- 嵌套 Dialog
++- SSR 和 hydration
++- 消费者自定义样式与动画
++
++本 primitive 明确不负责：
++
++- 业务文案
++- 业务按钮、表单、确认/取消逻辑
++- 品牌样式、主题、动效 token
++- toast、drawer、popover 等非 modal 语义组件
++
++## Release Decision
++
++发布一个独立包：`@acme/dialog`
++
++设计原则：
++
++- `headless only`：只提供结构、状态、焦点和 a11y 语义，不提供视觉样式
++- `compound components`：通过 `Root + Trigger + Portal + Overlay + Content + Title + Description + Close`
++- `single behavior model`：无论三个产品怎么写样式，交互都走同一套底层状态机
++- `modal-first`：默认 `modal=true`，非模态作为显式 opt-in
++- `controlled/uncontrolled parity`：受控和非受控行为一致，事件时序一致
++
++## Package Layout
++
++建议目录：
++
++```text
++packages/dialog/
++  src/
++    index.ts
++    dialog-root.tsx
++    dialog-trigger.tsx
++    dialog-portal.tsx
++    dialog-overlay.tsx
++    dialog-content.tsx
++    dialog-title.tsx
++    dialog-description.tsx
++    dialog-close.tsx
++    context.ts
++    stack.ts
++    focus-scope.ts
++    dismissable-layer.ts
++    portal.tsx
++    id.ts
++    types.ts
++  package.json
++  README.md
++```
++
++内部能力拆分：
++
++- `stack.ts`：管理嵌套层级，只允许顶层 active dialog 响应 `Escape` 和 outside interaction
++- `focus-scope.ts`：负责初始聚焦、tab 环、关闭后焦点恢复
++- `dismissable-layer.ts`：统一 `Escape`、pointer down outside、focus outside
++- `id.ts`：SSR 稳定 id，避免 hydration 时 `aria-labelledby` / `aria-describedby` 不一致
++
++## Core Boundaries
++
++### 1. `Dialog.Root`
++
++职责：
++
++- 持有打开状态
++- 连接受控/非受控模式
++- 建立上下文
++- 向子组件暴露 `open`, `modal`, ids, refs, stack metadata
++
++边界：
++
++- 不渲染 DOM
++- 不附带默认 className
++- 不承担 portal 挂载
++
++### 2. `Dialog.Trigger`
++
++职责：
++
++- 触发 open
++- 暴露 `aria-haspopup="dialog"`
++- 同步 `aria-expanded` 和 `aria-controls`
++
++边界：
++
++- 默认渲染 `button`
++- 支持 `asChild`，让消费者接管 DOM 标签和样式
++
++### 3. `Dialog.Portal`
++
++职责：
++
++- 控制内容是否挂到 `document.body` 或指定容器
++- 在 SSR 阶段保持无副作用
++
++边界：
++
++- 不注入额外布局样式
++- 未 hydration 前不访问 `document`
++
++### 4. `Dialog.Overlay`
++
++职责：
++
++- 提供遮罩语义节点
++- 透出 data attributes 供动画和样式使用
++
++边界：
++
++- 不强制背景色
++- 不处理点击关闭逻辑；关闭逻辑统一由 `Content` 内部的 dismiss layer 判定
++
++### 5. `Dialog.Content`
++
++职责：
++
++- 输出 `role="dialog"` 或 `role="alertdialog"`
++- 焦点捕获与恢复
++- 绑定 `aria-labelledby` / `aria-describedby`
++- 处理 `Escape`
++- 处理 outside interactions
++- 在 modal 模式下隔离页面其他可交互内容
++
++边界：
++
++- 不注入业务布局
++- 不耦合标题、描述是否必须渲染；只在缺失时给开发警告
++
++### 6. `Dialog.Title` / `Dialog.Description`
++
++职责：
++
++- 自动注册 id，供 Content 关联
++
++边界：
++
++- 仅处理语义关联，不参与排版
++
++### 7. `Dialog.Close`
++
++职责：
++
++- 触发关闭
++
++边界：
++
++- 不写死文案和 icon
++- 支持 `asChild`
++
++## Public API
++
++### Components
++
++```ts
++import * as Dialog from "@acme/dialog";
++```
++
++```tsx
++<Dialog.Root
++  open={open}
++  defaultOpen={false}
++  onOpenChange={setOpen}
++  modal={true}
++>
++  <Dialog.Trigger asChild>
++    <button>Edit profile</button>
++  </Dialog.Trigger>
++
++  <Dialog.Portal container={container}>
++    <Dialog.Overlay className="overlay" />
++    <Dialog.Content
++      className="content"
++      onOpenAutoFocus={(event) => {}}
++      onCloseAutoFocus={(event) => {}}
++      onEscapeKeyDown={(event) => {}}
++      onPointerDownOutside={(event) => {}}
++      onInteractOutside={(event) => {}}
++    >
++      <Dialog.Title>Edit profile</Dialog.Title>
++      <Dialog.Description>Update your public information.</Dialog.Description>
++      <Dialog.Close asChild>
++        <button>Close</button>
++      </Dialog.Close>
++    </Dialog.Content>
++  </Dialog.Portal>
++</Dialog.Root>
++```
++
++### Props Contract
++
++`Dialog.Root`
++
++```ts
++type DialogRootProps = {
++  open?: boolean;
++  defaultOpen?: boolean;
++  onOpenChange?: (open: boolean) => void;
++  modal?: boolean;
++  children: React.ReactNode;
++};
++```
++
++约束：
++
++- `open` 存在时视为受控；`defaultOpen` 仅用于非受控
++- 开发态下同时传 `open` 和 `defaultOpen` 给 warning
++- `onOpenChange` 必须由所有关闭入口统一触发
++
++`Dialog.Trigger`
++
++```ts
++type DialogTriggerProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"button">;
++```
++
++`Dialog.Portal`
++
++```ts
++type DialogPortalProps = {
++  container?: HTMLElement | null;
++  forceMount?: boolean;
++  children: React.ReactNode;
++};
++```
++
++`Dialog.Overlay`
++
++```ts
++type DialogOverlayProps = {
++  asChild?: boolean;
++  forceMount?: boolean;
++} & React.ComponentPropsWithoutRef<"div">;
++```
++
++`Dialog.Content`
++
++```ts
++type DialogContentProps = {
++  asChild?: boolean;
++  forceMount?: boolean;
++  role?: "dialog" | "alertdialog";
++  onOpenAutoFocus?: (event: Event) => void;
++  onCloseAutoFocus?: (event: Event) => void;
++  onEscapeKeyDown?: (event: KeyboardEvent) => void;
++  onPointerDownOutside?: (event: PointerEvent) => void;
++  onFocusOutside?: (event: FocusEvent) => void;
++  onInteractOutside?: (event: Event) => void;
++} & React.ComponentPropsWithoutRef<"div">;
++```
++
++约束：
++
++- `role` 默认 `dialog`
++- `alertdialog` 不改变样式，只改变辅助技术语义
++- 消费者在事件里 `preventDefault()` 时，primitive 尊重阻止行为
++
++`Dialog.Title`
++
++```ts
++type DialogTitleProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"h2">;
++```
++
++`Dialog.Description`
++
++```ts
++type DialogDescriptionProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"p">;
++```
++
++`Dialog.Close`
++
++```ts
++type DialogCloseProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"button">;
++```
++
++### Data Attributes
++
++为消费者样式和动效提供稳定钩子：
++
++- `[data-state="open" | "closed"]`
++- `[data-disabled]`
++- `[data-dialog-content]`
++- `[data-dialog-overlay]`
++- `[data-nested="true"]`
++
++### Refs
++
++- `Trigger` 转发到触发元素
++- `Content` 转发到对话框根节点
++- `Overlay` / `Close` / `Title` / `Description` 均转发到底层 DOM
++
++## Behavioral Rules
++
++### Open / Close Semantics
++
++- `Trigger` click 或 keyboard activation 打开
++- `Close` click 关闭
++- 顶层 active dialog 才响应 `Escape`
++- modal 模式下，outside pointer interaction 默认关闭；若事件被阻止则保持打开
++- 非 modal 模式下允许底层页面继续可聚焦，但 `Escape` 仍只作用于 active dialog
++
++### Focus Management
++
++- 打开时默认聚焦 `Content` 内第一个可聚焦元素
++- 若无可聚焦元素，则聚焦 `Content`
++- 关闭时恢复到触发元素；若触发元素已卸载，则尝试恢复到先前 active element，否则不抛错
++- 嵌套 Dialog 打开时，父级焦点陷阱暂停，子级接管
++- 子级关闭后，焦点回到父级最后活跃元素，而不是页面底层
++
++### Nested Dialog Stack
++
++- 维护 LIFO stack
++- 只有 stack 顶部实例可以：
++  - 响应 `Escape`
++  - 响应 outside interactions
++  - 设置 `aria-hidden` / inert 隔离外围内容
++- 父弹窗打开子弹窗时不自动关闭父弹窗
++
++### SSR / Hydration
++
++- 服务端渲染阶段不访问 `window` / `document`
++- id 使用 React `useId` 或等价稳定方案
++- portal hydration 前允许内容先内联渲染，hydration 后再挂入目标容器
++- 不依赖 mount order 生成随机 id
++
++### Accessibility Baseline
++
++`Content` 在 modal 模式下必须满足：
++
++- `role="dialog"` 或 `role="alertdialog"`
++- `aria-modal="true"`
++- `aria-labelledby` 指向 `Title`，若无 `Title` 则允许消费者显式传 `aria-label`
++- `aria-describedby` 在有 `Description` 时自动绑定
++
++开发态 warning：
++
++- 同时缺失 `Title` 与 `aria-label`
++- `alertdialog` 未提供可感知标题
++- `Dialog.Content` 脱离 `Dialog.Root` 使用
++
++## Internal Implementation Decisions
++
++### State Model
++
++- 使用 `useControllableState` 统一受控/非受控
++- 所有关闭来源都归一为 `requestOpenChange(false, reason)`
++- `reason` 为内部枚举，不进入公开 API，避免过早锁死事件模型
++
++内部关闭原因建议：
++
++```ts
++type CloseReason =
++  | "trigger"
++  | "close-button"
++  | "escape-key"
++  | "pointer-down-outside"
++  | "programmatic";
++```
++
++### Dismiss Strategy
++
++- `Escape` 监听挂在 active content document 上
++- pointer down outside 先判定 overlay/content/portal 树，再决定是否请求关闭
++- focus outside 和 pointer outside 统一进入 `onInteractOutside`
++
++### Page Isolation
++
++modal 模式优先级：
++
++1. 对非 dialog subtree 设置 `inert`
++2. 不支持 `inert` 的环境退化到 `aria-hidden`
++
++说明：
++
++- `inert` 用于真实阻止 tab/点击穿透
++- `aria-hidden` 仅作为兼容退化，不单独承担交互隔离
++
++### Styling Contract
++
++- primitive 不输出任何内联视觉样式
++- 只输出最小语义属性和 data attributes
++- `forceMount` 交给消费者处理 exit animation
++
++## Package Exports
++
++建议导出：
++
++```json
++{
++  "name": "@acme/dialog",
++  "version": "0.1.0",
++  "sideEffects": false,
++  "main": "./dist/index.js",
++  "module": "./dist/index.mjs",
++  "types": "./dist/index.d.ts",
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.mjs",
++      "require": "./dist/index.js"
++    }
++  },
++  "peerDependencies": {
++    "react": "^18.2.0 || ^19.0.0",
++    "react-dom": "^18.2.0 || ^19.0.0"
++  }
++}
++```
++
++导出策略决策：
++
++- 只暴露根入口 `@acme/dialog`
++- 不暴露 `stack`, `focus-scope`, `dismissable-layer` 等内部模块
++- 不提供 CSS 文件导出
++- 不把 `CloseReason` 作为公共类型暴露，避免后续演进被 API 锁住
++
++公开导出建议：
++
++```ts
++export {
++  Root,
++  Trigger,
++  Portal,
++  Overlay,
++  Content,
++  Title,
++  Description,
++  Close,
++} from "./dialog";
++
++export type {
++  DialogRootProps,
++  DialogTriggerProps,
++  DialogPortalProps,
++  DialogOverlayProps,
++  DialogContentProps,
++  DialogTitleProps,
++  DialogDescriptionProps,
++  DialogCloseProps,
++} from "./types";
++```
++
++## Test Matrix
++
++### Unit
++
++| Area | Case | Expected |
++|------|------|----------|
++| controllable state | `open` 受控时 trigger 不直接改内部 state | 仅触发 `onOpenChange` |
++| uncontrolled state | `defaultOpen` 初始化后可正常开关 | DOM 状态与 data-state 同步 |
++| ids | title/description 自动注册 | `aria-labelledby` / `aria-describedby` 稳定 |
++| stack | 多实例嵌套时 top-most 生效 | 仅顶部实例消费 `Escape` |
++| warnings | 缺标题且无 `aria-label` | 开发态警告，生产态静默 |
++
++### Integration
++
++| Flow | Case | Expected |
++|------|------|----------|
++| portal | 挂到自定义 container | 内容实际出现在目标容器 |
++| focus trap | `Tab` / `Shift+Tab` 循环 | 焦点不逃逸 |
++| restore focus | 关闭后回到 trigger | 页面主文档 activeElement 正确 |
++| nested dialog | 父开子，子关回父 | 焦点回父级，不回页面底层 |
++| outside interaction | click overlay 关闭 | 调用 `onOpenChange(false)` |
++| prevented outside | `onPointerDownOutside.preventDefault()` | 保持打开 |
++| escape | 顶层按 `Escape` 关闭 | 父级在子级打开时不误关 |
++| non-modal | `modal={false}` | 不隔离页面，但对话框语义仍成立 |
++
++### SSR / Hydration
++
++| Case | Expected |
++|------|----------|
++| SSR render | 服务端渲染无 `document is not defined` |
++| hydration ids | hydration 前后 aria 关联不漂移 |
++| portal hydration | hydration 后 portal 迁移不丢焦点 |
++
++### Accessibility
++
++| Case | Expected |
++|------|----------|
++| labelled dialog | 有 `Title` 时自动带 `aria-labelledby` |
++| described dialog | 有 `Description` 时自动带 `aria-describedby` |
++| fallback label | 无 `Title` 但有 `aria-label` 时不过警告 |
++| alertdialog | `role="alertdialog"` 且 `aria-modal="true"` |
++
++### Browser Coverage
++
++- Chromium 最新稳定版
++- Safari 最新稳定版
++- Firefox 最新稳定版
++
++### Tooling
++
++- `@testing-library/react`
++- `@testing-library/user-event`
++- Playwright
++- axe 或 `jest-axe`
++
++## Migration Plan
++
++### Phase 0: Inventory
++
++- 盘点三个产品当前 Dialog 入口、业务 wrapper、样式依赖和自定义关闭行为
++- 统计差异项：是否受控、是否 portal、是否嵌套、是否依赖 overlay click、是否手写 focus trap
++
++### Phase 1: Primitive 落包
++
++- 发布 `@acme/dialog@0.1.0`
++- 先接入设计系统或共享组件层，不直接批量替换业务弹窗
++
++### Phase 2: Adapter Layer
++
++每个产品先写一层本地适配器，例如：
++
++```tsx
++export function ProductDialog(props: ProductDialogProps) {
++  return (
++    <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
++      <Dialog.Portal>
++        <Dialog.Overlay className={styles.overlay} />
++        <Dialog.Content className={styles.content}>
++          {props.children}
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>
++  );
++}
++```
++
++目的：
++
++- 先迁移行为，再保留原产品样式和 API 表面
++- 降低一次性改造 3 个产品的回归面
++
++### Phase 3: Replace High-Risk Dialogs First
++
++优先替换这些场景：
++
++- 已知有焦点逃逸的弹窗
++- 支持嵌套的复杂弹窗
++- 需要 SSR 的页面级弹窗
++
++暂缓低价值场景：
++
++- 纯静态营销弹窗
++- 即将下线的业务模块
++
++### Phase 4: Remove Legacy Helpers
++
++在三个产品都切换完成后，删除：
++
++- 自研 focus trap util
++- 各产品不一致的 `useEscapeClose`
++- 重复的 portal wrapper
++- 业务层手写 `aria-labelledby` glue code
++
++## Acceptance Criteria
++
++1. 发布后的 `@acme/dialog` 能在 React 18+ 项目中以 headless 方式消费。
++2. primitive 不包含任何业务文案、业务按钮和产品样式。
++3. `Trigger`、`Content`、`Close`、`Title`、`Description` 支持 `asChild`。
++4. 同时支持受控和非受控打开方式，且事件时序一致。
++5. 顶层 active dialog 能正确处理 `Escape`、outside interaction 和焦点恢复。
++6. 嵌套 Dialog 时，父子层级的焦点陷阱和关闭逻辑不互相污染。
++7. modal 模式下焦点不能逃逸到页面底层。
++8. SSR 和 hydration 不出现 id 漂移或运行时访问 `document` 的错误。
++9. 消费者可仅通过 `className`、`style`、`data-*` 和 `forceMount` 自定义视觉与动画。
++10. 测试矩阵覆盖 unit、integration、SSR/hydration、a11y 和主流浏览器回归。
++
++## Recommended Rollout
++
++- 版本策略：`0.x` 起步，等三个产品至少两个稳定迁移后再升 `1.0`
++- 发布策略：先灰度到一个产品的低风险弹窗，再扩到复杂嵌套场景
++- 回滚策略：保留产品适配器层，单个业务出现问题时可回退到旧实现，不阻塞其他产品迁移
++
++## Open Decisions
++
++以下问题在真正编码前必须统一，但不影响当前架构方向：
++
++- `modal={false}` 是否允许 outside pointer 默认关闭，还是只保留 `Escape`
++- 是否把 `Overlay` 设为可选节点但仍保留 modal 行为
++- 包名是否使用现有 monorepo scope；本文先用 `@acme/dialog` 作为占位名

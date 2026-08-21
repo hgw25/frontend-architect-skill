@@ -1,0 +1,1855 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: accessible-dialog-primitive
+request: 三个 React 产品都各自实现了 Dialog，已经出现焦点逃逸、Escape 行为不一致、 aria 标注缺失和样式难以复用。请按前端基建标准设计一个可发布的 headless Dialog primitive，并给出核心实现边界、公开 API、包导出、测试矩阵和迁移方案。需要支持 portal、受控和非受控打开方式、嵌套 Dialog、SSR/水合和消费者自定义样式；不要把 产品弹窗文案和业务按钮写进 primitive。
+artifact: 
+failure_rules: ["只封装一个带 children 的 div 和 open 布尔值", "仅依靠 aria-modal 而没有完整键盘与焦点行为", "用大量布尔 props 承载不同产品的业务变体", "宣称单元测试通过即可证明组件库可发布"]
+
+RESPONSE:
+已在 [dialog-primitive-proposal.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-kvbon871/dialog-primitive-proposal.md) 落了一份可评审方案。基于当前 workspace 的真实情况，这里没有任何 React 源码、包结构或现有 Dialog 实现可检查，所以我没有伪造“现状改造 diff”，而是给出一份可发布的 headless Dialog primitive 设计。
+
+核心决策是新增一个共享包 `@acme/dialog`，只负责可访问性、焦点管理、Escape/外部点击关闭、portal、嵌套栈、SSR/水合安全，以及受控/非受控状态；不负责业务文案、按钮布局和样式主题。文档里已经明确了组件边界（`Root/Trigger/Portal/Overlay/Content/Title/Description/Close`）、推荐公开 API、`package.json` 导出策略、测试矩阵，以及按“兼容包装层 -> 分产品渐进迁移 -> 下线旧实现”的迁移方案。
+
+我还把一个关键实现取舍写死了：`Portal` 默认服务端不直接挂到 `document.body`，避免 SSR/hydration 不一致；嵌套 Dialog 只允许最上层实例接管焦点陷阱、滚动锁和 `Escape`。这两个点是这类基础组件最容易在跨产品接入时出问题的地方。
+
+这次没有运行测试，因为仓库里没有可执行的 React 工程或测试配置。下一步如果你要我继续，我可以直接在这个 workspace 里把 `@acme/dialog` 的真实包骨架和首版实现搭起来。
+
+DIFF:
+diff --git a/dialog-primitive-proposal.md b/dialog-primitive-proposal.md
+new file mode 100644
+index 0000000..0cad182
+--- /dev/null
++++ b/dialog-primitive-proposal.md
+@@ -0,0 +1,543 @@
++# Headless Dialog Primitive Proposal
++
++## Workspace facts
++
++- This workspace currently contains only `.frontend-architect/` guidance and `.git/`.
++- No React app, package layout, build config, or existing Dialog implementation is present to inspect.
++- The proposal below is therefore a release-oriented design for introduction into a shared frontend foundation, not a diff against existing product code.
++
++## Decision
++
++Publish one headless primitive package for shared dialog behavior instead of keeping three product-local implementations.
++
++Recommended package name:
++
++- `@acme/dialog`
++
++Recommended package role:
++
++- Own accessibility, focus management, dismissal rules, portal behavior, stacking, SSR/hydration safety, and state ownership.
++- Do not own product copy, button layout, submit/cancel semantics, analytics policy, or visual styling.
++
++This is justified because the current problem is not visual duplication alone. It is inconsistent correctness in a repeated interaction pattern: focus escape, `Escape` mismatch, missing ARIA semantics, and styling drift.
++
++## Non-goals
++
++- No opinionated visual theme.
++- No product-specific footer buttons or confirm/cancel copy.
++- No animation system beyond exposing state hooks and data attributes.
++- No generic overlay manager for every floating primitive on day one.
++
++## Consumer model
++
++The primitive should support two consumer styles:
++
++1. Declarative composition for most app usage.
++2. Low-level hooks/internal utilities for future shared primitives, but keep those internal until a second real consumer exists.
++
++Recommended public surface:
++
++```tsx
++<Dialog.Root open={open} onOpenChange={setOpen}>
++  <Dialog.Trigger asChild>
++    <button>Edit profile</button>
++  </Dialog.Trigger>
++
++  <Dialog.Portal>
++    <Dialog.Overlay className="overlay" />
++    <Dialog.Content className="content">
++      <Dialog.Title>Edit profile</Dialog.Title>
++      <Dialog.Description>Update your public details.</Dialog.Description>
++      <button onClick={() => setOpen(false)}>Close</button>
++    </Dialog.Content>
++  </Dialog.Portal>
++</Dialog.Root>
++```
++
++The package stays headless by exposing semantics and state, not product UI.
++
++## Core implementation boundary
++
++### `Dialog.Root`
++
++Owns only dialog state and shared context:
++
++- Controlled state: `open`, `onOpenChange`
++- Uncontrolled state: `defaultOpen`
++- Modal mode: default `true`
++- Nested stack registration
++- Trigger reference
++- Content reference
++- Title/description ids
++- Restore-focus target
++- Dismissal policy
++
++It should not render DOM by itself.
++
++### `Dialog.Trigger`
++
++Owns trigger activation wiring:
++
++- Click / keyboard open behavior
++- `aria-haspopup="dialog"`
++- `aria-expanded`
++- `aria-controls` when content id is known
++- Trigger ref capture for focus restore
++
++Use `asChild` to avoid forcing wrapper DOM.
++
++### `Dialog.Portal`
++
++Owns optional portal placement:
++
++- Default to `document.body` in browser
++- Accept custom `container?: HTMLElement | null`
++- Render inline when `disabled`
++- Avoid accessing `document` during SSR render
++
++### `Dialog.Overlay`
++
++Owns only backdrop semantics and pointer dismissal hook.
++
++- No hard-coded colors
++- Expose `data-state="open|closed"`
++- Expose `data-dialog-overlay`
++
++### `Dialog.Content`
++
++Owns the hardest behavior:
++
++- `role="dialog"` and `aria-modal` when modal
++- Link `aria-labelledby` and `aria-describedby`
++- Focus trap for modal dialogs
++- Initial focus placement
++- Focus restoration on close
++- `Escape` handling
++- Outside interaction handling
++- Stack-aware behavior for nested dialogs
++- Scroll lock when topmost modal dialog is open
++- Prevent background interaction for modal mode
++
++It should not own button placement, spacing, or close icon rendering.
++
++### `Dialog.Title` and `Dialog.Description`
++
++Own only semantic labelling and id registration.
++
++### `Dialog.Close`
++
++Optional convenience primitive:
++
++- Close current dialog on activation
++- Support `asChild`
++
++Keep it because close affordances are repeated and semantically stable.
++
++## State and behavior rules
++
++### Controlled and uncontrolled
++
++Support both because product flows will need:
++
++- Controlled: route-driven dialogs, async workflows, parent-owned orchestration
++- Uncontrolled: simple local dialogs
++
++Rules:
++
++- `open` means controlled; internal state is ignored except for derived bookkeeping.
++- `defaultOpen` is initial uncontrolled value only.
++- `onOpenChange(nextOpen, details)` fires for both modes.
++- In controlled mode, dismissal requests must call `onOpenChange(false, details)` and not mutate local state.
++
++Recommended dismissal detail:
++
++```ts
++type DialogOpenChangeReason =
++  | 'trigger'
++  | 'close-button'
++  | 'escape-key'
++  | 'outside-press'
++  | 'programmatic'
++
++type DialogOpenChangeDetails = {
++  reason: DialogOpenChangeReason
++}
++```
++
++This keeps analytics and product policy outside the primitive while making close reasons observable.
++
++### Modal and non-modal
++
++Default `modal={true}`.
++
++Modal behavior:
++
++- Trap focus inside topmost dialog
++- Prevent pointer and keyboard interaction with background
++- Lock body scroll
++- `Escape` closes only the topmost closable dialog
++
++Non-modal behavior:
++
++- No focus trap
++- No background inerting
++- Keep ARIA semantics
++- Still support portal and labelled content
++
++### Nested dialogs
++
++Required invariant:
++
++- Only the topmost open modal dialog owns trap, scroll lock, outside dismissal, and `Escape`.
++
++Implementation boundary:
++
++- Internal stack manager scoped to the package
++- Each open content registers with a stable stack order on mount
++- Global listeners act only for the top stack entry
++- Parent dialog remains mounted but inert from an interaction-policy perspective
++
++### SSR and hydration
++
++Required behavior:
++
++- Server render must not touch `window` or `document`
++- IDs must be hydration-stable
++- Portal subtree should render only after client mount unless consumer explicitly disables portal
++
++Recommended rule:
++
++- `Dialog.Portal` returns `null` on the server by default
++- `Dialog.Content` can still be rendered inline without portal for SSR-sensitive routes
++
++This avoids hydration mismatch from server-side `document.body` assumptions.
++
++### Portal behavior
++
++Support:
++
++- Default body portal
++- Custom container
++- Inline rendering via `disabled`
++
++Do not couple portal existence to dialog semantics. A dialog remains a dialog whether rendered inline or portaled.
++
++### Styling boundary
++
++Headless styling contract:
++
++- Accept `className`, `style`, and native DOM props on rendered parts
++- Expose `data-state`, `data-disabled`, `data-modal`, `data-nested`
++- Forward refs
++- Do not ship product CSS
++
++Optional package-level stylesheet should be avoided initially. It creates visual policy too early.
++
++## Public API
++
++```ts
++export interface DialogRootProps {
++  open?: boolean
++  defaultOpen?: boolean
++  onOpenChange?: (open: boolean, details: DialogOpenChangeDetails) => void
++  modal?: boolean
++  children: React.ReactNode
++}
++
++export interface DialogPortalProps {
++  children: React.ReactNode
++  container?: HTMLElement | null
++  disabled?: boolean
++  forceMount?: boolean
++}
++
++export interface DialogTriggerProps
++  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
++  asChild?: boolean
++}
++
++export interface DialogOverlayProps
++  extends React.HTMLAttributes<HTMLDivElement> {
++  asChild?: boolean
++  forceMount?: boolean
++}
++
++export interface DialogContentProps
++  extends React.HTMLAttributes<HTMLDivElement> {
++  asChild?: boolean
++  forceMount?: boolean
++  onEscapeKeyDown?: (event: KeyboardEvent) => void
++  onPointerDownOutside?: (event: PointerEvent) => void
++  onInteractOutside?: (event: Event) => void
++  onOpenAutoFocus?: (event: Event) => void
++  onCloseAutoFocus?: (event: Event) => void
++}
++
++export interface DialogTitleProps
++  extends React.HTMLAttributes<HTMLHeadingElement> {
++  asChild?: boolean
++}
++
++export interface DialogDescriptionProps
++  extends React.HTMLAttributes<HTMLParagraphElement> {
++  asChild?: boolean
++}
++
++export interface DialogCloseProps
++  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
++  asChild?: boolean
++}
++```
++
++Recommended namespace export:
++
++```ts
++export * as Dialog from './dialog'
++```
++
++Recommended named exports too:
++
++```ts
++export {
++  Root,
++  Trigger,
++  Portal,
++  Overlay,
++  Content,
++  Title,
++  Description,
++  Close,
++} from './dialog'
++```
++
++Reason:
++
++- Namespace export makes consumer ergonomics clear.
++- Named exports keep tree-shaking and direct import styles available.
++
++## Implementation notes
++
++Recommended internal modules:
++
++```text
++packages/dialog/
++  src/
++    dialog.tsx
++    dialog-context.ts
++    dialog-stack.ts
++    focus-scope.tsx
++    dismissable-layer.tsx
++    portal.tsx
++    scroll-lock.ts
++    use-controllable-state.ts
++    use-stable-id.ts
++    index.ts
++```
++
++Boundary notes:
++
++- `focus-scope`, `dismissable-layer`, and `scroll-lock` can remain package-internal until another primitive demonstrably needs them.
++- Do not publish low-level internals in v1. Shared internals become long-term compatibility burden quickly.
++
++## Package exports
++
++Recommended `package.json` shape:
++
++```json
++{
++  "name": "@acme/dialog",
++  "version": "0.1.0",
++  "type": "module",
++  "sideEffects": false,
++  "peerDependencies": {
++    "react": "^18.2.0 || ^19.0.0",
++    "react-dom": "^18.2.0 || ^19.0.0"
++  },
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.js"
++    }
++  }
++}
++```
++
++Release guidance:
++
++- ESM-only is the simplest default unless current consumers require CommonJS.
++- Publish declarations with the runtime artifact.
++- Keep one public entry point in v1.
++- Add subpath exports only when a real use case exists.
++
++## Accessibility contract
++
++The package is not releasable unless these hold:
++
++- Content has `role="dialog"`.
++- Modal content has `aria-modal="true"`.
++- Title and description wire to `aria-labelledby` / `aria-describedby` when present.
++- Keyboard focus moves into the dialog on open.
++- Keyboard focus returns to trigger or prior active element on close.
++- `Tab` and `Shift+Tab` are contained for topmost modal dialog.
++- `Escape` closes only the topmost dialog unless consumer prevents default in handler.
++- Background is non-interactive for topmost modal dialog.
++- Nested dialog labels remain distinct and valid.
++
++If no `Dialog.Title` is provided, development mode should warn that the dialog has no accessible name unless consumer supplied `aria-label` or `aria-labelledby` directly.
++
++## Testing matrix
++
++### Unit and hook tests
++
++- `useControllableState`: controlled and uncontrolled transitions
++- Stack registration order and topmost detection
++- Stable id generation under SSR/client render
++- Scroll-lock reference counting across nested modals
++
++### Component integration tests
++
++- Opens from trigger and closes from `Dialog.Close`
++- Controlled mode does not self-mutate
++- Uncontrolled mode updates DOM state
++- `Escape` closes topmost dialog only
++- Outside press closes when allowed
++- Prevented outside press keeps dialog open
++- Focus enters content on open
++- Focus restores to trigger on close
++- `Tab` loop stays within modal content
++- Non-modal dialog does not trap focus
++- Nested dialog traps inner dialog only
++- Portal renders into `document.body`
++- Custom container portal renders correctly
++- `Portal disabled` renders inline
++- `Title` and `Description` attach ARIA ids correctly
++- Missing title warning fires in development
++
++### SSR and hydration tests
++
++- Server render does not crash without `document`
++- Hydration succeeds with closed dialog
++- Hydration succeeds with `defaultOpen`
++- Portal behavior does not create markup mismatch
++
++### Accessibility automation
++
++- `jest-axe` or equivalent on representative open states
++- Focus order keyboard assertions using Testing Library user events
++
++### Browser-level tests
++
++- Real browser keyboard loop for modal content
++- Nested dialog `Escape` behavior
++- Scroll lock and background click suppression
++
++### Consumer artifact tests
++
++- Built package import smoke test from a fixture app
++- Type test for `asChild`, refs, and handler signatures
++
++## Migration plan
++
++### Phase 0: inventory
++
++- Identify all current dialog variants in the three products
++- Classify them by semantics, not visuals:
++  - simple modal
++  - form dialog
++  - nested/stacked dialog
++  - non-modal sheet-like usage that should not migrate yet
++
++Exit criterion:
++
++- Every current implementation mapped either to the new primitive or an explicit non-goal.
++
++### Phase 1: foundation package
++
++- Build `@acme/dialog`
++- Ship docs with canonical recipes:
++  - basic modal
++  - controlled modal
++  - nested dialogs
++  - custom styled overlay/content
++
++Exit criterion:
++
++- Package passes unit, integration, SSR, and browser tests.
++
++### Phase 2: compatibility adapters
++
++- In each product, create a thin local wrapper matching current design tokens and class structure
++- Keep product APIs stable where possible
++
++Example:
++
++```tsx
++export function ProductDialog(props: ProductDialogProps) {
++  return (
++    <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
++      <Dialog.Portal>
++        <Dialog.Overlay className={styles.overlay} />
++        <Dialog.Content className={styles.content}>
++          {props.children}
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>
++  )
++}
++```
++
++This limits migration blast radius. Products adopt shared behavior first, then simplify local wrappers later.
++
++### Phase 3: consumer migration
++
++Migration order:
++
++1. Low-risk informational dialogs
++2. Standard form dialogs
++3. Nested dialogs and async workflows
++
++Do not migrate all products in one PR. Migrate by dialog family with behavior regression checks.
++
++### Phase 4: deprecation and removal
++
++- Mark product-local legacy dialog implementations deprecated
++- Add lint or import restriction once migration is mostly complete
++- Remove legacy code only after all known consumers are cut over
++
++## Key tradeoffs
++
++### Why headless instead of styled shared component
++
++- The current problem is behavior consistency, not one shared visual language.
++- Three products already have styling divergence.
++- A styled component would force premature token and layout convergence.
++
++### Why support both controlled and uncontrolled
++
++- Route-driven and async-confirmation flows need controlled ownership.
++- Simpler dialogs should not require parent state ceremony.
++
++### Why keep internals private in v1
++
++- Focus scope and dismissable-layer APIs are easy to get wrong and expensive to support publicly.
++- Public low-level exports should wait for proven multi-primitive reuse.
++
++### Why default to modal
++
++- It matches the common accessibility expectation for dialogs used as blocking tasks.
++- Non-modal remains opt-in for rarer cases.
++
++## Release criteria
++
++Do not publish v1 until all are true:
++
++- Public API is documented with at least three consumer examples.
++- All tests in the matrix relevant to v1 pass.
++- Built artifact is verified from a fixture consumer app.
++- SSR and hydration behavior is exercised.
++- Nested dialog and focus restoration behavior is confirmed in a real browser.
++- Migration wrapper is proven in at least one product before broad rollout.
++
++## Recommended next step
++
++Because the workspace has no source packages to patch, the next concrete engineering step is to introduce a real package scaffold and a fixture consumer app, then implement the proposal above starting from `Dialog.Root`, `Dialog.Portal`, and `Dialog.Content`.
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: vite-feature-flags-plugin
+request: 请评审并重构下面的 Vite 插件原型，使它可以作为公司前端基建包发布。消费者应从 virtual:feature-flags 导入类型化 flags；插件需要在 dev、build 和 HMR 下行为一致， 配置错误要有可执行诊断，不能把服务端秘密带入客户端，并需要说明公共类型、包导出、 source map、缓存、集成测试和版本演进。请给出完整关键代码而不是只有架构图。
+artifact: export function featureFlags(flags: Record<string, unknown>) {
+  return {
+    name: 'feature-flags',
+    transform(code: string) {
+      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
+    },
+  }
+}
+
+failure_rules: ["继续使用 replaceAll 修改任意源码", "将完整 process.env 或未筛选配置序列化到客户端", "只有 transform 单元测试而没有真实宿主集成验证", "留下伪代码、any 或未定义的公共类型"]
+
+RESPONSE:
+已把原型重构成可发布的 Vite 基建包，并补上了消费者契约、诊断、HMR 一致性和发布校验。
+
+原型的主要问题是三点：它直接做字符串替换，既不稳定也不保 source map；没有公共/私有 flags 边界，容易把服务端秘密带进客户端；dev、build、HMR 也没有统一的数据来源。现在核心实现改成了虚拟模块方案，入口在 [packages/plugin/src/index.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/packages/plugin/src/index.ts:1)。消费者从 `virtual:feature-flags` 导入，插件只暴露 `expose` 白名单里的 key，并对疑似秘密名做失败诊断。dev/build 都走同一条 `load()` 路径，HMR/SSR 则通过稳定代理对象和缓存失效保持一致。
+
+类型和发布面也补齐了：`virtual:feature-flags` 的公共声明在 [packages/plugin/src/virtual.d.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/packages/plugin/src/virtual.d.ts:1)，示例消费者通过模块增强拿到精确类型，见 [examples/consumer/src/feature-flags.d.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/examples/consumer/src/feature-flags.d.ts:1)。包导出、README、source map、缓存策略、集成测试和版本演进说明整理在 [packages/plugin/package.json](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/packages/plugin/package.json:1) 和 [packages/plugin/README.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/packages/plugin/README.md:1)。打包校验也修到了受限环境可跑，见 [scripts/check-package.mjs](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/scripts/check-package.mjs:1)。
+
+已执行并通过 `npm run check`，包含：
+- `build:plugin`
+- `typecheck`
+- `test:build`
+- `test:dev`
+- `test:diagnostics`
+- `test:package`
+
+DIFF:
+diff --git a/.npm-cache/_cacache/content-v2/sha512/dc/28/59f91235eaedebf997b4a23b836ae12873fb8664e5e52179e403bebcd6f06963c518ccf76c7a475006e81d23ed8e6f9029993c96ea112d913af943db4ba5 b/.npm-cache/_cacache/content-v2/sha512/dc/28/59f91235eaedebf997b4a23b836ae12873fb8664e5e52179e403bebcd6f06963c518ccf76c7a475006e81d23ed8e6f9029993c96ea112d913af943db4ba5
+new file mode 100644
+index 0000000000000000000000000000000000000000..c25c432cb1cbd4b72c5d06ac91be23ea5de78e4a
+GIT binary patch
+literal 7437
+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
+LJzCFr0DJ%dBK4xe
+
+literal 0
+HcmV?d00001
+
+diff --git a/.npm-cache/_cacache/index-v5/48/ba/80a4ee12ad62c218b44332661f50dbd48822b0e5833590529056f1dafe85 b/.npm-cache/_cacache/index-v5/48/ba/80a4ee12ad62c218b44332661f50dbd48822b0e5833590529056f1dafe85
+new file mode 100644
+index 0000000..27dc7d5
+--- /dev/null
++++ b/.npm-cache/_cacache/index-v5/48/ba/80a4ee12ad62c218b44332661f50dbd48822b0e5833590529056f1dafe85
+@@ -0,0 +1,4 @@
++
++36d4f95422cecbac9ece1c4bd7647611d82939cf	{"key":"pacote:tarball:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/packages/plugin","integrity":"sha512-3ChZ+RI16u3r+Ze0ojuDauEoc/uGZOXlIXnkA7681vBpY8UYzPdsekdQBugdI+2Ob5ApmTyW6hEtkTr5Q9tLpQ==","time":1787223999433,"size":7437}
++9b82a5ea4acc53f983a1c295e23b9ee954524eac	{"key":"pacote:tarball:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/packages/plugin","integrity":"sha512-3ChZ+RI16u3r+Ze0ojuDauEoc/uGZOXlIXnkA7681vBpY8UYzPdsekdQBugdI+2Ob5ApmTyW6hEtkTr5Q9tLpQ==","time":1787224006249,"size":7437}
++483aebc083d520730517723e897e509214846c37	{"key":"pacote:tarball:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/packages/plugin","integrity":"sha512-3ChZ+RI16u3r+Ze0ojuDauEoc/uGZOXlIXnkA7681vBpY8UYzPdsekdQBugdI+2Ob5ApmTyW6hEtkTr5Q9tLpQ==","time":1787224027632,"size":7437}
+\ No newline at end of file
+diff --git a/.npm-cache/_logs/2026-08-20T11_06_39_341Z-debug-0.log b/.npm-cache/_logs/2026-08-20T11_06_39_341Z-debug-0.log
+new file mode 100644
+index 0000000..bc02e5a
+--- /dev/null
++++ b/.npm-cache/_logs/2026-08-20T11_06_39_341Z-debug-0.log
+@@ -0,0 +1,19 @@
++0 verbose cli /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/node /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/npm
++1 info using npm@10.9.7
++2 info using node@v22.22.2
++3 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/lib/node_modules/npm/npmrc
++4 silly config load:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npmrc
++5 silly config load:file:/Users/heguangwei/.npmrc
++6 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/etc/npmrc
++7 verbose title npm pack
++8 verbose argv "pack" "--dry-run" "--json" "--workspace" "@frontend-architect-eval/feature-flags"
++9 verbose logfile logs-max:10 dir:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npm-cache/_logs/2026-08-20T11_06_39_341Z-
++10 verbose logfile /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npm-cache/_logs/2026-08-20T11_06_39_341Z-debug-0.log
++11 silly logfile done cleaning log files
++12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
++13 verbose cwd /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c
++14 verbose os Darwin 25.6.0
++15 verbose node v22.22.2
++16 verbose npm  v10.9.7
++17 verbose exit 0
++18 info ok
+diff --git a/.npm-cache/_logs/2026-08-20T11_06_46_158Z-debug-0.log b/.npm-cache/_logs/2026-08-20T11_06_46_158Z-debug-0.log
+new file mode 100644
+index 0000000..5ef7d5b
+--- /dev/null
++++ b/.npm-cache/_logs/2026-08-20T11_06_46_158Z-debug-0.log
+@@ -0,0 +1,19 @@
++0 verbose cli /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/node /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/npm
++1 info using npm@10.9.7
++2 info using node@v22.22.2
++3 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/lib/node_modules/npm/npmrc
++4 silly config load:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npmrc
++5 silly config load:file:/Users/heguangwei/.npmrc
++6 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/etc/npmrc
++7 verbose title npm pack
++8 verbose argv "pack" "--dry-run" "--json" "--workspace" "@frontend-architect-eval/feature-flags"
++9 verbose logfile logs-max:10 dir:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npm-cache/_logs/2026-08-20T11_06_46_158Z-
++10 verbose logfile /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npm-cache/_logs/2026-08-20T11_06_46_158Z-debug-0.log
++11 silly logfile done cleaning log files
++12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
++13 verbose cwd /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c
++14 verbose os Darwin 25.6.0
++15 verbose node v22.22.2
++16 verbose npm  v10.9.7
++17 verbose exit 0
++18 info ok
+diff --git a/.npm-cache/_logs/2026-08-20T11_07_07_530Z-debug-0.log b/.npm-cache/_logs/2026-08-20T11_07_07_530Z-debug-0.log
+new file mode 100644
+index 0000000..a62f63f
+--- /dev/null
++++ b/.npm-cache/_logs/2026-08-20T11_07_07_530Z-debug-0.log
+@@ -0,0 +1,19 @@
++0 verbose cli /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/node /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/npm
++1 info using npm@10.9.7
++2 info using node@v22.22.2
++3 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/lib/node_modules/npm/npmrc
++4 silly config load:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npmrc
++5 silly config load:file:/Users/heguangwei/.npmrc
++6 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/etc/npmrc
++7 verbose title npm pack
++8 verbose argv "pack" "--dry-run" "--json" "--workspace" "@frontend-architect-eval/feature-flags"
++9 verbose logfile logs-max:10 dir:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npm-cache/_logs/2026-08-20T11_07_07_530Z-
++10 verbose logfile /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c/.npm-cache/_logs/2026-08-20T11_07_07_530Z-debug-0.log
++11 silly logfile done cleaning log files
++12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
++13 verbose cwd /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-k9mq470c
++14 verbose os Darwin 25.6.0
++15 verbose node v22.22.2
++16 verbose npm  v10.9.7
++17 verbose exit 0
++18 info ok
+diff --git a/examples/consumer/src/feature-flags.d.ts b/examples/consumer/src/feature-flags.d.ts
+new file mode 100644
+index 0000000..842ca3e
+--- /dev/null
++++ b/examples/consumer/src/feature-flags.d.ts
+@@ -0,0 +1,6 @@
++declare module 'virtual:feature-flags' {
++  interface FeatureFlagsRegistry {
++    checkoutV2: boolean
++    theme: 'dark' | 'light'
++  }
++}
+diff --git a/examples/consumer/tsconfig.json b/examples/consumer/tsconfig.json
+index 98526f3..90eaf18 100644
+--- a/examples/consumer/tsconfig.json
++++ b/examples/consumer/tsconfig.json
+@@ -7,5 +7,5 @@
+     "noEmit": true,
+     "types": ["@frontend-architect-eval/feature-flags/virtual"]
+   },
+-  "include": ["src/**/*.ts", "vite.config.ts"]
++  "include": ["src/**/*.ts", "src/**/*.d.ts", "vite.config.ts"]
+ }
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..8908496
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,108 @@
++# `@frontend-architect-eval/feature-flags`
++
++Vite plugin for exposing a reviewed subset of JSON feature flags to the browser
++through `virtual:feature-flags`.
++
++## Goals
++
++- One public import path: `virtual:feature-flags`
++- Same behavior in `vite dev`, `vite build`, and HMR
++- Explicit allowlist so server-only values never leak accidentally
++- Actionable diagnostics for broken configuration
++- Publishable package exports with declarations and source maps
++
++## Usage
++
++```ts
++import { featureFlags } from '@frontend-architect-eval/feature-flags'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  plugins: [
++    featureFlags({
++      source: new URL('./flags.json', import.meta.url),
++      expose: ['checkoutV2', 'theme'],
++    }),
++  ],
++})
++```
++
++```ts
++import { flags, flagKeys } from 'virtual:feature-flags'
++
++console.log(flags.checkoutV2, flagKeys)
++```
++
++## Public types
++
++The package root exports:
++
++- `featureFlags(options)`
++- `FeatureFlagsOptions`
++- `FeatureFlagValue`
++- `FeatureFlagsRecord`
++
++`virtual:feature-flags` exports:
++
++- `flags`
++- `flagKeys`
++- `default`
++- `FeatureFlagsRegistry`
++
++For exact consumer-side property types, augment `FeatureFlagsRegistry` on the
++virtual module:
++
++```ts
++declare module 'virtual:feature-flags' {
++  interface FeatureFlagsRegistry {
++    checkoutV2: boolean
++    theme: 'dark' | 'light'
++  }
++}
++```
++
++That keeps the runtime entry stable while allowing each app to own its exact
++flag contract.
++
++## Security
++
++Only keys listed in `expose` are shipped to the browser. Keys that look like
++secrets such as `TOKEN`, `SECRET`, `PASSWORD`, or `API_KEY` fail fast unless
++they are explicitly acknowledged in `allowUnsafePublicKeys`.
++
++This plugin expects a JSON object source. Keeping the source as plain JSON makes
++the trust boundary obvious and avoids evaluating arbitrary code during config
++loading.
++
++## Source maps
++
++The package build emits declaration maps and JavaScript source maps for the
++plugin runtime. The plugin does not rewrite consumer source files, so consumer
++module source maps stay intact. The generated virtual module reports the JSON
++flag source as its origin for diagnostics.
++
++## Cache and HMR
++
++The plugin caches the parsed JSON and generated module in memory. Cache
++invalidation happens when Vite reports a change to the source file. The same
++`load()` path is used for dev server, build, and SSR module loading so dev and
++build do not diverge.
++
++## Integration checks
++
++This repository verifies:
++
++- production build output does not contain server-only values
++- dev SSR module loading updates after source changes
++- misconfigured `expose` keys fail with actionable diagnostics
++- packed artifacts contain the expected runtime and type files
++
++## Versioning guidance
++
++- Adding a new exported helper or option is a minor release.
++- Tightening secret detection or validation can be breaking if consumer configs
++  stop compiling; ship that as a major or behind an opt-in first.
++- Changing the `virtual:feature-flags` runtime shape or removing exports is a
++  major release.
++- Adding new fields to a consumer-owned `FeatureFlagsRegistry` is an app-level
++  change, not a plugin breaking change.
+diff --git a/packages/plugin/package.json b/packages/plugin/package.json
+index f5b6fe3..beae44b 100644
+--- a/packages/plugin/package.json
++++ b/packages/plugin/package.json
+@@ -1,11 +1,14 @@
+ {
+   "name": "@frontend-architect-eval/feature-flags",
+   "version": "0.0.0",
+-  "private": true,
+   "type": "module",
++  "description": "Vite plugin that exposes typed public feature flags through virtual:feature-flags.",
++  "sideEffects": false,
+   "files": [
+-    "dist"
++    "dist",
++    "README.md"
+   ],
++  "types": "./dist/index.d.ts",
+   "exports": {
+     ".": {
+       "types": "./dist/index.d.ts",
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..935587b 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,404 @@
+-import type { Plugin } from 'vite'
++import { unwatchFile, watchFile } from 'node:fs'
++import { readFile } from 'node:fs/promises'
++import path from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite'
++
++const PLUGIN_NAME = 'feature-flags'
++const PUBLIC_MODULE_ID = 'virtual:feature-flags'
++const RESOLVED_MODULE_ID = `\0${PUBLIC_MODULE_ID}`
++const LIKELY_SECRET_KEY = /(token|secret|password|private|credential|api[-_]?key)/i
++const RUNTIME_STORE_KEY = '__vite_feature_flags_runtime__'
++
++export type FeatureFlagPrimitive = boolean | number | string | null
++
++export type FeatureFlagValue =
++  | FeatureFlagPrimitive
++  | readonly FeatureFlagValue[]
++  | { readonly [key: string]: FeatureFlagValue }
++
++export type FeatureFlagsRecord = Readonly<Record<string, FeatureFlagValue>>
++
++export interface FeatureFlagsRegistry {}
++
++export interface FeatureFlagsOptions<TFlags extends FeatureFlagsRecord = FeatureFlagsRecord> {
++  source: string | URL
++  expose: readonly (keyof TFlags & string)[]
++  allowUnsafePublicKeys?: readonly (keyof TFlags & string)[]
++}
++
++interface ResolvedFeatureFlagsOptions {
++  allowUnsafePublicKeys: ReadonlySet<string>
++  expose: readonly string[]
++  sourcePath: string
++}
++
++interface CachedModule {
++  code: string
++  map: {
++    file: string
++    mappings: string
++    names: string[]
++    sources: string[]
++    sourcesContent: string[]
++    version: 3
++  }
++  publicFlags: FeatureFlagsRecord
++  rawSource: string
++}
++
++interface RuntimeState {
++  current: FeatureFlagsRecord
++}
++
++export function featureFlags<TFlags extends FeatureFlagsRecord = FeatureFlagsRecord>(
++  options: FeatureFlagsOptions<TFlags>,
++): Plugin {
++  let config: ResolvedConfig | undefined
++  let server: ViteDevServer | undefined
++  let resolvedOptions: ResolvedFeatureFlagsOptions | undefined
++  let cachedModule: CachedModule | undefined
++
++  const invalidateCache = () => {
++    cachedModule = undefined
++  }
++
++  const notifyVirtualModuleUpdate = async (
++    targetServer: ViteDevServer,
++    timestamp: number,
++  ) => {
++    await refreshCachedModule(getResolvedOptions())
++
++    const module = targetServer.moduleGraph.getModuleById(RESOLVED_MODULE_ID)
++    if (!module) {
++      return []
++    }
++
++    targetServer.moduleGraph.invalidateModule(module, new Set(), timestamp, true)
++    targetServer.watcher.emit('change', getResolvedOptions().sourcePath)
++
++    return [module]
++  }
++
++  const getResolvedOptions = () => {
++    if (!resolvedOptions) {
++      throw new Error(`[${PLUGIN_NAME}] Plugin used before config resolution.`)
++    }
++
++    return resolvedOptions
++  }
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+-    name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++    name: PLUGIN_NAME,
++
++    configResolved(resolvedConfig) {
++      config = resolvedConfig
++      resolvedOptions = resolveOptions(options, resolvedConfig.root)
+     },
++
++    configureServer(configuredServer) {
++      server = configuredServer
++      const sourcePath = getResolvedOptions().sourcePath
++
++      configuredServer.watcher.add(sourcePath)
++      watchFile(sourcePath, { interval: 100 }, (current, previous) => {
++        if (current.mtimeMs === previous.mtimeMs) {
++          return
++        }
++
++        void notifyVirtualModuleUpdate(configuredServer, Date.now())
++      })
++    },
++
++    async buildStart() {
++      const currentOptions = getResolvedOptions()
++      this.addWatchFile(currentOptions.sourcePath)
++      await loadModule(currentOptions, true)
++    },
++
++    resolveId(id) {
++      if (id === PUBLIC_MODULE_ID) {
++        return RESOLVED_MODULE_ID
++      }
++      return null
++    },
++
++    async load(id) {
++      if (id !== RESOLVED_MODULE_ID) {
++        return null
++      }
++
++      const currentOptions = getResolvedOptions()
++      const module = await loadModule(currentOptions, false)
++
++      return {
++        code: module.code,
++        map: module.map,
++      }
++    },
++
++    async handleHotUpdate(ctx) {
++      const currentOptions = getResolvedOptions()
++
++      if (ctx.file !== currentOptions.sourcePath) {
++        return
++      }
++
++      return notifyVirtualModuleUpdate(ctx.server, ctx.timestamp)
++    },
++
++    closeBundle() {
++      const sourcePath = resolvedOptions?.sourcePath
++      if (sourcePath) {
++        unwatchFile(sourcePath)
++      }
++    },
++  }
++
++  async function loadModule(
++    currentOptions: ResolvedFeatureFlagsOptions,
++    duringStartup: boolean,
++  ): Promise<CachedModule> {
++    if (cachedModule) {
++      return cachedModule
++    }
++
++    const rawSource = await readSourceFile(currentOptions.sourcePath)
++    const parsedSource = parseSource(rawSource, currentOptions.sourcePath)
++    const publicFlags = selectPublicFlags(parsedSource, currentOptions)
++    syncRuntimeState(publicFlags)
++
++    cachedModule = {
++      code: createVirtualModule(publicFlags),
++      map: {
++        version: 3,
++        file: PUBLIC_MODULE_ID,
++        names: [],
++        sources: [normalizeSourcePath(currentOptions.sourcePath)],
++        sourcesContent: [rawSource],
++        mappings: '',
++      },
++      publicFlags,
++      rawSource,
++    }
++
++    if (duringStartup && config?.command === 'serve' && server) {
++      const module = server.moduleGraph.getModuleById(RESOLVED_MODULE_ID)
++      if (module) {
++        server.moduleGraph.invalidateModule(module, new Set(), Date.now(), true)
++      }
++    }
++
++    return cachedModule
++  }
++
++  async function refreshCachedModule(
++    currentOptions: ResolvedFeatureFlagsOptions,
++  ): Promise<CachedModule> {
++    invalidateCache()
++    return loadModule(currentOptions, false)
+   }
+ }
++
++async function readSourceFile(sourcePath: string): Promise<string> {
++  try {
++    return await readFile(sourcePath, 'utf8')
++  } catch (error) {
++    throw createDiagnostic(
++      `Unable to read feature flag source "${sourcePath}".`,
++      [
++        'Ensure the file exists and is readable from the Vite config root.',
++        'Pass an absolute path or a URL such as new URL("./flags.json", import.meta.url).',
++      ],
++      error,
++    )
++  }
++}
++
++function parseSource(rawSource: string, sourcePath: string): FeatureFlagsRecord {
++  let parsed: unknown
++
++  try {
++    parsed = JSON.parse(rawSource)
++  } catch (error) {
++    throw createDiagnostic(
++      `Invalid JSON in feature flag source "${sourcePath}".`,
++      ['Fix the JSON syntax so the file contains a single object literal.'],
++      error,
++    )
++  }
++
++  if (!isPlainObject(parsed)) {
++    throw createDiagnostic(
++      `Feature flag source "${sourcePath}" must export a top-level JSON object.`,
++      ['Wrap the flags in an object like {"checkoutV2": true} instead of an array or primitive.'],
++    )
++  }
++
++  return parsed
++}
++
++function selectPublicFlags(
++  sourceFlags: FeatureFlagsRecord,
++  options: ResolvedFeatureFlagsOptions,
++): FeatureFlagsRecord {
++  const publicFlags: Record<string, FeatureFlagValue> = {}
++
++  for (const key of options.expose) {
++    if (!Object.prototype.hasOwnProperty.call(sourceFlags, key)) {
++      throw createDiagnostic(
++        `Feature flag "${key}" is listed in "expose" but does not exist in "${options.sourcePath}".`,
++        [
++          `Add "${key}" to the source file or remove it from the plugin's "expose" option.`,
++        ],
++      )
++    }
++
++    if (!options.allowUnsafePublicKeys.has(key) && LIKELY_SECRET_KEY.test(key)) {
++      throw createDiagnostic(
++        `Refusing to expose "${key}" from "${options.sourcePath}" because it looks like a server secret.`,
++        [
++          `Rename the key if it is actually public configuration, or remove it from "expose".`,
++          `If the key is intentionally public, add it to "allowUnsafePublicKeys" to acknowledge the risk explicitly.`,
++        ],
++      )
++    }
++
++    publicFlags[key] = sourceFlags[key]!
++  }
++
++  return Object.freeze(publicFlags)
++}
++
++function resolveOptions<TFlags extends FeatureFlagsRecord>(
++  options: FeatureFlagsOptions<TFlags>,
++  root: string,
++): ResolvedFeatureFlagsOptions {
++  const expose = [...options.expose]
++  if (expose.length === 0) {
++    throw createDiagnostic(
++      'The "expose" option must contain at least one public flag key.',
++      ['List the keys that are safe to ship to the browser, for example expose: ["checkoutV2"].'],
++    )
++  }
++
++  const duplicates = findDuplicates(expose)
++  if (duplicates.length > 0) {
++    throw createDiagnostic(
++      `The "expose" option contains duplicate keys: ${duplicates.join(', ')}.`,
++      ['Remove duplicates so each public flag is declared once.'],
++    )
++  }
++
++  return {
++    sourcePath: resolveSourcePath(options.source, root),
++    expose,
++    allowUnsafePublicKeys: new Set(options.allowUnsafePublicKeys ?? []),
++  }
++}
++
++function resolveSourcePath(source: string | URL, root: string): string {
++  if (source instanceof URL) {
++    return path.normalize(fileURLToPath(source))
++  }
++
++  if (source.trim().length === 0) {
++    throw createDiagnostic(
++      'The "source" option must be a non-empty path or URL.',
++      ['Pass a relative path string or a file URL pointing at the JSON flag source.'],
++    )
++  }
++
++  return path.normalize(path.resolve(root, source))
++}
++
++function createVirtualModule(publicFlags: FeatureFlagsRecord): string {
++  const runtimeFlags = JSON.stringify(publicFlags, null, 2)
++  const runtimeKeys = JSON.stringify(Object.keys(publicFlags))
++
++  return [
++    `const store = globalThis.${RUNTIME_STORE_KEY} ??= Object.create(null);`,
++    `const state = store[${JSON.stringify(PUBLIC_MODULE_ID)}] ??= { current: Object.freeze(${runtimeFlags}), proxy: undefined };`,
++    'if (!state.proxy) {',
++    '  state.proxy = new Proxy(Object.create(null), {',
++    '    get(_target, property) {',
++    '      return state.current[property];',
++    '    },',
++    '    has(_target, property) {',
++    '      return property in state.current;',
++    '    },',
++    '    ownKeys() {',
++    '      return Reflect.ownKeys(state.current);',
++    '    },',
++    '    getOwnPropertyDescriptor(_target, property) {',
++    '      if (!(property in state.current)) return undefined;',
++    '      return {',
++    '        configurable: true,',
++    '        enumerable: true,',
++    '        value: state.current[property],',
++    '      };',
++    '    },',
++    '    set() {',
++    '      return false;',
++    '    },',
++    '  });',
++    '}',
++    `state.current = Object.freeze(${runtimeFlags});`,
++    `export const flagKeys = Object.freeze(${runtimeKeys});`,
++    'export const flags = state.proxy;',
++    'export default flags;',
++  ].join('\n')
++}
++
++function findDuplicates(values: readonly string[]): string[] {
++  const seen = new Set<string>()
++  const duplicates = new Set<string>()
++
++  for (const value of values) {
++    if (seen.has(value)) {
++      duplicates.add(value)
++      continue
++    }
++
++    seen.add(value)
++  }
++
++  return [...duplicates]
++}
++
++function isPlainObject(value: unknown): value is FeatureFlagsRecord {
++  return typeof value === 'object' && value !== null && !Array.isArray(value)
++}
++
++function normalizeSourcePath(sourcePath: string): string {
++  return sourcePath.split(path.sep).join(path.posix.sep)
++}
++
++function syncRuntimeState(publicFlags: FeatureFlagsRecord): void {
++  const globalStore = globalThis as typeof globalThis & {
++    [RUNTIME_STORE_KEY]?: Record<string, RuntimeState>
++  }
++
++  const store =
++    globalStore[RUNTIME_STORE_KEY] ??= Object.create(null) as Record<
++      string,
++      RuntimeState
++    >
++
++  const state = store[PUBLIC_MODULE_ID] ??= { current: publicFlags }
++  state.current = publicFlags
++}
++
++function createDiagnostic(
++  message: string,
++  remediation: readonly string[],
++  cause?: unknown,
++): Error {
++  const details = remediation.map((step) => `- ${step}`).join('\n')
++  const error = cause instanceof Error ? cause.message : ''
++
++  return new Error(
++    [`[${PLUGIN_NAME}] ${message}`, details, error].filter(Boolean).join('\n'),
++  )
++}
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..a344aa4 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,16 @@
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
+-  export const flags: Readonly<Record<string, FeatureFlagValue>>
++  export type FeatureFlagPrimitive = boolean | number | string | null
++  export type FeatureFlagValue =
++    | FeatureFlagPrimitive
++    | readonly FeatureFlagValue[]
++    | { readonly [key: string]: FeatureFlagValue }
++
++  export interface FeatureFlagsRegistry {}
++
++  export type FeatureFlags = Readonly<
++    Record<string, FeatureFlagValue> & FeatureFlagsRegistry
++  >
++  export const flagKeys: readonly (keyof FeatureFlags & string)[]
++  export const flags: FeatureFlags
++  export default flags
+ }
+diff --git a/scripts/check-package.mjs b/scripts/check-package.mjs
+index 05a131b..7c40e77 100644
+--- a/scripts/check-package.mjs
++++ b/scripts/check-package.mjs
+@@ -1,22 +1,35 @@
+ import assert from 'node:assert/strict'
+ import { execFile } from 'node:child_process'
++import { mkdir } from 'node:fs/promises'
++import path from 'node:path'
++import { fileURLToPath } from 'node:url'
+ import { promisify } from 'node:util'
+ 
+ const run = promisify(execFile)
++const cacheDir = fileURLToPath(new URL('../.npm-cache/', import.meta.url))
++await mkdir(cacheDir, { recursive: true })
+ const { stdout } = await run('npm', [
+   'pack',
+   '--dry-run',
+   '--json',
+   '--workspace',
+   '@frontend-architect-eval/feature-flags',
+-])
++], {
++  cwd: fileURLToPath(new URL('..', import.meta.url)),
++  env: {
++    ...process.env,
++    npm_config_cache: cacheDir,
++  },
++})
+ const [manifest] = JSON.parse(stdout)
+ const files = new Set(manifest.files.map(({ path }) => path))
+ 
+ for (const expected of [
++  'README.md',
+   'dist/index.js',
+   'dist/index.js.map',
+   'dist/index.d.ts',
++  'dist/index.d.ts.map',
+   'dist/virtual.d.ts',
+ ]) {
+   assert.ok(files.has(expected), `packed package is missing ${expected}`)
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 21 packages, and audited 24 packages in 866ms
+
+8 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run build:plugin && npm run typecheck && npm run test:build && npm run test:dev && npm run test:diagnostics && npm run test:package
+
+
+> build:plugin
+> npm run build --workspace @frontend-architect-eval/feature-flags
+
+
+> @frontend-architect-eval/feature-flags@0.0.0 build
+> tsc -p tsconfig.build.json && node scripts/copy-static.mjs
+
+
+> typecheck
+> tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p examples/consumer/tsconfig.json --noEmit
+
+
+> test:build
+> vite build --config examples/consumer/vite.config.ts && node scripts/check-build.mjs
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 6 modules transformed.
+rendering chunks...
+computing gzip size...
+examples/consumer/dist/index.html                0.33 kB │ gzip: 0.23 kB
+examples/consumer/dist/assets/index-Bcxl_RdA.js  1.31 kB │ gzip: 0.69 kB
+
+✓ built in 20ms
+
+> test:dev
+> node scripts/check-dev.mjs
+
+
+> test:diagnostics
+> node scripts/check-diagnostics.mjs
+
+
+> test:package
+> node scripts/check-package.mjs
+
+
+
+CASE
+id: derived-state-effect
+request: 请评审下面的 React 组件。保持公开行为不变，判断 state、Effect 和 memoization 是否必要，并说明应该如何验证修改。
+artifact: function UserList({ users, query }) {
+  const [filteredUsers, setFilteredUsers] = useState(users)
+
+  useEffect(() => {
+    setFilteredUsers(
+      users.filter((user) => user.name.includes(query)),
+    )
+  }, [users, query])
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+
+failure_rules: ["只修改 Effect 依赖数组", "无依据增加 memoization"]
+
+RESPONSE:
+**Findings**
+
+1. `UserList` 第 2-9 行把 `filteredUsers` 存成 state，是重复事实。
+   `filteredUsers` 完全由 `users` 和 `query` 推导出来，不是“必须记住”的状态。现在这份实现会先渲染旧值，再由 `useEffect` 同步一次，带来至少一个额外 render，而且在 `users` 或 `query` 变化时会出现短暂的过期列表。
+
+2. `useEffect` 第 4-8 行没有在同步外部系统，只是在做纯计算。
+   这类逻辑应放在 render 期间直接推导。把纯派生放进 Effect，会让数据流变成“两阶段”，更难推断，也更容易产生时序问题。
+
+3. 不建议为这里加 `useMemo`。
+   `users.filter(...)` 是局部、同步、线性的纯计算。除非已经确认 `users` 很大且这个组件重渲染频繁，否则 memoization 只会增加复杂度。这里先写成直接派生更合适。
+
+**Decision**
+
+如果“公开行为不变”是严格要求，那不能直接把它改成 render 时过滤而不说明差异，因为可观察行为会变：
+当前代码在首次挂载和后续 props 变化时，都会先显示旧列表，再显示过滤后的列表。
+
+如果产品真正想要的契约是“`query` 变化后立即显示过滤结果”，那当前实现本身就是缺陷，应该改成：
+
+```jsx
+function UserList({ users, query }) {
+  const filteredUsers = users.filter((user) => user.name.includes(query))
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+```
+
+这时：
+- `state` 不必要
+- `Effect` 不必要
+- `useMemo` 默认也不必要
+
+**How To Verify**
+
+先确认契约，再测对应行为。
+
+如果保留当前公开行为：
+1. 写组件测试，覆盖首次渲染时传入非空 `query`，断言首帧仍显示未过滤列表，随后才变成过滤结果。
+2. 再测 `query` 从 `a` 切到 `b` 时，是否会短暂显示旧结果。
+3. 用 React DevTools Profiler 确认这类更新会触发额外 render；这能证明现实现状。
+
+如果接受“立即过滤”为正确契约并做重构：
+1. 写组件测试，首次渲染传入非空 `query` 时，直接断言只渲染过滤后的用户。
+2. 测 `users` 和 `query` 更新后，同一轮更新里就得到正确列表，不依赖 `waitFor`。
+3. 用 Profiler 对比前后 render 次数，确认少一次由 Effect 触发的重复 render。
+
+结论很明确：从架构上看，`state` 和 `Effect` 都不该存在；是否能删，取决于你是否接受修正当前这个可观察的“延后一拍”行为。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: optimistic-profile-update
+request: 保持现有 React 和 TypeScript 技术栈，为下面的资料编辑功能给出可编译的最小修改。 用户保存后可以立即看到新名称；请求失败必须恢复权威值并显示可重试错误；快速重复 提交不能让旧响应覆盖新结果。同步更新类型、API 边界和最有价值的行为测试，不要留下 伪代码或 TODO。
+artifact: 使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或 删除已有公开 API。
+failure_rules: ["只展示核心 hook 或 reducer 片段而没有完整调用关系", "吞掉错误或让失败后的乐观值继续伪装成已保存", "使用 any 或类型断言掩盖未验证响应"]
+
+RESPONSE:
+已完成最小可编译修改，保留了现有 React + TypeScript 栈和 `updateProfile` 公开 API。
+
+核心调整在 [src/ProfileForm.tsx](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-sxsuqeup/src/ProfileForm.tsx) 和 [src/api.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-sxsuqeup/src/api.ts)：提交时仍立即乐观显示新名称，但把服务器返回值作为唯一权威源；`api.ts` 现在会校验 `response.ok` 和返回体形状，失败或无效响应都会抛错。表单侧增加了“最新提交代次”保护，只有最后一次提交的结果才允许落地，因此快速重复提交时旧响应不会覆盖新结果；若最新请求失败，会把显示值和输入框都恢复到权威值，并显示可重试错误。
+
+测试已同步更新到 [src/ProfileForm.test.tsx](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-sxsuqeup/src/ProfileForm.test.tsx)，覆盖了：
+- 保存中立即看到新名称
+- 返回体无效时回滚并报错
+- 旧响应晚到时不会覆盖较新的成功结果
+
+已运行校验：`npm run typecheck` 和 `npm test`，均通过。
+
+DIFF:
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 2ba023d..4edeb3b 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,14 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { render, screen } from '@testing-library/react'
++import { cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -37,6 +38,10 @@ test('shows the new name while a successful save is pending', async () => {
+       { status: 200, headers: { 'content-type': 'application/json' } },
+     ),
+   )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Grace',
++  )
+ })
+ 
+ test('restores the authoritative name when a successful response has an invalid shape', async () => {
+@@ -65,4 +70,63 @@ test('restores the authoritative name when a successful response has an invalid
+     'Save failed. Please retry.',
+   )
+   expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
++  expect(screen.getByLabelText('Display name')).toHaveValue('Ada')
++})
++
++test('ignores an older save response after a newer save succeeds', async () => {
++  let resolveFirstRequest: ((response: Response) => void) | undefined
++  let resolveSecondRequest: ((response: Response) => void) | undefined
++  const fetchMock = vi
++    .fn<() => Promise<Response>>()
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveFirstRequest = resolve
++        }),
++    )
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveSecondRequest = resolve
++        }),
++    )
++
++  vi.stubGlobal('fetch', fetchMock)
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Katherine')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  resolveSecondRequest?.(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Katherine', version: 2 }),
++      { status: 200, headers: { 'content-type': 'application/json' } },
++    ),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Katherine',
++  )
++
++  resolveFirstRequest?.(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Grace', version: 3 }),
++      { status: 200, headers: { 'content-type': 'application/json' } },
++    ),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Katherine',
++  )
++  expect(screen.getByLabelText('Display name')).toHaveValue('Katherine')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+ })
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..971ea21 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,15 +1,41 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
+   const [displayName, setDisplayName] = useState(profile.displayName)
+   const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [errorMessage, setErrorMessage] = useState('')
++  const authoritativeProfileRef = useRef(profile)
++  const submissionIdRef = useRef(0)
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
++    const submissionId = submissionIdRef.current + 1
++    submissionIdRef.current = submissionId
++
++    setErrorMessage('')
+     setVisibleName(displayName)
+-    await updateProfile(displayName)
++
++    try {
++      const nextProfile = await updateProfile(displayName)
++
++      if (submissionId !== submissionIdRef.current) {
++        return
++      }
++
++      authoritativeProfileRef.current = nextProfile
++      setDisplayName(nextProfile.displayName)
++      setVisibleName(nextProfile.displayName)
++    } catch {
++      if (submissionId !== submissionIdRef.current) {
++        return
++      }
++
++      setDisplayName(authoritativeProfileRef.current.displayName)
++      setVisibleName(authoritativeProfileRef.current.displayName)
++      setErrorMessage('Save failed. Please retry.')
++    }
+   }
+ 
+   return (
+@@ -23,6 +49,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
+         />
+       </label>
+       <button>Save</button>
++      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+     </form>
+   )
+ }
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..c79ed23 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,20 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const candidate = value as Record<string, unknown>
++
++  return (
++    typeof candidate.id === 'string' &&
++    typeof candidate.displayName === 'string' &&
++    typeof candidate.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +25,15 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error('Profile update failed')
++  }
++
++  const payload: unknown = await response.json()
++
++  if (!isProfile(payload)) {
++    throw new Error('Invalid profile response')
++  }
++
++  return payload
+ }
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 118 packages, and audited 119 packages in 984ms
+
+25 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run typecheck && npm test
+
+
+> typecheck
+> tsc --noEmit
+
+
+> test
+> vitest run
+
+
+ RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-sxsuqeup
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  19:28:32
+   Duration  417ms (transform 17ms, setup 0ms, import 75ms, tests 151ms, environment 129ms)
+

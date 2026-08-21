@@ -1,0 +1,276 @@
+diff --git a/src/SearchPage.vue b/src/SearchPage.vue
+index 8ced088..07ce288 100644
+--- a/src/SearchPage.vue
++++ b/src/SearchPage.vue
+@@ -1,5 +1,15 @@
+ <script setup lang="ts">
+-import { onMounted, ref } from 'vue'
++import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
++
++import {
++  formatPrice,
++  formatResultCount,
++  getMessages,
++  parseSearchState,
++  serializeSearchState,
++  type SearchState,
++  type SupportedLocale,
++} from './searchPageIntl'
+ 
+ type SearchResult = {
+   id: string
+@@ -9,47 +19,132 @@ type SearchResult = {
+ 
+ const query = ref('')
+ const page = ref(1)
+-const locale = ref('en-US')
++const locale = ref<SupportedLocale>('en-US')
+ const results = ref<SearchResult[]>([])
+ const total = ref(0)
+ const error = ref('')
++const messages = computed(() => getMessages(locale.value))
++const resultSummary = computed(() => formatResultCount(locale.value, total.value))
++
++let currentRequestId = 0
++let activeController: AbortController | null = null
++
++function applyState(nextState: SearchState) {
++  query.value = nextState.query
++  page.value = nextState.page
++  locale.value = nextState.locale
++}
++
++function currentState(): SearchState {
++  return {
++    query: query.value,
++    page: page.value,
++    locale: locale.value,
++  }
++}
++
++function writeHistory(nextState: SearchState, mode: 'push' | 'replace') {
++  const nextSearch = serializeSearchState(nextState)
++
++  if (location.search === nextSearch) {
++    return
++  }
++
++  const nextUrl = `${location.pathname}${nextSearch}`
++  history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', nextUrl)
++}
++
++async function search(nextState = currentState(), historyMode: 'push' | 'replace' | 'none' = 'none') {
++  applyState(nextState)
++
++  if (historyMode !== 'none') {
++    writeHistory(nextState, historyMode)
++  }
+ 
+-async function search() {
+   error.value = ''
++  const requestId = ++currentRequestId
++
++  activeController?.abort()
++  activeController = new AbortController()
++
+   try {
+     const response = await fetch(
+       `/api/search?q=${encodeURIComponent(query.value)}&page=${page.value}`,
++      { signal: activeController.signal },
+     )
+     const payload = (await response.json()) as {
+       items: SearchResult[]
+       total: number
+     }
++
++    if (requestId !== currentRequestId) {
++      return
++    }
++
+     results.value = payload.items
+     total.value = payload.total
+-  } catch {
+-    error.value = 'Search failed'
++  } catch (caught) {
++    if (requestId !== currentRequestId) {
++      return
++    }
++
++    if (caught instanceof DOMException && caught.name === 'AbortError') {
++      return
++    }
++
++    error.value = messages.value.searchError
+   }
+ }
+ 
+-onMounted(search)
++function submitSearch() {
++  void search(
++    {
++      query: query.value,
++      page: 1,
++      locale: locale.value,
++    },
++    'push',
++  )
++}
++
++function handlePopState() {
++  void search(parseSearchState(location.search))
++}
++
++function priceLabel(amount: number): string {
++  return formatPrice(locale.value, amount)
++}
++
++onMounted(() => {
++  const initialState = parseSearchState(location.search)
++  applyState(initialState)
++  writeHistory(initialState, 'replace')
++  window.addEventListener('popstate', handlePopState)
++  void search(initialState)
++})
++
++onBeforeUnmount(() => {
++  activeController?.abort()
++  window.removeEventListener('popstate', handlePopState)
++})
+ </script>
+ 
+ <template>
+-  <main>
+-    <h1>Product search</h1>
+-    <form @submit.prevent="search">
++  <main :lang="locale">
++    <h1>{{ messages.title }}</h1>
++    <form @submit.prevent="submitSearch">
+       <label>
+-        Search
++        {{ messages.searchLabel }}
+         <input v-model="query" name="query" />
+       </label>
+-      <button type="submit">Search</button>
++      <button type="submit">{{ messages.searchButton }}</button>
+     </form>
+ 
+     <p v-if="error" role="alert">{{ error }}</p>
+-    <p aria-live="polite">{{ total }} results</p>
++    <p aria-live="polite">{{ resultSummary }}</p>
+     <ul>
+       <li v-for="result in results" :key="result.id">
+-        {{ result.name }} — ${{ result.price }}
++        {{ result.name }} — {{ priceLabel(result.price) }}
+       </li>
+     </ul>
+   </main>
+diff --git a/src/searchPageIntl.ts b/src/searchPageIntl.ts
+new file mode 100644
+index 0000000..7ed644d
+--- /dev/null
++++ b/src/searchPageIntl.ts
+@@ -0,0 +1,104 @@
++export type SupportedLocale = 'en-US' | 'fr-FR'
++
++export type SearchState = {
++  query: string
++  page: number
++  locale: SupportedLocale
++}
++
++type Messages = {
++  title: string
++  searchLabel: string
++  searchButton: string
++  searchError: string
++  results: Record<Intl.LDMLPluralRule, string>
++}
++
++const DEFAULT_STATE: SearchState = {
++  query: '',
++  page: 1,
++  locale: 'en-US',
++}
++
++const SUPPORTED_LOCALES = new Set<SupportedLocale>(['en-US', 'fr-FR'])
++
++const MESSAGES: Record<SupportedLocale, Messages> = {
++  'en-US': {
++    title: 'Product search',
++    searchLabel: 'Search',
++    searchButton: 'Search',
++    searchError: 'Search failed',
++    results: {
++      zero: '{count} results',
++      one: '{count} result',
++      two: '{count} results',
++      few: '{count} results',
++      many: '{count} results',
++      other: '{count} results',
++    },
++  },
++  'fr-FR': {
++    title: 'Recherche de produits',
++    searchLabel: 'Recherche',
++    searchButton: 'Rechercher',
++    searchError: 'La recherche a échoué',
++    results: {
++      zero: '{count} résultat',
++      one: '{count} résultat',
++      two: '{count} résultats',
++      few: '{count} résultats',
++      many: '{count} résultats',
++      other: '{count} résultats',
++    },
++  },
++}
++
++const CURRENCIES: Record<SupportedLocale, string> = {
++  'en-US': 'USD',
++  'fr-FR': 'EUR',
++}
++
++export function parseSearchState(search: string): SearchState {
++  const params = new URLSearchParams(search)
++  const pageValue = Number(params.get('page'))
++  const localeValue = params.get('locale')
++
++  return {
++    query: params.get('q') ?? DEFAULT_STATE.query,
++    page: Number.isInteger(pageValue) && pageValue > 0 ? pageValue : DEFAULT_STATE.page,
++    locale: isSupportedLocale(localeValue) ? localeValue : DEFAULT_STATE.locale,
++  }
++}
++
++export function serializeSearchState(state: SearchState): string {
++  const params = new URLSearchParams()
++  params.set('q', state.query)
++  params.set('page', String(state.page))
++  params.set('locale', state.locale)
++  return `?${params.toString()}`
++}
++
++export function getMessages(locale: SupportedLocale): Messages {
++  return MESSAGES[locale]
++}
++
++export function formatResultCount(locale: SupportedLocale, count: number): string {
++  const category = new Intl.PluralRules(locale).select(count)
++  const template = MESSAGES[locale].results[category]
++
++  return template.replace(
++    '{count}',
++    new Intl.NumberFormat(locale).format(count),
++  )
++}
++
++export function formatPrice(locale: SupportedLocale, amount: number): string {
++  return new Intl.NumberFormat(locale, {
++    style: 'currency',
++    currency: CURRENCIES[locale],
++  }).format(amount)
++}
++
++function isSupportedLocale(value: string | null): value is SupportedLocale {
++  return value !== null && SUPPORTED_LOCALES.has(value as SupportedLocale)
++}

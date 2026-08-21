@@ -1,0 +1,549 @@
+diff --git a/dialog-primitive-proposal.md b/dialog-primitive-proposal.md
+new file mode 100644
+index 0000000..0cad182
+--- /dev/null
++++ b/dialog-primitive-proposal.md
+@@ -0,0 +1,543 @@
++# Headless Dialog Primitive Proposal
++
++## Workspace facts
++
++- This workspace currently contains only `.frontend-architect/` guidance and `.git/`.
++- No React app, package layout, build config, or existing Dialog implementation is present to inspect.
++- The proposal below is therefore a release-oriented design for introduction into a shared frontend foundation, not a diff against existing product code.
++
++## Decision
++
++Publish one headless primitive package for shared dialog behavior instead of keeping three product-local implementations.
++
++Recommended package name:
++
++- `@acme/dialog`
++
++Recommended package role:
++
++- Own accessibility, focus management, dismissal rules, portal behavior, stacking, SSR/hydration safety, and state ownership.
++- Do not own product copy, button layout, submit/cancel semantics, analytics policy, or visual styling.
++
++This is justified because the current problem is not visual duplication alone. It is inconsistent correctness in a repeated interaction pattern: focus escape, `Escape` mismatch, missing ARIA semantics, and styling drift.
++
++## Non-goals
++
++- No opinionated visual theme.
++- No product-specific footer buttons or confirm/cancel copy.
++- No animation system beyond exposing state hooks and data attributes.
++- No generic overlay manager for every floating primitive on day one.
++
++## Consumer model
++
++The primitive should support two consumer styles:
++
++1. Declarative composition for most app usage.
++2. Low-level hooks/internal utilities for future shared primitives, but keep those internal until a second real consumer exists.
++
++Recommended public surface:
++
++```tsx
++<Dialog.Root open={open} onOpenChange={setOpen}>
++  <Dialog.Trigger asChild>
++    <button>Edit profile</button>
++  </Dialog.Trigger>
++
++  <Dialog.Portal>
++    <Dialog.Overlay className="overlay" />
++    <Dialog.Content className="content">
++      <Dialog.Title>Edit profile</Dialog.Title>
++      <Dialog.Description>Update your public details.</Dialog.Description>
++      <button onClick={() => setOpen(false)}>Close</button>
++    </Dialog.Content>
++  </Dialog.Portal>
++</Dialog.Root>
++```
++
++The package stays headless by exposing semantics and state, not product UI.
++
++## Core implementation boundary
++
++### `Dialog.Root`
++
++Owns only dialog state and shared context:
++
++- Controlled state: `open`, `onOpenChange`
++- Uncontrolled state: `defaultOpen`
++- Modal mode: default `true`
++- Nested stack registration
++- Trigger reference
++- Content reference
++- Title/description ids
++- Restore-focus target
++- Dismissal policy
++
++It should not render DOM by itself.
++
++### `Dialog.Trigger`
++
++Owns trigger activation wiring:
++
++- Click / keyboard open behavior
++- `aria-haspopup="dialog"`
++- `aria-expanded`
++- `aria-controls` when content id is known
++- Trigger ref capture for focus restore
++
++Use `asChild` to avoid forcing wrapper DOM.
++
++### `Dialog.Portal`
++
++Owns optional portal placement:
++
++- Default to `document.body` in browser
++- Accept custom `container?: HTMLElement | null`
++- Render inline when `disabled`
++- Avoid accessing `document` during SSR render
++
++### `Dialog.Overlay`
++
++Owns only backdrop semantics and pointer dismissal hook.
++
++- No hard-coded colors
++- Expose `data-state="open|closed"`
++- Expose `data-dialog-overlay`
++
++### `Dialog.Content`
++
++Owns the hardest behavior:
++
++- `role="dialog"` and `aria-modal` when modal
++- Link `aria-labelledby` and `aria-describedby`
++- Focus trap for modal dialogs
++- Initial focus placement
++- Focus restoration on close
++- `Escape` handling
++- Outside interaction handling
++- Stack-aware behavior for nested dialogs
++- Scroll lock when topmost modal dialog is open
++- Prevent background interaction for modal mode
++
++It should not own button placement, spacing, or close icon rendering.
++
++### `Dialog.Title` and `Dialog.Description`
++
++Own only semantic labelling and id registration.
++
++### `Dialog.Close`
++
++Optional convenience primitive:
++
++- Close current dialog on activation
++- Support `asChild`
++
++Keep it because close affordances are repeated and semantically stable.
++
++## State and behavior rules
++
++### Controlled and uncontrolled
++
++Support both because product flows will need:
++
++- Controlled: route-driven dialogs, async workflows, parent-owned orchestration
++- Uncontrolled: simple local dialogs
++
++Rules:
++
++- `open` means controlled; internal state is ignored except for derived bookkeeping.
++- `defaultOpen` is initial uncontrolled value only.
++- `onOpenChange(nextOpen, details)` fires for both modes.
++- In controlled mode, dismissal requests must call `onOpenChange(false, details)` and not mutate local state.
++
++Recommended dismissal detail:
++
++```ts
++type DialogOpenChangeReason =
++  | 'trigger'
++  | 'close-button'
++  | 'escape-key'
++  | 'outside-press'
++  | 'programmatic'
++
++type DialogOpenChangeDetails = {
++  reason: DialogOpenChangeReason
++}
++```
++
++This keeps analytics and product policy outside the primitive while making close reasons observable.
++
++### Modal and non-modal
++
++Default `modal={true}`.
++
++Modal behavior:
++
++- Trap focus inside topmost dialog
++- Prevent pointer and keyboard interaction with background
++- Lock body scroll
++- `Escape` closes only the topmost closable dialog
++
++Non-modal behavior:
++
++- No focus trap
++- No background inerting
++- Keep ARIA semantics
++- Still support portal and labelled content
++
++### Nested dialogs
++
++Required invariant:
++
++- Only the topmost open modal dialog owns trap, scroll lock, outside dismissal, and `Escape`.
++
++Implementation boundary:
++
++- Internal stack manager scoped to the package
++- Each open content registers with a stable stack order on mount
++- Global listeners act only for the top stack entry
++- Parent dialog remains mounted but inert from an interaction-policy perspective
++
++### SSR and hydration
++
++Required behavior:
++
++- Server render must not touch `window` or `document`
++- IDs must be hydration-stable
++- Portal subtree should render only after client mount unless consumer explicitly disables portal
++
++Recommended rule:
++
++- `Dialog.Portal` returns `null` on the server by default
++- `Dialog.Content` can still be rendered inline without portal for SSR-sensitive routes
++
++This avoids hydration mismatch from server-side `document.body` assumptions.
++
++### Portal behavior
++
++Support:
++
++- Default body portal
++- Custom container
++- Inline rendering via `disabled`
++
++Do not couple portal existence to dialog semantics. A dialog remains a dialog whether rendered inline or portaled.
++
++### Styling boundary
++
++Headless styling contract:
++
++- Accept `className`, `style`, and native DOM props on rendered parts
++- Expose `data-state`, `data-disabled`, `data-modal`, `data-nested`
++- Forward refs
++- Do not ship product CSS
++
++Optional package-level stylesheet should be avoided initially. It creates visual policy too early.
++
++## Public API
++
++```ts
++export interface DialogRootProps {
++  open?: boolean
++  defaultOpen?: boolean
++  onOpenChange?: (open: boolean, details: DialogOpenChangeDetails) => void
++  modal?: boolean
++  children: React.ReactNode
++}
++
++export interface DialogPortalProps {
++  children: React.ReactNode
++  container?: HTMLElement | null
++  disabled?: boolean
++  forceMount?: boolean
++}
++
++export interface DialogTriggerProps
++  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
++  asChild?: boolean
++}
++
++export interface DialogOverlayProps
++  extends React.HTMLAttributes<HTMLDivElement> {
++  asChild?: boolean
++  forceMount?: boolean
++}
++
++export interface DialogContentProps
++  extends React.HTMLAttributes<HTMLDivElement> {
++  asChild?: boolean
++  forceMount?: boolean
++  onEscapeKeyDown?: (event: KeyboardEvent) => void
++  onPointerDownOutside?: (event: PointerEvent) => void
++  onInteractOutside?: (event: Event) => void
++  onOpenAutoFocus?: (event: Event) => void
++  onCloseAutoFocus?: (event: Event) => void
++}
++
++export interface DialogTitleProps
++  extends React.HTMLAttributes<HTMLHeadingElement> {
++  asChild?: boolean
++}
++
++export interface DialogDescriptionProps
++  extends React.HTMLAttributes<HTMLParagraphElement> {
++  asChild?: boolean
++}
++
++export interface DialogCloseProps
++  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
++  asChild?: boolean
++}
++```
++
++Recommended namespace export:
++
++```ts
++export * as Dialog from './dialog'
++```
++
++Recommended named exports too:
++
++```ts
++export {
++  Root,
++  Trigger,
++  Portal,
++  Overlay,
++  Content,
++  Title,
++  Description,
++  Close,
++} from './dialog'
++```
++
++Reason:
++
++- Namespace export makes consumer ergonomics clear.
++- Named exports keep tree-shaking and direct import styles available.
++
++## Implementation notes
++
++Recommended internal modules:
++
++```text
++packages/dialog/
++  src/
++    dialog.tsx
++    dialog-context.ts
++    dialog-stack.ts
++    focus-scope.tsx
++    dismissable-layer.tsx
++    portal.tsx
++    scroll-lock.ts
++    use-controllable-state.ts
++    use-stable-id.ts
++    index.ts
++```
++
++Boundary notes:
++
++- `focus-scope`, `dismissable-layer`, and `scroll-lock` can remain package-internal until another primitive demonstrably needs them.
++- Do not publish low-level internals in v1. Shared internals become long-term compatibility burden quickly.
++
++## Package exports
++
++Recommended `package.json` shape:
++
++```json
++{
++  "name": "@acme/dialog",
++  "version": "0.1.0",
++  "type": "module",
++  "sideEffects": false,
++  "peerDependencies": {
++    "react": "^18.2.0 || ^19.0.0",
++    "react-dom": "^18.2.0 || ^19.0.0"
++  },
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.js"
++    }
++  }
++}
++```
++
++Release guidance:
++
++- ESM-only is the simplest default unless current consumers require CommonJS.
++- Publish declarations with the runtime artifact.
++- Keep one public entry point in v1.
++- Add subpath exports only when a real use case exists.
++
++## Accessibility contract
++
++The package is not releasable unless these hold:
++
++- Content has `role="dialog"`.
++- Modal content has `aria-modal="true"`.
++- Title and description wire to `aria-labelledby` / `aria-describedby` when present.
++- Keyboard focus moves into the dialog on open.
++- Keyboard focus returns to trigger or prior active element on close.
++- `Tab` and `Shift+Tab` are contained for topmost modal dialog.
++- `Escape` closes only the topmost dialog unless consumer prevents default in handler.
++- Background is non-interactive for topmost modal dialog.
++- Nested dialog labels remain distinct and valid.
++
++If no `Dialog.Title` is provided, development mode should warn that the dialog has no accessible name unless consumer supplied `aria-label` or `aria-labelledby` directly.
++
++## Testing matrix
++
++### Unit and hook tests
++
++- `useControllableState`: controlled and uncontrolled transitions
++- Stack registration order and topmost detection
++- Stable id generation under SSR/client render
++- Scroll-lock reference counting across nested modals
++
++### Component integration tests
++
++- Opens from trigger and closes from `Dialog.Close`
++- Controlled mode does not self-mutate
++- Uncontrolled mode updates DOM state
++- `Escape` closes topmost dialog only
++- Outside press closes when allowed
++- Prevented outside press keeps dialog open
++- Focus enters content on open
++- Focus restores to trigger on close
++- `Tab` loop stays within modal content
++- Non-modal dialog does not trap focus
++- Nested dialog traps inner dialog only
++- Portal renders into `document.body`
++- Custom container portal renders correctly
++- `Portal disabled` renders inline
++- `Title` and `Description` attach ARIA ids correctly
++- Missing title warning fires in development
++
++### SSR and hydration tests
++
++- Server render does not crash without `document`
++- Hydration succeeds with closed dialog
++- Hydration succeeds with `defaultOpen`
++- Portal behavior does not create markup mismatch
++
++### Accessibility automation
++
++- `jest-axe` or equivalent on representative open states
++- Focus order keyboard assertions using Testing Library user events
++
++### Browser-level tests
++
++- Real browser keyboard loop for modal content
++- Nested dialog `Escape` behavior
++- Scroll lock and background click suppression
++
++### Consumer artifact tests
++
++- Built package import smoke test from a fixture app
++- Type test for `asChild`, refs, and handler signatures
++
++## Migration plan
++
++### Phase 0: inventory
++
++- Identify all current dialog variants in the three products
++- Classify them by semantics, not visuals:
++  - simple modal
++  - form dialog
++  - nested/stacked dialog
++  - non-modal sheet-like usage that should not migrate yet
++
++Exit criterion:
++
++- Every current implementation mapped either to the new primitive or an explicit non-goal.
++
++### Phase 1: foundation package
++
++- Build `@acme/dialog`
++- Ship docs with canonical recipes:
++  - basic modal
++  - controlled modal
++  - nested dialogs
++  - custom styled overlay/content
++
++Exit criterion:
++
++- Package passes unit, integration, SSR, and browser tests.
++
++### Phase 2: compatibility adapters
++
++- In each product, create a thin local wrapper matching current design tokens and class structure
++- Keep product APIs stable where possible
++
++Example:
++
++```tsx
++export function ProductDialog(props: ProductDialogProps) {
++  return (
++    <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
++      <Dialog.Portal>
++        <Dialog.Overlay className={styles.overlay} />
++        <Dialog.Content className={styles.content}>
++          {props.children}
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>
++  )
++}
++```
++
++This limits migration blast radius. Products adopt shared behavior first, then simplify local wrappers later.
++
++### Phase 3: consumer migration
++
++Migration order:
++
++1. Low-risk informational dialogs
++2. Standard form dialogs
++3. Nested dialogs and async workflows
++
++Do not migrate all products in one PR. Migrate by dialog family with behavior regression checks.
++
++### Phase 4: deprecation and removal
++
++- Mark product-local legacy dialog implementations deprecated
++- Add lint or import restriction once migration is mostly complete
++- Remove legacy code only after all known consumers are cut over
++
++## Key tradeoffs
++
++### Why headless instead of styled shared component
++
++- The current problem is behavior consistency, not one shared visual language.
++- Three products already have styling divergence.
++- A styled component would force premature token and layout convergence.
++
++### Why support both controlled and uncontrolled
++
++- Route-driven and async-confirmation flows need controlled ownership.
++- Simpler dialogs should not require parent state ceremony.
++
++### Why keep internals private in v1
++
++- Focus scope and dismissable-layer APIs are easy to get wrong and expensive to support publicly.
++- Public low-level exports should wait for proven multi-primitive reuse.
++
++### Why default to modal
++
++- It matches the common accessibility expectation for dialogs used as blocking tasks.
++- Non-modal remains opt-in for rarer cases.
++
++## Release criteria
++
++Do not publish v1 until all are true:
++
++- Public API is documented with at least three consumer examples.
++- All tests in the matrix relevant to v1 pass.
++- Built artifact is verified from a fixture consumer app.
++- SSR and hydration behavior is exercised.
++- Nested dialog and focus restoration behavior is confirmed in a real browser.
++- Migration wrapper is proven in at least one product before broad rollout.
++
++## Recommended next step
++
++Because the workspace has no source packages to patch, the next concrete engineering step is to introduce a real package scaffold and a fixture consumer app, then implement the proposal above starting from `Dialog.Root`, `Dialog.Portal`, and `Dialog.Content`.

@@ -1,0 +1,1715 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: risky-booking-rollout
+request: 团队准备替换高流量预订确认页的数据层。旧接口和新接口将在两周内并存，失败会导致 用户重复预订。请设计可渐进交付的前端改造：说明兼容边界、灰度、幂等与重复提交、 错误恢复、需要的生产信号、隐私控制和回滚条件。不要假设一次全量发布成功。
+artifact: 
+failure_rules: ["只增加 console 日志或一个错误率指标", "在遥测中记录完整预订载荷或身份凭据", "没有停止灰度和回滚条件"]
+
+RESPONSE:
+已在仓库新增方案文档 [booking-confirmation-rollout-plan.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-risky-booking-rollout-baseline-m557_uo0/booking-confirmation-rollout-plan.md)。
+
+仓库里没有现成前端代码，只有 `.git`，所以我没有虚构页面实现细节，而是交付了一份可渐进发布的前端改造设计。核心决策是：用单一 `BookingConfirmationDataSource` 适配层隔离旧/新接口；读路径和写路径分开灰度；所有写请求绑定 `bookingAttemptId`/`idempotencyKey`；任何超时或 5xx 都进入 `submitted_unknown` 并先做状态对账，不能直接放开用户再次提交；回滚必须是运行时开关，不依赖重新发版。
+
+文档里已经覆盖了你要求的边界和策略：兼容边界、分阶段灰度、重复提交与跨 tab 防护、错误恢复状态机、生产指标与告警、隐私最小化、以及明确的回滚触发条件。最关键的约束也写清了：如果后端不能对新旧接口都提供服务端幂等保证，这次写路径切换不应放量。
+
+当前变更未包含代码或测试，因为仓库没有业务文件可接入。
+
+DIFF:
+diff --git a/booking-confirmation-rollout-plan.md b/booking-confirmation-rollout-plan.md
+new file mode 100644
+index 0000000..276ade3
+--- /dev/null
++++ b/booking-confirmation-rollout-plan.md
+@@ -0,0 +1,296 @@
++# Booking Confirmation Data-Layer Rollout Plan
++
++## Repository Reality
++
++This workspace contains no application source files, only an empty Git repository. The plan below is therefore an implementation design for the frontend booking confirmation page rather than a code-specific diff.
++
++## Goals
++
++- Replace the booking confirmation page data layer without assuming a single successful full rollout.
++- Prevent duplicate bookings during the two-week period when legacy and new APIs coexist.
++- Support progressive delivery, fast rollback, and production diagnosis with minimal user-impacting ambiguity.
++
++## Non-Negotiable Safety Position
++
++The frontend must reduce duplicate submissions, but it cannot be the only control preventing duplicate bookings. A server-recognized idempotency key or equivalent booking token is required before traffic moves beyond internal testing. Without that, the rollout should be blocked.
++
++## Compatibility Boundary
++
++Define a narrow adapter boundary between page logic and transport:
++
++- `BookingConfirmationController`
++  - Owns submit lifecycle, retries, error states, and telemetry.
++- `BookingConfirmationDataSource`
++  - Stable frontend interface used by the page.
++  - Example operations:
++    - `loadConfirmationContext()`
++    - `submitBooking(request, requestContext)`
++    - `pollBookingStatus(bookingAttemptId)`
++- `LegacyBookingApiAdapter`
++  - Maps stable interface to the old API contract.
++- `NewBookingApiAdapter`
++  - Maps stable interface to the new API contract.
++- `ResponseNormalizer`
++  - Converts both responses into one canonical client shape.
++
++The page should not branch on raw old/new API fields. All branching belongs inside adapters. That keeps the blast radius inside one boundary and lets rollout happen via configuration instead of page rewrites.
++
++## Canonical Frontend Request Contract
++
++Every booking submission should carry a shared envelope, regardless of backend version:
++
++- `bookingAttemptId`
++  - Client-generated UUID created when the user first enters the confirmation page.
++  - Stable across retries, refresh recovery, and transport fallback for the same intent.
++- `idempotencyKey`
++  - Equal to or derived from `bookingAttemptId`.
++  - Must be honored server-side.
++- `checkoutSessionId`
++  - Existing session/cart identifier if present.
++- `schemaVersion`
++  - Distinguishes the canonical client contract from backend transport versions.
++- `traceId`
++  - For observability correlation.
++- `clientTimestamp`
++  - Diagnostic only, not used for uniqueness.
++
++Persist `bookingAttemptId` only for the active booking flow and expire it aggressively after terminal success/cancel.
++
++## Progressive Delivery Strategy
++
++Rollout should use separate controls for read path and write path. Do not tie them together.
++
++### Phase 0: Dark Launch
++
++- Ship adapter boundary with legacy API still serving writes.
++- Call new API in shadow mode only for non-authoritative reads or mirrored validation where safe.
++- Compare normalized response shape and error distribution offline.
++
++### Phase 1: Internal Write Canary
++
++- New write path enabled only for staff/internal accounts and synthetic monitoring flows.
++- Legacy remains default for all user traffic.
++- Success criterion:
++  - No unexplained booking status divergence.
++  - No rise in duplicate-attempt indicators.
++  - P95/P99 latency within agreed envelope.
++
++### Phase 2: Cohort-Based Canary
++
++- Route a small fixed cohort, for example:
++  - 1%
++  - 5%
++  - 10%
++  - 25%
++- Cohort assignment should be sticky by user/session/device bucket for the whole checkout session.
++- Rollout key should come from remote config / feature flag service, not a build-time switch.
++- Exclude high-risk segments initially:
++  - Guests if guest recovery is weak.
++  - Payment methods with delayed confirmation.
++  - Regions with stricter data handling rules if not yet validated.
++
++### Phase 3: Majority Traffic With Kill Switch
++
++- Keep instant rollback flag available until the full two-week coexistence window ends.
++- Maintain legacy adapter code until post-rollout audit confirms no hidden dependence remains.
++
++## Read/Write Routing Rules
++
++Use explicit routing modes:
++
++- `legacy_only`
++- `new_read_legacy_write`
++- `new_read_new_write`
++- `new_write_with_legacy_fallback_blocked`
++
++Recommended default during migration:
++
++- Reads may move earlier.
++- Writes move later and only after idempotency is proven.
++- Do not silently fail over a timed-out write from new API to old API using a new idempotency key. That is a duplicate-booking trap.
++
++If fallback is needed after an ambiguous write outcome:
++
++- Reuse the same `bookingAttemptId` and `idempotencyKey`.
++- Query booking status first.
++- Only resubmit if the backend explicitly states the attempt is absent and safe to retry.
++
++## Duplicate Submission and Idempotency Design
++
++### Client Controls
++
++- Disable the confirm CTA immediately on first submit.
++- Replace repeated clicks with a non-interactive pending state.
++- Guard against double-fire sources:
++  - button double-click
++  - Enter key repeat
++  - browser back/forward resubmission
++  - page refresh during in-flight request
++  - duplicate tabs
++- Use a client-side in-flight registry keyed by `bookingAttemptId`.
++- Persist the active attempt in session storage to restore state after refresh.
++
++### Cross-Tab Protection
++
++- Broadcast in-flight and terminal booking states with `BroadcastChannel` or storage events.
++- When another tab detects an active attempt for the same checkout session:
++  - block new submission
++  - show “booking in progress”
++  - offer status refresh instead of another submit
++
++### Ambiguous Result Handling
++
++Treat the following as `UNKNOWN_FINAL_STATE`, not as immediate failure:
++
++- request timeout after submission
++- network disconnect after request sent
++- 5xx after write entered downstream processing
++- client navigation during in-flight state
++
++For `UNKNOWN_FINAL_STATE`:
++
++- Lock further submits for that `bookingAttemptId`.
++- Start status reconciliation:
++  - poll booking status by `bookingAttemptId` or `checkoutSessionId`
++  - if confirmed success, render success
++  - if confirmed absent/failure, allow retry with same idempotency key or a new attempt only after explicit reset
++- Show user copy that avoids encouraging repeated submission.
++
++## Error Recovery Model
++
++Use explicit terminal and non-terminal states:
++
++- `idle`
++- `submitting`
++- `submitted_unknown`
++- `confirmed`
++- `failed_retryable`
++- `failed_terminal`
++
++Recovery rules:
++
++- Validation or 4xx contract mismatch:
++  - `failed_terminal`
++  - capture payload class and adapter version
++- Network failure before request dispatch is confirmed:
++  - `failed_retryable`
++- Network failure after dispatch uncertainty:
++  - `submitted_unknown`
++- Server 5xx:
++  - default to `submitted_unknown` unless server guarantees no side effects
++
++The page should never return from `submitted_unknown` to a fully fresh form with an enabled submit button without first reconciling booking status.
++
++## Production Signals Required
++
++### Core KPIs
++
++- booking submit success rate by adapter version
++- duplicate booking rate
++- ambiguous outcome rate (`submitted_unknown`)
++- retry rate per booking attempt
++- reconciliation success rate
++- fallback invocation rate
++- abandonment rate after submit
++- P50/P95/P99 submit latency
++
++### Guardrail Signals
++
++- count of multiple successful bookings sharing the same:
++  - idempotency key
++  - checkout session
++  - user + inventory + close time window
++- divergence between frontend terminal state and backend truth
++- old/new adapter response normalization errors
++- client-side double-submit prevention triggers
++- cross-tab collision count
++- feature flag cohort error skew
++
++### Logging Shape
++
++Emit structured events for:
++
++- `booking_confirmation_loaded`
++- `booking_submit_started`
++- `booking_submit_response`
++- `booking_submit_unknown_state`
++- `booking_status_reconciled`
++- `booking_submit_blocked_duplicate`
++- `booking_rollout_route_selected`
++
++Each event should include only the minimum needed diagnostics:
++
++- `traceId`
++- `bookingAttemptId`
++- adapter version
++- rollout cohort
++- normalized error category
++- latency buckets
++- region / platform / app version
++
++Do not log raw personal data or payment details.
++
++## Privacy Controls
++
++- Do not place PII in:
++  - feature flag targeting payloads
++  - client logs
++  - analytics event names or free text
++  - session storage / local storage keys or values
++- Prefer opaque identifiers:
++  - hashed user ID if needed
++  - checkout session ID
++  - booking attempt ID
++- Keep persisted client recovery state minimal:
++  - `bookingAttemptId`
++  - checkout session reference
++  - submit state
++- Expire recovery state on:
++  - terminal success
++  - explicit cancel
++  - TTL timeout
++- Redact server error bodies before telemetry if they may contain user or payment metadata.
++
++## Rollback Conditions
++
++Rollback must be a runtime config change, not a redeploy.
++
++Immediate rollback triggers:
++
++- any confirmed duplicate-booking pattern attributable to the new path
++- ambiguous outcome rate above agreed threshold for 5 to 10 minutes
++- reconciliation endpoint failing or lagging enough to strand users
++- submit success rate materially worse than legacy cohort
++- normalization bug causing wrong confirmation state
++- privacy regression in telemetry payloads
++
++Partial rollback options:
++
++- revert `new_write` to `legacy_write`, keep `new_read`
++- disable only risky payment methods / regions / guest traffic
++- keep canary only for internal users while investigating
++
++## Release Checklist
++
++- Backend confirms idempotency semantics for both old and new APIs.
++- Frontend adapters share one canonical normalized model.
++- Kill switch tested in production-like environment.
++- Synthetic test covers:
++  - normal success
++  - timeout after dispatch
++  - duplicate click
++  - refresh during submit
++  - second tab submit
++  - rollback during active canary
++- Dashboard and alert thresholds exist before traffic shift.
++- Support/runbook prepared for `submitted_unknown` incidents.
++
++## Recommended Decision
++
++Proceed only with a frontend adapter migration plus server-enforced idempotency and status reconciliation. Do not ship a write-path canary that relies only on disabling the button or client retries. The safe shape is:
++
++1. isolate old/new transports behind one frontend boundary
++2. dark launch reads first
++3. canary writes with sticky cohorts and runtime kill switch
++4. treat uncertain outcomes as recoverable reconciliation states, not clean failures
++5. rollback on duplicate indicators before waiting for broad business impact
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: accessible-dialog-primitive
+request: 三个 React 产品都各自实现了 Dialog，已经出现焦点逃逸、Escape 行为不一致、 aria 标注缺失和样式难以复用。请按前端基建标准设计一个可发布的 headless Dialog primitive，并给出核心实现边界、公开 API、包导出、测试矩阵和迁移方案。需要支持 portal、受控和非受控打开方式、嵌套 Dialog、SSR/水合和消费者自定义样式；不要把 产品弹窗文案和业务按钮写进 primitive。
+artifact: 
+failure_rules: ["只封装一个带 children 的 div 和 open 布尔值", "仅依靠 aria-modal 而没有完整键盘与焦点行为", "用大量布尔 props 承载不同产品的业务变体", "宣称单元测试通过即可证明组件库可发布"]
+
+RESPONSE:
+已在 [docs/dialog-primitive-spec.md](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-baseline-940h6p3w/docs/dialog-primitive-spec.md) 落了一份可发布的 headless Dialog primitive 规格，前提是这个仓库当前为空基线，只有 `.git`，没有现有 React 代码可供复用或对齐，所以我没有伪造任何仓库现状。
+
+这份规格已经把关键决策定死了：发布独立包 `@acme/dialog`，采用 `Root + Trigger + Portal + Overlay + Content + Title + Description + Close` 的 compound API；支持 `portal`、受控/非受控、嵌套 Dialog、SSR/hydration、自定义样式；明确把焦点管理、dismiss 行为、stack 管理、SSR 稳定 id 放在 primitive 内部，把业务文案、按钮和视觉样式排除在外。文档里还包含了公开 props 契约、导出策略、内部实现边界、测试矩阵，以及按 “先 primitive、再产品 adapter、再逐步替换高风险弹窗” 的迁移方案。
+
+没有补运行时代码或测试，因为当前仓库没有现成包结构、构建工具或测试基线；在这种前提下直接写实现会引入虚构约束。下一步如果你要我继续，我建议直接把这份 spec 落成真实包骨架：`packages/dialog`、导出入口、基础测试和一个最小可用实现。
+
+DIFF:
+diff --git a/docs/dialog-primitive-spec.md b/docs/dialog-primitive-spec.md
+new file mode 100644
+index 0000000..50e6d2b
+--- /dev/null
++++ b/docs/dialog-primitive-spec.md
+@@ -0,0 +1,606 @@
++# Headless Dialog Primitive Spec
++
++## Context
++
++三个 React 产品各自维护 Dialog，已经出现以下共性问题：
++
++- 焦点可逃逸到遮罩层外或页面底层
++- `Escape` 行为不一致，含嵌套弹层时更明显
++- `aria-*` 标注缺失，屏幕阅读器体验不稳定
++- 样式和动画实现散落在业务侧，难以复用
++
++目标是在前端基建层发布一个可复用的 headless Dialog primitive，统一可访问性、交互语义和状态模型，同时把视觉风格留给消费者。
++
++## Scope
++
++本 primitive 必须支持：
++
++- React 18+
++- `portal`
++- 受控和非受控打开方式
++- 嵌套 Dialog
++- SSR 和 hydration
++- 消费者自定义样式与动画
++
++本 primitive 明确不负责：
++
++- 业务文案
++- 业务按钮、表单、确认/取消逻辑
++- 品牌样式、主题、动效 token
++- toast、drawer、popover 等非 modal 语义组件
++
++## Release Decision
++
++发布一个独立包：`@acme/dialog`
++
++设计原则：
++
++- `headless only`：只提供结构、状态、焦点和 a11y 语义，不提供视觉样式
++- `compound components`：通过 `Root + Trigger + Portal + Overlay + Content + Title + Description + Close`
++- `single behavior model`：无论三个产品怎么写样式，交互都走同一套底层状态机
++- `modal-first`：默认 `modal=true`，非模态作为显式 opt-in
++- `controlled/uncontrolled parity`：受控和非受控行为一致，事件时序一致
++
++## Package Layout
++
++建议目录：
++
++```text
++packages/dialog/
++  src/
++    index.ts
++    dialog-root.tsx
++    dialog-trigger.tsx
++    dialog-portal.tsx
++    dialog-overlay.tsx
++    dialog-content.tsx
++    dialog-title.tsx
++    dialog-description.tsx
++    dialog-close.tsx
++    context.ts
++    stack.ts
++    focus-scope.ts
++    dismissable-layer.ts
++    portal.tsx
++    id.ts
++    types.ts
++  package.json
++  README.md
++```
++
++内部能力拆分：
++
++- `stack.ts`：管理嵌套层级，只允许顶层 active dialog 响应 `Escape` 和 outside interaction
++- `focus-scope.ts`：负责初始聚焦、tab 环、关闭后焦点恢复
++- `dismissable-layer.ts`：统一 `Escape`、pointer down outside、focus outside
++- `id.ts`：SSR 稳定 id，避免 hydration 时 `aria-labelledby` / `aria-describedby` 不一致
++
++## Core Boundaries
++
++### 1. `Dialog.Root`
++
++职责：
++
++- 持有打开状态
++- 连接受控/非受控模式
++- 建立上下文
++- 向子组件暴露 `open`, `modal`, ids, refs, stack metadata
++
++边界：
++
++- 不渲染 DOM
++- 不附带默认 className
++- 不承担 portal 挂载
++
++### 2. `Dialog.Trigger`
++
++职责：
++
++- 触发 open
++- 暴露 `aria-haspopup="dialog"`
++- 同步 `aria-expanded` 和 `aria-controls`
++
++边界：
++
++- 默认渲染 `button`
++- 支持 `asChild`，让消费者接管 DOM 标签和样式
++
++### 3. `Dialog.Portal`
++
++职责：
++
++- 控制内容是否挂到 `document.body` 或指定容器
++- 在 SSR 阶段保持无副作用
++
++边界：
++
++- 不注入额外布局样式
++- 未 hydration 前不访问 `document`
++
++### 4. `Dialog.Overlay`
++
++职责：
++
++- 提供遮罩语义节点
++- 透出 data attributes 供动画和样式使用
++
++边界：
++
++- 不强制背景色
++- 不处理点击关闭逻辑；关闭逻辑统一由 `Content` 内部的 dismiss layer 判定
++
++### 5. `Dialog.Content`
++
++职责：
++
++- 输出 `role="dialog"` 或 `role="alertdialog"`
++- 焦点捕获与恢复
++- 绑定 `aria-labelledby` / `aria-describedby`
++- 处理 `Escape`
++- 处理 outside interactions
++- 在 modal 模式下隔离页面其他可交互内容
++
++边界：
++
++- 不注入业务布局
++- 不耦合标题、描述是否必须渲染；只在缺失时给开发警告
++
++### 6. `Dialog.Title` / `Dialog.Description`
++
++职责：
++
++- 自动注册 id，供 Content 关联
++
++边界：
++
++- 仅处理语义关联，不参与排版
++
++### 7. `Dialog.Close`
++
++职责：
++
++- 触发关闭
++
++边界：
++
++- 不写死文案和 icon
++- 支持 `asChild`
++
++## Public API
++
++### Components
++
++```ts
++import * as Dialog from "@acme/dialog";
++```
++
++```tsx
++<Dialog.Root
++  open={open}
++  defaultOpen={false}
++  onOpenChange={setOpen}
++  modal={true}
++>
++  <Dialog.Trigger asChild>
++    <button>Edit profile</button>
++  </Dialog.Trigger>
++
++  <Dialog.Portal container={container}>
++    <Dialog.Overlay className="overlay" />
++    <Dialog.Content
++      className="content"
++      onOpenAutoFocus={(event) => {}}
++      onCloseAutoFocus={(event) => {}}
++      onEscapeKeyDown={(event) => {}}
++      onPointerDownOutside={(event) => {}}
++      onInteractOutside={(event) => {}}
++    >
++      <Dialog.Title>Edit profile</Dialog.Title>
++      <Dialog.Description>Update your public information.</Dialog.Description>
++      <Dialog.Close asChild>
++        <button>Close</button>
++      </Dialog.Close>
++    </Dialog.Content>
++  </Dialog.Portal>
++</Dialog.Root>
++```
++
++### Props Contract
++
++`Dialog.Root`
++
++```ts
++type DialogRootProps = {
++  open?: boolean;
++  defaultOpen?: boolean;
++  onOpenChange?: (open: boolean) => void;
++  modal?: boolean;
++  children: React.ReactNode;
++};
++```
++
++约束：
++
++- `open` 存在时视为受控；`defaultOpen` 仅用于非受控
++- 开发态下同时传 `open` 和 `defaultOpen` 给 warning
++- `onOpenChange` 必须由所有关闭入口统一触发
++
++`Dialog.Trigger`
++
++```ts
++type DialogTriggerProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"button">;
++```
++
++`Dialog.Portal`
++
++```ts
++type DialogPortalProps = {
++  container?: HTMLElement | null;
++  forceMount?: boolean;
++  children: React.ReactNode;
++};
++```
++
++`Dialog.Overlay`
++
++```ts
++type DialogOverlayProps = {
++  asChild?: boolean;
++  forceMount?: boolean;
++} & React.ComponentPropsWithoutRef<"div">;
++```
++
++`Dialog.Content`
++
++```ts
++type DialogContentProps = {
++  asChild?: boolean;
++  forceMount?: boolean;
++  role?: "dialog" | "alertdialog";
++  onOpenAutoFocus?: (event: Event) => void;
++  onCloseAutoFocus?: (event: Event) => void;
++  onEscapeKeyDown?: (event: KeyboardEvent) => void;
++  onPointerDownOutside?: (event: PointerEvent) => void;
++  onFocusOutside?: (event: FocusEvent) => void;
++  onInteractOutside?: (event: Event) => void;
++} & React.ComponentPropsWithoutRef<"div">;
++```
++
++约束：
++
++- `role` 默认 `dialog`
++- `alertdialog` 不改变样式，只改变辅助技术语义
++- 消费者在事件里 `preventDefault()` 时，primitive 尊重阻止行为
++
++`Dialog.Title`
++
++```ts
++type DialogTitleProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"h2">;
++```
++
++`Dialog.Description`
++
++```ts
++type DialogDescriptionProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"p">;
++```
++
++`Dialog.Close`
++
++```ts
++type DialogCloseProps = {
++  asChild?: boolean;
++} & React.ComponentPropsWithoutRef<"button">;
++```
++
++### Data Attributes
++
++为消费者样式和动效提供稳定钩子：
++
++- `[data-state="open" | "closed"]`
++- `[data-disabled]`
++- `[data-dialog-content]`
++- `[data-dialog-overlay]`
++- `[data-nested="true"]`
++
++### Refs
++
++- `Trigger` 转发到触发元素
++- `Content` 转发到对话框根节点
++- `Overlay` / `Close` / `Title` / `Description` 均转发到底层 DOM
++
++## Behavioral Rules
++
++### Open / Close Semantics
++
++- `Trigger` click 或 keyboard activation 打开
++- `Close` click 关闭
++- 顶层 active dialog 才响应 `Escape`
++- modal 模式下，outside pointer interaction 默认关闭；若事件被阻止则保持打开
++- 非 modal 模式下允许底层页面继续可聚焦，但 `Escape` 仍只作用于 active dialog
++
++### Focus Management
++
++- 打开时默认聚焦 `Content` 内第一个可聚焦元素
++- 若无可聚焦元素，则聚焦 `Content`
++- 关闭时恢复到触发元素；若触发元素已卸载，则尝试恢复到先前 active element，否则不抛错
++- 嵌套 Dialog 打开时，父级焦点陷阱暂停，子级接管
++- 子级关闭后，焦点回到父级最后活跃元素，而不是页面底层
++
++### Nested Dialog Stack
++
++- 维护 LIFO stack
++- 只有 stack 顶部实例可以：
++  - 响应 `Escape`
++  - 响应 outside interactions
++  - 设置 `aria-hidden` / inert 隔离外围内容
++- 父弹窗打开子弹窗时不自动关闭父弹窗
++
++### SSR / Hydration
++
++- 服务端渲染阶段不访问 `window` / `document`
++- id 使用 React `useId` 或等价稳定方案
++- portal hydration 前允许内容先内联渲染，hydration 后再挂入目标容器
++- 不依赖 mount order 生成随机 id
++
++### Accessibility Baseline
++
++`Content` 在 modal 模式下必须满足：
++
++- `role="dialog"` 或 `role="alertdialog"`
++- `aria-modal="true"`
++- `aria-labelledby` 指向 `Title`，若无 `Title` 则允许消费者显式传 `aria-label`
++- `aria-describedby` 在有 `Description` 时自动绑定
++
++开发态 warning：
++
++- 同时缺失 `Title` 与 `aria-label`
++- `alertdialog` 未提供可感知标题
++- `Dialog.Content` 脱离 `Dialog.Root` 使用
++
++## Internal Implementation Decisions
++
++### State Model
++
++- 使用 `useControllableState` 统一受控/非受控
++- 所有关闭来源都归一为 `requestOpenChange(false, reason)`
++- `reason` 为内部枚举，不进入公开 API，避免过早锁死事件模型
++
++内部关闭原因建议：
++
++```ts
++type CloseReason =
++  | "trigger"
++  | "close-button"
++  | "escape-key"
++  | "pointer-down-outside"
++  | "programmatic";
++```
++
++### Dismiss Strategy
++
++- `Escape` 监听挂在 active content document 上
++- pointer down outside 先判定 overlay/content/portal 树，再决定是否请求关闭
++- focus outside 和 pointer outside 统一进入 `onInteractOutside`
++
++### Page Isolation
++
++modal 模式优先级：
++
++1. 对非 dialog subtree 设置 `inert`
++2. 不支持 `inert` 的环境退化到 `aria-hidden`
++
++说明：
++
++- `inert` 用于真实阻止 tab/点击穿透
++- `aria-hidden` 仅作为兼容退化，不单独承担交互隔离
++
++### Styling Contract
++
++- primitive 不输出任何内联视觉样式
++- 只输出最小语义属性和 data attributes
++- `forceMount` 交给消费者处理 exit animation
++
++## Package Exports
++
++建议导出：
++
++```json
++{
++  "name": "@acme/dialog",
++  "version": "0.1.0",
++  "sideEffects": false,
++  "main": "./dist/index.js",
++  "module": "./dist/index.mjs",
++  "types": "./dist/index.d.ts",
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.mjs",
++      "require": "./dist/index.js"
++    }
++  },
++  "peerDependencies": {
++    "react": "^18.2.0 || ^19.0.0",
++    "react-dom": "^18.2.0 || ^19.0.0"
++  }
++}
++```
++
++导出策略决策：
++
++- 只暴露根入口 `@acme/dialog`
++- 不暴露 `stack`, `focus-scope`, `dismissable-layer` 等内部模块
++- 不提供 CSS 文件导出
++- 不把 `CloseReason` 作为公共类型暴露，避免后续演进被 API 锁住
++
++公开导出建议：
++
++```ts
++export {
++  Root,
++  Trigger,
++  Portal,
++  Overlay,
++  Content,
++  Title,
++  Description,
++  Close,
++} from "./dialog";
++
++export type {
++  DialogRootProps,
++  DialogTriggerProps,
++  DialogPortalProps,
++  DialogOverlayProps,
++  DialogContentProps,
++  DialogTitleProps,
++  DialogDescriptionProps,
++  DialogCloseProps,
++} from "./types";
++```
++
++## Test Matrix
++
++### Unit
++
++| Area | Case | Expected |
++|------|------|----------|
++| controllable state | `open` 受控时 trigger 不直接改内部 state | 仅触发 `onOpenChange` |
++| uncontrolled state | `defaultOpen` 初始化后可正常开关 | DOM 状态与 data-state 同步 |
++| ids | title/description 自动注册 | `aria-labelledby` / `aria-describedby` 稳定 |
++| stack | 多实例嵌套时 top-most 生效 | 仅顶部实例消费 `Escape` |
++| warnings | 缺标题且无 `aria-label` | 开发态警告，生产态静默 |
++
++### Integration
++
++| Flow | Case | Expected |
++|------|------|----------|
++| portal | 挂到自定义 container | 内容实际出现在目标容器 |
++| focus trap | `Tab` / `Shift+Tab` 循环 | 焦点不逃逸 |
++| restore focus | 关闭后回到 trigger | 页面主文档 activeElement 正确 |
++| nested dialog | 父开子，子关回父 | 焦点回父级，不回页面底层 |
++| outside interaction | click overlay 关闭 | 调用 `onOpenChange(false)` |
++| prevented outside | `onPointerDownOutside.preventDefault()` | 保持打开 |
++| escape | 顶层按 `Escape` 关闭 | 父级在子级打开时不误关 |
++| non-modal | `modal={false}` | 不隔离页面，但对话框语义仍成立 |
++
++### SSR / Hydration
++
++| Case | Expected |
++|------|----------|
++| SSR render | 服务端渲染无 `document is not defined` |
++| hydration ids | hydration 前后 aria 关联不漂移 |
++| portal hydration | hydration 后 portal 迁移不丢焦点 |
++
++### Accessibility
++
++| Case | Expected |
++|------|----------|
++| labelled dialog | 有 `Title` 时自动带 `aria-labelledby` |
++| described dialog | 有 `Description` 时自动带 `aria-describedby` |
++| fallback label | 无 `Title` 但有 `aria-label` 时不过警告 |
++| alertdialog | `role="alertdialog"` 且 `aria-modal="true"` |
++
++### Browser Coverage
++
++- Chromium 最新稳定版
++- Safari 最新稳定版
++- Firefox 最新稳定版
++
++### Tooling
++
++- `@testing-library/react`
++- `@testing-library/user-event`
++- Playwright
++- axe 或 `jest-axe`
++
++## Migration Plan
++
++### Phase 0: Inventory
++
++- 盘点三个产品当前 Dialog 入口、业务 wrapper、样式依赖和自定义关闭行为
++- 统计差异项：是否受控、是否 portal、是否嵌套、是否依赖 overlay click、是否手写 focus trap
++
++### Phase 1: Primitive 落包
++
++- 发布 `@acme/dialog@0.1.0`
++- 先接入设计系统或共享组件层，不直接批量替换业务弹窗
++
++### Phase 2: Adapter Layer
++
++每个产品先写一层本地适配器，例如：
++
++```tsx
++export function ProductDialog(props: ProductDialogProps) {
++  return (
++    <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
++      <Dialog.Portal>
++        <Dialog.Overlay className={styles.overlay} />
++        <Dialog.Content className={styles.content}>
++          {props.children}
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>
++  );
++}
++```
++
++目的：
++
++- 先迁移行为，再保留原产品样式和 API 表面
++- 降低一次性改造 3 个产品的回归面
++
++### Phase 3: Replace High-Risk Dialogs First
++
++优先替换这些场景：
++
++- 已知有焦点逃逸的弹窗
++- 支持嵌套的复杂弹窗
++- 需要 SSR 的页面级弹窗
++
++暂缓低价值场景：
++
++- 纯静态营销弹窗
++- 即将下线的业务模块
++
++### Phase 4: Remove Legacy Helpers
++
++在三个产品都切换完成后，删除：
++
++- 自研 focus trap util
++- 各产品不一致的 `useEscapeClose`
++- 重复的 portal wrapper
++- 业务层手写 `aria-labelledby` glue code
++
++## Acceptance Criteria
++
++1. 发布后的 `@acme/dialog` 能在 React 18+ 项目中以 headless 方式消费。
++2. primitive 不包含任何业务文案、业务按钮和产品样式。
++3. `Trigger`、`Content`、`Close`、`Title`、`Description` 支持 `asChild`。
++4. 同时支持受控和非受控打开方式，且事件时序一致。
++5. 顶层 active dialog 能正确处理 `Escape`、outside interaction 和焦点恢复。
++6. 嵌套 Dialog 时，父子层级的焦点陷阱和关闭逻辑不互相污染。
++7. modal 模式下焦点不能逃逸到页面底层。
++8. SSR 和 hydration 不出现 id 漂移或运行时访问 `document` 的错误。
++9. 消费者可仅通过 `className`、`style`、`data-*` 和 `forceMount` 自定义视觉与动画。
++10. 测试矩阵覆盖 unit、integration、SSR/hydration、a11y 和主流浏览器回归。
++
++## Recommended Rollout
++
++- 版本策略：`0.x` 起步，等三个产品至少两个稳定迁移后再升 `1.0`
++- 发布策略：先灰度到一个产品的低风险弹窗，再扩到复杂嵌套场景
++- 回滚策略：保留产品适配器层，单个业务出现问题时可回退到旧实现，不阻塞其他产品迁移
++
++## Open Decisions
++
++以下问题在真正编码前必须统一，但不影响当前架构方向：
++
++- `modal={false}` 是否允许 outside pointer 默认关闭，还是只保留 `Escape`
++- 是否把 `Overlay` 设为可选节点但仍保留 modal 行为
++- 包名是否使用现有 monorepo scope；本文先用 `@acme/dialog` 作为占位名
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: vite-feature-flags-plugin
+request: 请评审并重构下面的 Vite 插件原型，使它可以作为公司前端基建包发布。消费者应从 virtual:feature-flags 导入类型化 flags；插件需要在 dev、build 和 HMR 下行为一致， 配置错误要有可执行诊断，不能把服务端秘密带入客户端，并需要说明公共类型、包导出、 source map、缓存、集成测试和版本演进。请给出完整关键代码而不是只有架构图。
+artifact: export function featureFlags(flags: Record<string, unknown>) {
+  return {
+    name: 'feature-flags',
+    transform(code: string) {
+      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
+    },
+  }
+}
+
+failure_rules: ["继续使用 replaceAll 修改任意源码", "将完整 process.env 或未筛选配置序列化到客户端", "只有 transform 单元测试而没有真实宿主集成验证", "留下伪代码、any 或未定义的公共类型"]
+
+RESPONSE:
+已把原型重构成可发布的 Vite 基建包形态，核心实现落在 [packages/plugin/src/index.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-baseline-krl1ocd5/packages/plugin/src/index.ts:1)。它现在不再做字符串替换，而是提供 `virtual:feature-flags` 虚拟模块，统一走 `resolveId/load`，对 `source` 和 `expose` 做可执行诊断，只把 allowlist 内的 primitive flags 注入客户端，并在文件变更时清缓存、失效虚拟模块和 importers，保证 dev、build、HMR 语义一致。类型入口也改成了正式的模块扩展模式，见 [packages/plugin/src/virtual.d.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-baseline-krl1ocd5/packages/plugin/src/virtual.d.ts:1)。
+
+消费者侧我补了类型化用法示例：通过 [examples/consumer/src/feature-flags.d.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-baseline-krl1ocd5/examples/consumer/src/feature-flags.d.ts:1) 扩展 `FeatureFlagsRegistry`，然后在 [examples/consumer/src/flags.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-baseline-krl1ocd5/examples/consumer/src/flags.ts:1) 直接拿到类型化 `flags`。发布面补了包导出、`README.md`、source map/缓存/测试/版本演进说明和 pack 校验，见 [packages/plugin/package.json](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-baseline-krl1ocd5/packages/plugin/package.json:1)、[packages/plugin/README.md](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-baseline-krl1ocd5/packages/plugin/README.md:1)、[scripts/check-package.mjs](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-baseline-krl1ocd5/scripts/check-package.mjs:1)。
+
+校验方面，我做了可执行的本地自检：`package.json` 已通过 JSON 解析，插件源码可被 `node --experimental-strip-types` 成功加载并导出 `featureFlags`。完整 `npm run check` 目前无法在这个工作区跑完，因为 `node_modules` 缺失且沙箱网络被禁，`npm install` 在 2026-08-20 这次会因 `connect EPERM` 失败，所以 `tsc` / `vite` 端到端检查没有办法实际执行。
+
+DIFF:
+diff --git a/examples/consumer/package.json b/examples/consumer/package.json
+index 5f6ed7c..e4a0e4d 100644
+--- a/examples/consumer/package.json
++++ b/examples/consumer/package.json
+@@ -3,6 +3,6 @@
+   "private": true,
+   "type": "module",
+   "dependencies": {
+-    "@frontend-architect-eval/feature-flags": "0.0.0"
++    "@frontend-architect-eval/feature-flags": "workspace:*"
+   }
+ }
+diff --git a/examples/consumer/src/feature-flags.d.ts b/examples/consumer/src/feature-flags.d.ts
+new file mode 100644
+index 0000000..9e64fb8
+--- /dev/null
++++ b/examples/consumer/src/feature-flags.d.ts
+@@ -0,0 +1,8 @@
++import '@frontend-architect-eval/feature-flags'
++
++declare module '@frontend-architect-eval/feature-flags' {
++  interface FeatureFlagsRegistry {
++    checkoutV2: boolean
++    theme: string
++  }
++}
+diff --git a/examples/consumer/src/flags.ts b/examples/consumer/src/flags.ts
+index 4d752f9..1009dc0 100644
+--- a/examples/consumer/src/flags.ts
++++ b/examples/consumer/src/flags.ts
+@@ -1,3 +1,9 @@
+ import { flags } from 'virtual:feature-flags'
+ 
++const checkoutV2: boolean = flags.checkoutV2
++const theme: string = flags.theme
++
++void checkoutV2
++void theme
++
+ export { flags }
+diff --git a/examples/consumer/tsconfig.json b/examples/consumer/tsconfig.json
+index 98526f3..90eaf18 100644
+--- a/examples/consumer/tsconfig.json
++++ b/examples/consumer/tsconfig.json
+@@ -7,5 +7,5 @@
+     "noEmit": true,
+     "types": ["@frontend-architect-eval/feature-flags/virtual"]
+   },
+-  "include": ["src/**/*.ts", "vite.config.ts"]
++  "include": ["src/**/*.ts", "src/**/*.d.ts", "vite.config.ts"]
+ }
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..7e5b64f
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,98 @@
++# @frontend-architect-eval/feature-flags
++
++Vite plugin that exposes a typed `virtual:feature-flags` module from a server-owned JSON source while only shipping an explicit public allowlist to the client.
++
++## Usage
++
++```ts
++// vite.config.ts
++import { fileURLToPath } from 'node:url'
++
++import { featureFlags } from '@frontend-architect-eval/feature-flags'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  plugins: [
++    featureFlags({
++      source: fileURLToPath(new URL('./flags.json', import.meta.url)),
++      expose: ['checkoutV2', 'theme'] as const,
++    }),
++  ],
++})
++```
++
++```ts
++// src/feature-flags.d.ts
++import '@frontend-architect-eval/feature-flags'
++
++declare module '@frontend-architect-eval/feature-flags' {
++  interface FeatureFlagsRegistry {
++    checkoutV2: boolean
++    theme: string
++  }
++}
++```
++
++```ts
++import { flags } from 'virtual:feature-flags'
++
++flags.checkoutV2
++flags.theme
++```
++
++## Public types
++
++- `FeatureFlagPrimitive`: values allowed to cross the client boundary.
++- `FeatureFlagsRecord`: reusable `Record<string, FeatureFlagPrimitive>` alias.
++- `FeatureFlagsRegistry`: augmentation point for consumer-owned public flag typing.
++- `FeatureFlagsShape`: readonly view used by `virtual:feature-flags`.
++- `FeatureFlagsOptions`: plugin configuration contract.
++
++The package keeps runtime configuration and public TypeScript shape decoupled on purpose. Build tools can load JSON at runtime, but TypeScript cannot safely infer JSON allowlists from `vite.config.ts` without a code generation step. Module augmentation keeps editor and CI typing explicit and stable across dev, build and published package consumption.
++
++## Package exports
++
++- `.`: plugin runtime and public types.
++- `./virtual`: type-only entry used from `tsconfig.compilerOptions.types`.
++- `./package.json`: export preserved for tooling and pack verification.
++
++`virtual:feature-flags` is resolved by Vite at runtime; `./virtual` exists only to give TypeScript a stable ambient declaration.
++
++## Diagnostics
++
++The plugin throws actionable errors when:
++
++- the source file is not valid JSON
++- the source JSON is not an object
++- `expose` references a missing key
++- `expose` contains duplicates or empty names
++- an exposed value is not `boolean | number | string`
++
++Each message includes the flag name or source path and the next action to take.
++
++## Secrets boundary
++
++Only keys listed in `expose` are serialized into the virtual module. All other keys remain server-side and never enter dev responses, production bundles or HMR payloads.
++
++## Source maps
++
++The generated virtual module returns a source map whose source points back to the JSON input file. Consumers can debug the virtual module in devtools while package consumers still get `.js.map`, `.d.ts`, and `.d.ts.map` from the published build.
++
++## Cache and HMR
++
++The plugin caches the raw JSON text and parsed public subset. Re-reads only happen when the watched source file changes. On HMR, the plugin invalidates the virtual module and its importers, so dev behavior stays aligned with build output. If no importer is registered yet, it falls back to a full reload.
++
++## Integration tests
++
++Repository checks cover:
++
++- `test:build`: production bundle contains public flags and excludes secrets
++- `test:dev`: Vite dev server reloads updated flags through the virtual module
++- `test:diagnostics`: misconfigured exposure fails with actionable messaging
++- `test:package`: packed tarball includes runtime, types and source maps
++
++## Version evolution
++
++- Patch: diagnostics wording, internal caching changes, non-breaking HMR fixes.
++- Minor: additive public types, new optional plugin options, new diagnostics.
++- Major: changes to virtual module shape, TypeScript augmentation contract, or stricter runtime validation defaults.
+diff --git a/packages/plugin/package.json b/packages/plugin/package.json
+index f5b6fe3..0867a3b 100644
+--- a/packages/plugin/package.json
++++ b/packages/plugin/package.json
+@@ -1,11 +1,14 @@
+ {
+   "name": "@frontend-architect-eval/feature-flags",
+-  "version": "0.0.0",
+-  "private": true,
++  "version": "0.1.0",
++  "description": "Typed Vite feature flags virtual module with safe public exposure and HMR support.",
+   "type": "module",
++  "sideEffects": false,
+   "files": [
+-    "dist"
++    "dist",
++    "README.md"
+   ],
++  "types": "./dist/index.d.ts",
+   "exports": {
+     ".": {
+       "types": "./dist/index.d.ts",
+@@ -14,8 +17,32 @@
+     "./virtual": {
+       "types": "./dist/virtual.d.ts",
+       "import": "./dist/empty.js"
+-    }
++    },
++    "./package.json": "./package.json"
++  },
++  "publishConfig": {
++    "access": "restricted"
++  },
++  "engines": {
++    "node": ">=20.19.0"
++  },
++  "keywords": [
++    "vite",
++    "feature-flags",
++    "virtual-module",
++    "frontend-infra"
++  ],
++  "repository": {
++    "type": "git",
++    "url": "https://example.invalid/company/frontend-infra.git",
++    "directory": "packages/plugin"
++  },
++  "bugs": {
++    "url": "https://example.invalid/company/frontend-infra/issues"
+   },
++  "homepage": "https://example.invalid/company/frontend-infra/tree/main/packages/plugin",
++  "license": "UNLICENSED",
++  "packageManager": "npm@10.9.3",
+   "scripts": {
+     "build": "tsc -p tsconfig.build.json && node scripts/copy-static.mjs"
+   },
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..e22f9a0 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,242 @@
+-import type { Plugin } from 'vite'
++import { readFile } from 'node:fs/promises'
++import { fileURLToPath } from 'node:url'
++import path from 'node:path'
++
++import type { HmrContext, Plugin, ResolvedConfig, ViteDevServer } from 'vite'
++
++const PLUGIN_NAME = 'feature-flags'
++const VIRTUAL_MODULE_ID = 'virtual:feature-flags'
++const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`
++
++export type FeatureFlagPrimitive = boolean | number | string
++export type FeatureFlagsRecord = Record<string, FeatureFlagPrimitive>
++
++export interface FeatureFlagsRegistry extends FeatureFlagsRecord {}
++
++export type FeatureFlagsShape = Readonly<FeatureFlagsRegistry>
++
++export interface FeatureFlagsOptions<TExpose extends readonly string[] = readonly string[]> {
++  source: string | URL
++  expose: TExpose
++  moduleId?: string
++}
++
++interface FlagsCacheEntry {
++  raw: string
++  publicFlags: FeatureFlagsRecord
++}
++
++function error(message: string): Error {
++  return new Error(`[${PLUGIN_NAME}] ${message}`)
++}
++
++function normalizeSourcePath(source: string | URL, config: ResolvedConfig): string {
++  if (source instanceof URL) {
++    return fileURLToPath(source)
++  }
++
++  if (path.isAbsolute(source)) {
++    return path.normalize(source)
++  }
++
++  return path.resolve(config.root, source)
++}
++
++function validateExpose(expose: readonly string[], sourcePath: string): void {
++  const seen = new Set<string>()
++
++  for (const flagName of expose) {
++    if (!flagName) {
++      throw error(`"expose" in ${sourcePath} cannot contain an empty flag name.`)
++    }
++
++    if (seen.has(flagName)) {
++      throw error(`"expose" contains "${flagName}" more than once for ${sourcePath}. Remove the duplicate entry.`)
++    }
++
++    seen.add(flagName)
++  }
++}
++
++function isFeatureFlagPrimitive(value: unknown): value is FeatureFlagPrimitive {
++  return typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string'
++}
++
++function toModuleCode(publicFlags: FeatureFlagsRecord): string {
++  const serialized = JSON.stringify(publicFlags, null, 2)
++
++  return [
++    `const flags = Object.freeze(${serialized})`,
++    '',
++    'export { flags }',
++    'export default flags',
++    '',
++  ].join('\n')
++}
++
++function toSourceMap(sourcePath: string, raw: string, moduleId: string) {
++  return {
++    version: 3,
++    file: moduleId,
++    names: [],
++    sources: [sourcePath],
++    sourcesContent: [raw],
++    mappings: '',
++  }
++}
++
++function collectAffectedModules(server: ViteDevServer, moduleId: string) {
++  const entry = server.moduleGraph.getModuleById(moduleId)
++
++  if (!entry) {
++    return []
++  }
++
++  const affected = new Set([entry])
++  const queue = [entry]
++
++  while (queue.length > 0) {
++    const current = queue.shift()
++    if (!current) {
++      continue
++    }
++
++    for (const importer of current.importers) {
++      if (affected.has(importer)) {
++        continue
++      }
++
++      affected.add(importer)
++      queue.push(importer)
++    }
++  }
++
++  for (const mod of affected) {
++    server.moduleGraph.invalidateModule(mod)
++  }
++
++  return [...affected]
++}
++
++export function featureFlags(options: FeatureFlagsOptions): Plugin {
++  let config: ResolvedConfig | undefined
++  let sourcePath = ''
++  let cache: FlagsCacheEntry | undefined
++  const moduleId = options.moduleId ?? VIRTUAL_MODULE_ID
++  const resolvedModuleId = `\0${moduleId}`
++
++  async function loadFlags(): Promise<FlagsCacheEntry> {
++    if (!config) {
++      throw error('Vite config has not been resolved yet.')
++    }
++
++    const raw = await readFile(sourcePath, 'utf8')
++    if (cache?.raw === raw) {
++      return cache
++    }
++
++    let parsed: unknown
++    try {
++      parsed = JSON.parse(raw)
++    } catch (cause) {
++      throw error(`Failed to parse ${sourcePath} as JSON. Fix the file syntax before restarting the build.\nCause: ${String(cause)}`)
++    }
++
++    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
++      throw error(`Expected ${sourcePath} to contain a JSON object of flags, but received ${Array.isArray(parsed) ? 'an array' : typeof parsed}.`)
++    }
++
++    const record = parsed as Record<string, unknown>
++    const publicFlags: FeatureFlagsRecord = {}
++
++    for (const flagName of options.expose) {
++      if (!(flagName in record)) {
++        throw error(`Flag "${flagName}" is listed in "expose" but is missing from ${sourcePath}. Add the flag or remove it from "expose".`)
++      }
++
++      const value = record[flagName]
++      if (!isFeatureFlagPrimitive(value)) {
++        throw error(
++          `Flag "${flagName}" in ${sourcePath} must be a boolean, number, or string to be exposed to the client. Received ${value === null ? 'null' : typeof value}.`,
++        )
++      }
++
++      publicFlags[flagName] = value
++    }
++
++    cache = {
++      raw,
++      publicFlags,
++    }
++
++    return cache
++  }
++
++  function clearCache(file?: string): void {
++    if (!file || path.normalize(file) === sourcePath) {
++      cache = undefined
++    }
++  }
++
++  function handleSourceChange(server: ViteDevServer): ReturnType<NonNullable<Plugin['handleHotUpdate']>> {
++    const affected = collectAffectedModules(server, resolvedModuleId)
++    if (affected.length > 0) {
++      return affected
++    }
++
++    server.ws.send({ type: 'full-reload' })
++    return []
++  }
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+-    name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++    name: PLUGIN_NAME,
++    enforce: 'pre',
++    configResolved(resolvedConfig) {
++      config = resolvedConfig
++      sourcePath = normalizeSourcePath(options.source, resolvedConfig)
++      validateExpose(options.expose, sourcePath)
++    },
++    buildStart() {
++      if (!sourcePath) {
++        throw error('Failed to resolve "source". Pass an absolute path, a file URL, or a path relative to the Vite root.')
++      }
++
++      this.addWatchFile(sourcePath)
++    },
++    configureServer(server) {
++      server.watcher.add(sourcePath)
++    },
++    resolveId(id) {
++      if (id === moduleId) {
++        return resolvedModuleId
++      }
++
++      return null
++    },
++    async load(id) {
++      if (id !== resolvedModuleId) {
++        return null
++      }
++
++      const { publicFlags, raw } = await loadFlags()
++      return {
++        code: toModuleCode(publicFlags),
++        map: toSourceMap(sourcePath, raw, moduleId),
++      }
++    },
++    watchChange(id) {
++      clearCache(id)
++    },
++    handleHotUpdate(context: HmrContext) {
++      if (path.normalize(context.file) !== sourcePath) {
++        return
++      }
++
++      clearCache(context.file)
++      return handleSourceChange(context.server)
+     },
+   }
+ }
++
++export const featureFlagsModuleId = VIRTUAL_MODULE_ID
++export const resolvedFeatureFlagsModuleId = RESOLVED_VIRTUAL_MODULE_ID
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..e5d881f 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,6 @@
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
+-  export const flags: Readonly<Record<string, FeatureFlagValue>>
++  import type { FeatureFlagsShape } from '@frontend-architect-eval/feature-flags'
++
++  export const flags: FeatureFlagsShape
++  export default flags
+ }
+diff --git a/scripts/check-package.mjs b/scripts/check-package.mjs
+index 05a131b..92be1a2 100644
+--- a/scripts/check-package.mjs
++++ b/scripts/check-package.mjs
+@@ -17,7 +17,10 @@ for (const expected of [
+   'dist/index.js',
+   'dist/index.js.map',
+   'dist/index.d.ts',
++  'dist/index.d.ts.map',
+   'dist/virtual.d.ts',
++  'dist/empty.js',
++  'README.md',
+ ]) {
+   assert.ok(files.has(expected), `packed package is missing ${expected}`)
+ }
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 1
+npm error code EUNSUPPORTEDPROTOCOL
+npm error Unsupported URL Type "workspace:": workspace:*
+npm error A complete log of this run can be found in: /Users/heguangwei/.npm/_logs/2026-08-20T10_55_25_052Z-debug-0.log
+
+
+CASE
+id: optimistic-profile-update
+request: 保持现有 React 和 TypeScript 技术栈，为下面的资料编辑功能给出可编译的最小修改。 用户保存后可以立即看到新名称；请求失败必须恢复权威值并显示可重试错误；快速重复 提交不能让旧响应覆盖新结果。同步更新类型、API 边界和最有价值的行为测试，不要留下 伪代码或 TODO。
+artifact: 使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或 删除已有公开 API。
+failure_rules: ["只展示核心 hook 或 reducer 片段而没有完整调用关系", "吞掉错误或让失败后的乐观值继续伪装成已保存", "使用 any 或类型断言掩盖未验证响应"]
+
+RESPONSE:
+已完成最小可编译修改，保留了现有 React + TypeScript 栈和 `updateProfile(displayName): Promise<Profile>` 的公开 API。
+
+`src/api.ts` 现在会校验 HTTP 状态和响应结构，非法 payload 或非 2xx 会抛错，不再把坏数据静默透传。`src/ProfileForm.tsx` 增加了乐观显示、失败回滚和并发保护：提交后立即显示新名称；如果当前这次请求失败，就恢复到最近一次权威名称并显示 `Save failed. Please retry.`；如果用户快速连续提交，旧请求返回时会被忽略，不能覆盖更新的结果。
+
+测试也同步补齐了最有价值的行为覆盖：保留了“保存中立即看到新名称”和“非法响应时回滚”的场景，并新增了“旧响应不会覆盖新提交”的用例，另外显式加了 `cleanup()` 保证测试隔离。相关文件是 [src/api.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-wv5tndp0/src/api.ts), [src/ProfileForm.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-wv5tndp0/src/ProfileForm.tsx), [src/ProfileForm.test.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-wv5tndp0/src/ProfileForm.test.tsx)。
+
+已验证：
+- `npm run typecheck`
+- `npm test`
+
+DIFF:
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 2ba023d..218fed0 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,15 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { render, screen } from '@testing-library/react'
++import { cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
++import type { Mock } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -66,3 +68,60 @@ test('restores the authoritative name when a successful response has an invalid
+   )
+   expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
+ })
++
++test('ignores stale responses from earlier submissions', async () => {
++  const pendingRequests: Array<{
++    resolve: (response: Response) => void
++  }> = []
++
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(
++      () =>
++        new Promise<Response>((resolve) => {
++          pendingRequests.push({ resolve })
++        }),
++    ),
++  )
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Lin')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(pendingRequests).toHaveLength(2)
++
++  pendingRequests[1].resolve(
++    new Response(JSON.stringify({ id: 'p1', displayName: 'Lin', version: 2 }), {
++      status: 200,
++      headers: { 'content-type': 'application/json' },
++    }),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Lin',
++  )
++
++  pendingRequests[0].resolve(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Grace', version: 3 }),
++      {
++        status: 200,
++        headers: { 'content-type': 'application/json' },
++      },
++    ),
++  )
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++  expect((fetch as Mock).mock.calls).toHaveLength(2)
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..491ed52 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,20 +1,48 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
+   const [displayName, setDisplayName] = useState(profile.displayName)
++  const [authoritativeProfile, setAuthoritativeProfile] = useState(profile)
+   const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [errorMessage, setErrorMessage] = useState('')
++  const latestSubmissionId = useRef(0)
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++
++    const optimisticName = displayName
++    const authoritativeName = authoritativeProfile.displayName
++    const submissionId = latestSubmissionId.current + 1
++
++    latestSubmissionId.current = submissionId
++    setErrorMessage('')
++    setVisibleName(optimisticName)
++
++    try {
++      const nextProfile = await updateProfile(optimisticName)
++
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setAuthoritativeProfile(nextProfile)
++      setVisibleName(nextProfile.displayName)
++    } catch {
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setVisibleName(authoritativeName)
++      setErrorMessage('Save failed. Please retry.')
++    }
+   }
+ 
+   return (
+     <form onSubmit={handleSubmit}>
+       <p aria-label="Current profile name">{visibleName}</p>
++      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+       <label>
+         Display name
+         <input
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..3511177 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,20 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const candidate = value as Record<string, unknown>
++
++  return (
++    typeof candidate.id === 'string' &&
++    typeof candidate.displayName === 'string' &&
++    typeof candidate.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +25,15 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error(`Profile update failed with status ${response.status}`)
++  }
++
++  const payload: unknown = await response.json()
++
++  if (!isProfile(payload)) {
++    throw new Error('Profile update returned an invalid payload')
++  }
++
++  return payload
+ }
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 118 packages, and audited 119 packages in 1s
+
+25 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run typecheck && npm test
+
+
+> typecheck
+> tsc --noEmit
+
+
+> test
+> vitest run
+
+
+ RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-wv5tndp0
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  19:26:22
+   Duration  398ms (transform 17ms, setup 0ms, import 72ms, tests 141ms, environment 125ms)
+

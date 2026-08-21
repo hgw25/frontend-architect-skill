@@ -1,0 +1,378 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 按平台、项目能力、局部组合、抽象顺序选择 |
+| `module_boundaries` | 按文件类型机械分组 | 给出 feature 建议但内部边界含糊 | 在项目、功能和实现单元等适用尺度上，依据变化、所有权、公开 API 和依赖方向设计并知道何时停止拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `security_trust` | 信任客户端或把验证等同安全 | 泛泛提醒安全 | 追踪不可信数据到 sink，在服务端执行授权，保护秘密并给出匹配威胁的验证 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证或泛泛而谈 | 建议运行工具 | 验证对应真实风险，并说明未验证部分 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+
+
+CASE
+id: derived-state-effect
+request: 请评审下面的 React 组件。保持公开行为不变，判断 state、Effect 和 memoization 是否必要，并说明应该如何验证修改。
+artifact: function UserList({ users, query }) {
+  const [filteredUsers, setFilteredUsers] = useState(users)
+
+  useEffect(() => {
+    setFilteredUsers(
+      users.filter((user) => user.name.includes(query)),
+    )
+  }, [users, query])
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+仓库里只有 `.git`，没有可对照的 React 文件；下面只基于你提供的组件评审。
+
+**Findings**
+
+1. `UserList` 第 2-7 行把 `filteredUsers` 做成 state，并用 `useEffect` 同步它，这是冗余的派生状态。`filteredUsers` 完全由 `users` 和 `query` 决定，没有独立写入来源；现在的实现会多一次 render，而且在首次挂载或 props 变化后先渲染旧值，再由 Effect 纠正。
+2. 第 3-7 行的 `useEffect` 不是业务必需，只是在“渲染后再同步派生值”。如果目标是正常列表过滤，它应该直接在 render 阶段计算。需要注意：去掉 Effect 后，首屏和 props 更新时的时序会变，当前这段代码存在一个可观察的“先旧后新”瞬态；如果你把这也算公开行为，就要先确认没人依赖它。
+3. 这里默认不需要 `useMemo`。`users.filter(...)` 是直接、线性的计算，只有在 `users` 很大，或者 `UserList` 高频重渲染且你已经确认过滤本身是瓶颈时，`useMemo` 才有意义。否则只是增加心智负担。
+
+更合理的实现是直接派生，不存 state：
+
+```jsx
+function UserList({ users, query }) {
+  const filteredUsers = users.filter((user) => user.name.includes(query))
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+```
+
+如果你决定改，验证重点不是“代码更短了”，而是确认行为边界：
+1. 写测试覆盖 `query` 变化时的过滤结果、`users` prop 替换时的结果、空查询和无匹配场景。
+2. 用 React DevTools Profiler 或简单 render count 验证：修改后每次 `users/query` 变化应少一次由 Effect 触发的额外 render。
+3. 明确比较首屏时序：当前实现当 `query` 非空时会先显示完整列表再更新；重构后会直接显示过滤结果。若产品不接受这个差异，就需要先和需求方确认“公开行为”定义。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: reorder-motion
+request: 为支持拖拽排序的卡片列表设计重排动画。请先判断无动画、CSS transition、 View Transitions API、FLIP 或动画库中哪个层级适合，再描述实现边界和验证方案。 产品要求支持快速连续拖拽、滚动容器和 prefers-reduced-motion。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "correctness_boundary", "user_experience", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+我检查了工作区，当前仓库只有 `.git`，没有可读的前端源码、样式或拖拽实现，因此不能基于现有组件结构给出“按仓库落地”的代码方案。基于这个实际前提，适合的层级判断是：**优先用 FLIP 方案自行实现，动画只作用于“非被拖拽卡片的重排”**，不用无动画，也不建议把核心体验押在纯 CSS transition、View Transitions API 或整套动画库上。
+
+原因很直接。这个需求同时包含“快速连续拖拽”“滚动容器”“`prefers-reduced-motion`”，本质上需要你在每次列表顺序变化时，稳定地测量旧位置和新位置，再中断并重启动画。纯 CSS transition 只适合你已经拿到了正确的位移值，但它本身不解决重排测量与连续打断；View Transitions API 更适合页面/视图切换，对拖拽中的高频局部重排和滚动容器控制不够稳，也不该作为主路径；动画库只有在仓库本身已经用了如 Framer Motion 一类工具时才值得顺势接入，否则为了一个列表重排引入依赖，收益偏低。**FLIP + 原生 WAAPI 或 `transform` transition** 是这个场景最稳的中间层。
+
+实现边界建议这样收紧：
+- 只动画“其他卡片让位”的位移，不动画用户手里的拖拽跟手本体。
+- 只用 `transform: translate`，不要动画 `top/left/height`，避免滚动容器内抖动和回流放大。
+- 每次 reorder 前记录卡片 `getBoundingClientRect()`，reorder 后下一帧测新位置，计算 delta，执行 FLIP。
+- 连续拖拽时，新一轮动画必须取消上一轮，直接以“当前视觉位置”为起点重算，不能排队。
+- 坐标计算要基于同一滚动容器；容器滚动过程中如果继续 reorder，要把滚动偏移纳入测量，避免位移跳变。
+- `prefers-reduced-motion: reduce` 下关闭补间，只保留即时重排，或把时长压到接近 0。
+- 不建议在首版处理跨列表、虚拟列表、瀑布流、自适应高度剧烈变化这几类更复杂场景，除非产品范围明确包含。
+
+验证方案也应围绕这几个风险点：
+- 快速连续拖拽：连续多次上下穿插拖动，确认没有卡片残影、回弹、错位、动画排队。
+- 滚动容器：列表滚动到中段和接近底部时拖拽，确认重排位移与容器滚动无关、无抖动。
+- 中断恢复：拖到一半立刻反向拖、松手后马上再次拖，确认旧动画被正确取消。
+- 异高卡片：短卡和长卡混排时检查是否出现覆盖、穿插错误。
+- 减弱动效：系统开启 `prefers-reduced-motion` 后，确认仍可排序且无明显补间。
+- 性能：在几十到上百项的列表下观察是否掉帧，重点看是否只触发必要测量、是否避免全列表频繁强制回流。
+
+如果你要我继续往下做，下一步需要先提供现有列表/拖拽代码；现在仓库是空的，我不能负责任地指定具体 API、hooks 结构或库接入点。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: server-client-catalog
+request: 一个 Next.js App Router 商品页目前整页使用 use client，在 useEffect 中请求商品详情和 推荐商品。页面需要 SEO、按用户货币显示价格、交互式规格选择和加入购物车；Shopify 私有凭据只能存在服务端。请提出渐进式重构方案，明确 server/client 组件、序列化、 Suspense、缓存作用域与失效、错误恢复和验证。不能为了使用 Server Components 重写 无关页面。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "runtime_delivery", "security_trust", "correctness_boundary", "user_experience", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+我检查了当前 workspace：仓库只有 `.git`，`HEAD` 在提交 `93a12d0`，没有 `app/`、`src/`、`components/` 或任何 Next.js 代码可供核对。所以我不能基于现有实现给出“文件级”改造建议，只能基于你描述的当前商品页形态，给出不扩散到无关页面的渐进式重构方案。
+
+**结论**
+不要把整站改成 Server Components。只重构商品详情路由这一条链路，把“首屏可索引数据”移到服务端，把“用户态价格”和“交互式购买”保留在客户端边界内。
+
+**建议的目标拆分**
+- `app/products/[handle]/page.tsx`
+  作为 Server Component。负责读取公开商品详情、生成 SEO 所需首屏内容、组织 Suspense 边界。
+- `ProductHeroServer`
+  Server Component。渲染标题、描述、图片、基础价格占位、结构化数据。
+- `RecommendedProductsServer`
+  Server Component。服务端取推荐商品，可单独 Suspense。
+- `ProductPurchaseClient`
+  Client Component。负责规格选择、数量、加入购物车、用户货币价格刷新。
+- `CurrencyPriceClient`
+  Client Component。只接收 `productId`、`selectedVariantId`、`basePrice` 之类的可序列化字段，按用户货币二次请求价格。
+- `AddToCartForm`
+  Client Component。提交到 server action 或 route handler，不暴露 Shopify 私有凭据。
+
+**渐进式重构顺序**
+1. 先只改商品详情页路由，保留其他页面现状不动。  
+2. 把当前 `useEffect` 里的“商品详情”和“推荐商品”请求迁到服务端数据层。  
+3. 页面本身去掉整页 `use client`，仅把规格选择、价格本地刷新、加入购物车拆到客户端子组件。  
+4. 加入 Suspense：
+   - 商品主信息不要 suspense 到空白页，优先直接在 page 里 `await`，保证 SEO HTML 完整。
+   - 推荐商品单独 `<Suspense fallback={...}>`，避免拖慢首屏。
+   - 用户货币价格单独 Suspense 或 skeleton，不阻塞商品正文。
+5. 最后再补缓存、失效、错误边界和验证。
+
+**服务端 / 客户端边界**
+服务端做：
+- Shopify 私有 API 调用
+- SEO 元数据 `generateMetadata`
+- 商品公开详情获取
+- 推荐商品获取
+- 结构化数据 JSON-LD 生成
+- 基于默认市场/默认币种的首屏价格渲染
+
+客户端做：
+- 规格选择状态
+- 变体切换
+- 基于用户货币的价格刷新
+- 加入购物车交互
+- 乐观更新、按钮 loading、局部错误提示
+
+不要跨边界传：
+- `Date`
+- `Map/Set`
+- 类实例
+- Shopify SDK 返回的整对象
+- 任何私有 token / shop domain secret / admin access token
+
+只传最小可序列化 DTO：
+- `product: { id, handle, title, descriptionHtml, images, options, variants[{id,title,availableForSale,sku}] }`
+- `pricing: { amount, currencyCode }`
+- `recommendations: Array<{ id, handle, title, featuredImage, priceRange }>`
+- `selectedVariantId`
+
+**价格策略**
+SEO 与缓存稳定性决定了首屏不能依赖“用户浏览器币种”。
+建议分两层：
+- 首屏服务端输出站点默认市场价格，保证可索引和可缓存。
+- 客户端 hydration 后，根据 cookie / user profile / Geo / explicit currency selector 请求 `/api/prices?variant=...&currency=...` 或调用 server action，局部替换价格。
+
+这样做的原因：
+- `headers()` / Geo / cookie` 会让整页更动态，降低缓存收益。
+- 用户货币本身不是 SEO 关键内容，适合客户端局部更新。
+
+**Suspense 设计**
+- `page.tsx`：直接等待商品详情，避免标题和正文首屏缺失。
+- `RecommendedProductsServer`：放进 `<Suspense>`，可流式返回。
+- `CurrencyPriceClient`：组件内部可用 React cache / SWR / React Query 任一现有方案，但只包价格区域。
+- 如果规格切换会触发价格刷新，用 `useTransition`，不要让整个购买区卡住。
+
+**缓存作用域与失效**
+商品详情：
+- 使用服务端 `fetch`，按商品路由缓存。
+- 若库存/价格经常变化，使用 `revalidate: 60~300` 这类短时 ISR。
+- 打 tag，例如 `tags: ['product:'+handle]`。
+
+推荐商品：
+- 单独缓存，tag 如 `recommendations:'+productId`。
+- 失效频率可比商品详情更长。
+
+用户货币价格：
+- 不进页面级静态缓存。
+- 走动态 route handler / server action，缓存粒度按 `variantId + currency`。
+- 可以短 TTL，或 `no-store`，取决于价格变动频率和市场规则。
+
+购物车：
+- `no-store`。
+- 与商品详情缓存隔离，避免购物车操作导致商品页整体失效。
+
+失效策略：
+- Shopify webhook 到站内 API，调用 `revalidateTag('product:'+handle)`、`revalidateTag('recommendations:'+productId)`。
+- 购物车变更不触发商品详情 revalidate。
+- 市场价格规则变更时，只失效价格接口缓存，不动商品正文缓存。
+
+**错误恢复**
+- 路由级 `error.tsx`：商品详情服务端请求失败时展示可恢复页，并提供 retry。
+- 路由级 `not-found.tsx`：商品不存在或下架。
+- 推荐商品区域本地容错：失败时隐藏模块或显示“暂时无法加载推荐”。
+- 客户端购买区错误：
+  - 规格不可售时禁用加入购物车
+  - 加购失败显示 inline error，不打断页面其余部分
+  - 用户货币价格失败时回退到默认币种价格，并明确标注
+
+**验证重点**
+功能验证：
+- 未登录/首次访问能看到完整商品 HTML
+- View Source 中包含标题、描述、图片、结构化数据
+- 规格切换只更新购买区，不重新请求整页
+- 加购请求只命中服务端，浏览器中无 Shopify 私有凭据
+- 推荐商品延迟时，商品正文仍先渲染
+- 用户切换货币后仅价格区域更新
+
+技术验证：
+- 检查首屏 HTML 是否已含商品内容，不依赖 hydration
+- 检查 RSC payload 只含 DTO，不含敏感字段
+- 检查缓存命中与 `revalidateTag` 生效
+- 检查 `error.tsx` / `not-found.tsx` 路径
+- 检查客户端网络面板，确认私有 Shopify 请求未暴露到浏览器
+
+如果你把实际商品页文件补到 workspace，我可以下一步把这个方案落到具体目录结构、组件拆分和 `fetch`/`revalidateTag` 级别的实现建议。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: unsafe-rich-text
+request: 请安全评审下面的 React 富文本组件。后端声称已经“过滤过输入”，正文来自用户， 其中允许有限 HTML 和链接。请给出最小、可维护的修复方向和验证方案，说明 CSP 在 其中的角色；不要通过去掉全部富文本来回避产品要求。
+artifact: export function ArticleBody({ html }: { html: string }) {
+  return <article dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "security_trust", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+工作区里除 `.git` 外没有其他项目文件，所以只能基于你给的组件做结论，不假设仓库里已有净化库、CSP 或服务端过滤实现。
+
+**发现**
+
+1. `[HIGH] (confidence: 10/10) 提供的组件第 2 行`
+   `return <article dangerouslySetInnerHTML={{ __html: html }} />`
+   这里把用户正文直接作为 HTML 注入 DOM。后端“已经过滤过输入”不能作为前端信任边界，因为只要后端规则有遗漏、回归、旁路接口、富文本白名单不一致，前端这里就是直接执行点。对 React 来说，`dangerouslySetInnerHTML` 本身就是 XSS escape hatch。
+
+2. `[HIGH] (confidence: 9/10) 同一注入点对链接协议和属性没有本地约束`
+   即使后端只想允许“有限 HTML 和链接”，如果没同时严格限制 `href/src` 协议、`target`、危险属性，常见绕过是 `javascript:`、`data:`、事件属性、SVG/MathML 载荷，以及 `target="_blank"` 引出的 tabnabbing。
+
+**最小、可维护的修复方向**
+
+不要去掉富文本，保留 `dangerouslySetInnerHTML`，但把它收口到“渲染前净化”这一层。最小方案是：
+
+```tsx
+import DOMPurify from 'dompurify'
+
+const purifier = DOMPurify()
+
+const ALLOWED_TAGS = [
+  'p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'a'
+]
+
+const ALLOWED_ATTR = ['href', 'title', 'target', 'rel']
+
+function sanitizeArticleHtml(html: string) {
+  return purifier.sanitize(html, {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['style', 'script'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick'],
+    ALLOWED_URI_REGEXP: /^(?:(https?|mailto|tel):|\/|#)/i,
+  })
+}
+
+export function ArticleBody({ html }: { html: string }) {
+  const safeHtml = sanitizeArticleHtml(html)
+  return <article dangerouslySetInnerHTML={{ __html: safeHtml }} />
+}
+```
+
+决策上建议这样落：
+
+- 前端把 `html` 视为不可信输入，始终本地净化后再渲染。
+- 白名单只覆盖产品实际需要的标签和属性，不做“支持所有常见富文本”。
+- 链接只允许 `http:`, `https:`, `mailto:`, `tel:`, 相对路径和锚点。
+- 如果产品允许 `target="_blank"`，净化后统一补 `rel="noopener noreferrer"`；如果不需要新窗口，直接去掉 `target` 更省事。
+- 服务端过滤继续保留，但前端再做一次。原因不是重复造轮子，而是把“最终执行点”的安全边界放在组件自身，避免后端规则漂移时前端裸奔。
+
+**CSP 的角色**
+
+CSP 是减伤，不是主修复。
+
+- 有价值的地方：即使净化漏了一些 payload，严格 CSP 可以阻止一部分内联脚本和外部脚本加载，把 XSS 从“直接拿到 JS 执行”降成“部分 HTML 注入”。
+- 不足的地方：CSP 不能可靠替代 HTML sanitizer。它通常拦不住所有富文本注入后果，比如恶意链接、钓鱼 UI、部分浏览器差异、业务属性滥用。
+- 对这类页面，基线建议是至少有：
+  - `script-src` 不允许任意内联脚本
+  - `object-src 'none'`
+  - `base-uri 'self'`
+  - `frame-ancestors 'none'` 或按产品需要收紧
+- 如果前端基础设施允许，Trusted Types 可以进一步约束 `innerHTML` 类 sink，但这属于增强项，不是这次“最小修复”的前置条件。
+
+**验证方案**
+
+先做组件级测试，再做浏览器级验证。
+
+- 单元测试输入这些 payload，断言渲染结果中不存在可执行内容：
+  - `<img src=x onerror=alert(1)>`
+  - `<svg><script>alert(1)</script></svg>`
+  - `<a href="javascript:alert(1)">x</a>`
+  - `<a href="data:text/html,...">x</a>`
+  - `<p><strong>正常富文本</strong></p>`
+- 断言保留产品需要的格式：段落、列表、加粗、代码块、普通链接仍能正常显示。
+- 如果允许外链新窗口，断言输出链接包含 `rel="noopener noreferrer"`。
+- 浏览器侧用带 CSP 的环境跑一次手工/集成验证，确认恶意样例不会执行，且控制台没有意外的 CSP 违规噪音。
+- 回归点放在“后端过滤规则变更时”，确保前端 sanitizer 测试仍然独立守住 sink。
+
+结论很直接：这段代码当前应视为高风险 XSS 注入点。最小可维护修复不是砍掉富文本，而是在这个组件前加一层严格白名单净化，并用 CSP 做第二道防线。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
