@@ -124,7 +124,7 @@ when the implementation has already failed there.
 
 ## Validate performance claims
 
-Before changing code for performance:
+Audit performance work against this evidence chain:
 
 1. Define the user-visible symptom and target metric.
 2. Record a representative baseline.
@@ -132,20 +132,10 @@ Before changing code for performance:
 4. Change the smallest responsible part.
 5. Repeat the same measurement and compare tradeoffs.
 
-Check algorithmic complexity for growing data, but avoid micro-optimizing small
-collections without evidence. Memoization, virtualization, code splitting,
-preloading, and compositor promotion each add costs and should solve a measured
-or strongly evidenced problem.
-
-For animation, inspect long tasks, layout, paint, layer count, dropped frames,
-and behavior on mid-range devices. A transform-only animation can still be
-expensive when the layer is large or effects are costly.
-
-For web delivery, separate current field LCP, INP, and CLS from lab diagnostics;
-record the route, device/network profile, sample window, and variance. Add bundle
-or resource budgets at the actual build artifact, and make the response to a
-regression explicit: block, investigate, stage, or accept with an owner and
-reason. Do not present a single synthetic score as proof of user impact.
+Check that the evidence matches the claimed runtime and user path. Do not accept
+render counts, one synthetic score, a simulator, or a microbenchmark as proof of
+production impact. Use the rendering or runtime reference only when the review
+needs its platform or delivery model.
 
 ## Report findings and evidence
 

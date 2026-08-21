@@ -124,7 +124,6 @@ cases:
       - solution_complexity
       - paradigm_choice
       - correctness_boundary
-      - verification_evidence
       - communication_quality
     must_observe:
       - 将确定性文本转换、验证和状态转换放入函数式核心
@@ -466,3 +465,93 @@ cases:
       - 将完整 process.env 或未筛选配置序列化到客户端
       - 只有 transform 单元测试而没有真实宿主集成验证
       - 留下伪代码、any 或未定义的公共类型
+
+  - id: browser-update-to-pixels
+    title: 浏览器更新到像素的卡顿定位
+    prompt: >-
+      一个 React 看板在拖动卡片时明显卡顿。指针位置被写入看板根组件 state，约 300 张卡片
+      都会参与更新；布局 Effect 遍历卡片，先修改 class，再立即读取 getBoundingClientRect，
+      最后写入 top。生产构建的 Chrome trace 显示交互期间有长任务，并反复出现 Style、Layout
+      和 Paint。请按最小改动顺序分析从状态更新到最终像素的成本，给出实现边界和验证方案；
+      不要默认给所有组件加 memo，也不要直接改用动画库。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - rendering_performance
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 将指针事件、状态订阅、React 计算与提交、Style、Layout、Paint 和 Composite 串成成本链
+      - 先缩小高频状态和订阅范围，再判断稳定身份或 memoization 是否仍有测量依据
+      - 识别交错 DOM 写入与几何读取可能导致强制同步布局，并批处理读写
+      - 根据视觉关系比较无动画、transform、FLIP 或其他机制，而不是直接操作 top
+      - 保留快速重复输入、中断、滚动和 reduced-motion 的正确行为
+      - 用相同生产构建、数据量、交互和设备重复真实浏览器 trace
+    fail_if:
+      - 只建议 React.memo、useMemo 或防抖而不解释浏览器渲染阶段
+      - 宣称 transform 或 GPU 合成必然更快而不验证 Paint、层和内存
+      - 用 jsdom、render 次数或开发构建证明卡顿已经解决
+
+  - id: react-native-feed-rendering
+    title: React Native 信息流掉帧
+    prompt: >-
+      一个 React Native 信息流约有 800 项，父页面每 100ms 更新一次音频进度，并重新创建
+      行项目对象、样式对象和回调。列表包含高分辨率图片，在模拟器和 debug 构建中表现尚可，
+      但中端 Android 真机滚动时掉帧且内存持续增长。项目版本和是否启用 New Architecture
+      尚未确认。请给出按证据推进的最小修复方案，不能直接更换列表库或假设仍使用旧 Bridge，
+      并明确哪些结论必须在真实 React Native 运行时和 Android 真机上验证。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - rendering_performance
+      - runtime_delivery
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 先确认 React Native 版本、架构、目标设备、刷新率和 release/profile 构建
+      - 区分音频状态订阅、React render、commit/mount、UI 线程、列表和图片解码或内存成本
+      - 缩小高频进度状态影响范围并保持行项目稳定语义身份
+      - 检查列表窗口、项目布局、图片尺寸缓存、取消和资源释放，但不预设替换库
+      - 使用框架 profiler 与 Android 系统或帧 trace 定位跨层瓶颈
+      - 在同一中端真机和代表性数据上对比修改前后滚动、帧和内存结果
+      - 用行为或集成测试保护状态隔离、列表身份、图片契约和订阅释放
+    fail_if:
+      - 把所有问题归因于旧 Bridge 而不确认当前架构
+      - 无测量地给所有行添加 memo 或直接采用另一列表库
+      - 用模拟器、debug 构建或单一 render 计数声明性能已经改善
+
+  - id: mini-program-render-transfer
+    title: 小程序实时列表的渲染通信成本
+    prompt: >-
+      一个行情小程序页面展示约 500 行数据，每 100ms 收到一次更新，并通过 setData 传递整个
+      页面 data；页面隐藏后订阅和更新仍继续。开发者工具中较流畅，但部分真机输入延迟、滚动
+      卡顿。产品同时存在不同宿主和基础库版本。请给出不改变业务实时性要求的最小优化方案，
+      并说明代码层可以验证什么、哪些结论仍需要宿主工具和代表性真机证据。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - rendering_performance
+      - runtime_delivery
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 先确认宿主、基础库、渲染后端、设备和可用性能工具
+      - 将逻辑层到渲染层的数据视为序列化边界，只传递渲染所需的变化
+      - 根据语义合并更新、缩小变更路径并避免高频全页传输，同时保持实时反馈契约
+      - 在隐藏和销毁生命周期停止无意义订阅、定时器和视图更新
+      - 检查稳定列表身份、挂载节点、图片或其他资源成本，但不盲目自建虚拟列表
+      - 使用宿主工具记录更新频率、载荷和队列，并在代表性真机验证输入、滚动和内存
+      - 用行为或集成测试保护变化路径、隐藏与销毁清理以及恢复时的单一订阅
+    fail_if:
+      - 把某一宿主或历史版本的 setData 数值限制当作所有小程序的固定规则
+      - 只做节流而不分析跨层传输、节点更新和隐藏页生命周期
+      - 用开发者工具表现或更小 payload 单独证明用户卡顿已经解决

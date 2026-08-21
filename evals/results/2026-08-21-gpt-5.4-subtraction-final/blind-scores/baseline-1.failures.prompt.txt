@@ -1,0 +1,63 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: derived-state-effect
+request: 请评审下面的 React 组件。保持公开行为不变，判断 state、Effect 和 memoization 是否必要，并说明应该如何验证修改。
+artifact: function UserList({ users, query }) {
+  const [filteredUsers, setFilteredUsers] = useState(users)
+
+  useEffect(() => {
+    setFilteredUsers(
+      users.filter((user) => user.name.includes(query)),
+    )
+  }, [users, query])
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+
+failure_rules: ["只修改 Effect 依赖数组", "无依据增加 memoization"]
+
+RESPONSE:
+我检查了工作区，只有 `.git`，没有可对照的现成源码文件，所以结论只能基于你给的这段组件本身。
+
+1. `L2-L8` 的 `state` 和 `Effect` 不必要，而且是典型的派生状态冗余。`filteredUsers` 完全由 `users` 和 `query` 推导出来，不需要单独存一份；现在的写法还会带来一次额外渲染，并且在 `users` 或 `query` 变化后的那个渲染周期里，`filteredUsers` 先是旧值，等 `useEffect` 跑完才更新。
+2. `memoization` 默认也不必要。这个过滤逻辑很轻，直接在 render 里算通常更简单、更稳。只有在 `users` 很大，或者你确认 `filteredUsers` 的引用稳定性会影响下游优化时，才考虑 `useMemo`。
+
+保持公开行为意图不变，推荐改成直接派生：
+
+```jsx
+function UserList({ users, query }) {
+  const filteredUsers = users.filter((user) => user.name.includes(query))
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+```
+
+如果确实有性能证据，再升到：
+
+```jsx
+function UserList({ users, query }) {
+  const filteredUsers = useMemo(
+    () => users.filter((user) => user.name.includes(query)),
+    [users, query],
+  )
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+```
+
+验证建议：
+1. 渲染测试：`query` 变化时，列表内容立即和 `users.filter(...)` 一致。
+2. props 变更测试：`users` 变化时，不需要等待 effect，首个渲染结果就正确。
+3. 回归测试：空数组、空 `query`、无匹配项、重复切换 `query` 都保持结果正确。
+4. 性能验证：用 React DevTools Profiler 对比修改前后，确认少了一次由 `setFilteredUsers` 带来的额外提交。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

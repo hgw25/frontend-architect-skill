@@ -1,0 +1,127 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: feature-internal-decomposition
+request: 一个 React 结算功能已经集中到 features/checkout，但 CheckoutPage.tsx 接近 900 行： 它同时处理表单草稿、价格与优惠计算、优惠券请求、库存订阅、支付 SDK 生命周期、 提交竞态、错误提示和全部 JSX。团队准备机械拆成 components、hooks、services、utils。 请根据实际职责给出细致但不过度的内部模块划分，说明公开 API、状态与副作用所有权、 内部依赖方向、测试放置和停止继续拆分的条件。不要以文件行数作为主要理由。
+artifact:
+failure_rules: ["只把原文件按 components、hooks、services、utils 分类移动", "用一个万能 hook、store 或 controller 继续拥有全部状态与副作用", "无条件建立每层目录、接口和依赖注入，即使没有替换或边界需求"]
+
+RESPONSE:
+仓库里目前只有 `.git`，`HEAD` 只有一个 `eval fixture` 提交，`git ls-tree -r HEAD` 为空，所以我没法基于现有 `features/checkout` 源码去映射真实 import、状态流和命名冲突。下面的方案只能严格基于你描述的职责做内部拆分建议，不会假装知道仓库现状。
+
+**建议边界**
+先不要按 `components/hooks/services/utils` 机械平铺；以“谁拥有状态、谁发起副作用、谁只做纯计算”为主拆。`CheckoutPage` 应该退化成 feature composition root，只负责装配子模块、传递路由级输入、决定页面级布局，不再直接持有业务规则。
+
+推荐在 `features/checkout` 内部分成这几块：
+
+- `model/useCheckoutDraft`
+  - 负责表单草稿状态、字段更新、校验触发、草稿恢复/重置。
+  - 公开 API：`values`, `errors`, `dirty`, `updateField(name, value)`, `replaceDraft(draft)`, `validate()`, `reset()`.
+  - 所有权：用户输入状态只归它，别的模块只能读草稿快照，不能直接改字段。
+- `pricing/checkoutPricing`
+  - 纯计算模块，负责价格、折扣、优惠、税费、运费、应付金额。
+  - 公开 API：`buildPricing(input): PricingSummary`.
+  - 所有权：不发请求，不读 React state，不依赖 coupon service；输入是购物车、地址、优惠结果、库存约束等快照。
+- `coupon/useCoupon`
+  - 负责优惠券输入、校验请求、应用/移除、请求状态去重。
+  - 公开 API：`couponCode`, `appliedCoupon`, `status`, `error`, `setCouponCode()`, `applyCoupon(context)`, `removeCoupon()`.
+  - 所有权：优惠券远程状态归它；价格模块只消费它的结果，不负责请求。
+- `inventory/useInventoryReservation` 或 `useInventoryWatch`
+  - 如果是“库存变化提醒”，叫 `watch`；如果带锁库存/保留库存，叫 `reservation`，不要混名。
+  - 公开 API：`availability`, `isStale`, `subscribe(items)`, `refresh()`, `release()`.
+  - 所有权：订阅生命周期、轮询/WebSocket、失效标记归它。
+- `payment/usePaymentSession`
+  - 负责支付 SDK 初始化、mount/unmount、payment method tokenization、3DS/redirect continuation。
+  - 公开 API：`ready`, `sdkError`, `mount(container)`, `teardown()`, `confirmPayment(payload)`.
+  - 所有权：第三方 SDK 生命周期只归它；页面和提交流程都不要直接碰 SDK 实例。
+- `submit/useCheckoutSubmit`
+  - 负责“单次提交编排”：防重入、竞态取消、提交前快照冻结、调用支付与下单 API、成功跳转。
+  - 公开 API：`status`, `submit()`, `retry()`, `lastError`.
+  - 依赖输入：`getDraftSnapshot`, `getPricingSnapshot`, `getInventorySnapshot`, `confirmPayment`.
+  - 所有权：提交态和竞态控制归它，不把 `isSubmitting` 分散到别的 hook。
+- `ui/*`
+  - `CheckoutForm`, `OrderSummary`, `CouponSection`, `InventoryNotice`, `PaymentSection`, `CheckoutActions`, `CheckoutErrorBanner`.
+  - 只接收数据和事件，不直接发业务请求，最多有局部 UI state。
+
+**依赖方向**
+保持单向依赖，避免 hook 互相调用成网状：
+
+`ui -> page/composition hooks -> domain hooks/services -> pure calculators / API clients`
+
+更具体地说：
+
+- `CheckoutPage` 组装 `useCheckoutDraft`, `useCoupon`, `useInventoryWatch`, `usePaymentSession`, `useCheckoutSubmit`
+- `useCheckoutSubmit` 可以读取其他模块暴露的只读快照或命令，但反过来不允许
+- `checkoutPricing` 被 `CheckoutPage` 或专门的 `useCheckoutPricingViewModel` 调用；它不依赖 React 和 service
+- `services/*` 只做 I/O：`couponApi`, `checkoutApi`, `inventoryApi`, `paymentAdapter`
+- `components/*` 不 import `services/*`
+
+如果需要一个中间层，最多加一个 `useCheckoutViewModel`，作用是把多个 hook 的结果整理成页面消费结构；不要把业务又塞回这个总 hook 里。
+
+**状态与副作用所有权**
+这是拆分成败的关键，不要按“功能点”重复持有状态：
+
+- 草稿 state：只在 `useCheckoutDraft`
+- 价格结果：优先派生，不单独存 state；仅当计算依赖异步报价时，才缓存“最新有效报价”
+- 优惠券请求状态：只在 `useCoupon`
+- 库存订阅状态：只在 `useInventoryWatch`
+- 支付 SDK 实例和 ready/error：只在 `usePaymentSession`
+- 提交状态、AbortController、幂等键：只在 `useCheckoutSubmit`
+- 页面级 toast/banner 展示：可以有一个轻量 `useCheckoutNotifications`，但错误源头仍归各自模块
+
+一个实用规则：谁创建副作用资源，谁销毁它。比如 SDK instance、subscription、in-flight request、abort controller 都不能由 `CheckoutPage` 零散清理。
+
+**公开 API 设计**
+对外暴露“能力”，不要暴露内部实现细节：
+
+- hook 返回稳定的领域对象和命令，不返回一堆零散 setter
+- service API 返回领域结果，不把后端原始响应直接泄漏到 UI
+- pricing 输入输出类型单独定义，例如 `PricingInput`, `PricingSummary`
+- payment adapter 屏蔽具体 SDK 名称，避免未来换供应商时全 feature 扩散
+
+**测试放置**
+按职责放，不按目录名放：
+
+- `pricing/checkoutPricing.test.ts`
+  - 覆盖折扣叠加、优惠边界、金额舍入、免运费门槛、异常输入
+- `coupon/useCoupon.test.tsx`
+  - 覆盖成功应用、重复点击、过期券、切地址/购物车后的失效
+- `inventory/useInventoryWatch.test.tsx`
+  - 覆盖订阅建立、更新、释放、库存变更导致提交失效
+- `payment/usePaymentSession.test.tsx`
+  - 用 adapter mock 测 SDK lifecycle、错误恢复、重复 mount 防护
+- `submit/useCheckoutSubmit.test.tsx`
+  - 覆盖双击提交、旧请求晚到、支付成功但下单失败、库存过期、取消重试
+- `CheckoutPage.integration.test.tsx`
+  - 只保留少量集成测试，验证关键编排，不重复单测细节
+
+判断标准是：纯规则优先单测，跨模块编排测 hook 或 page integration，第三方 SDK 一律经 adapter mock。
+
+**停止继续拆分的条件**
+不要把拆分做成目录体操。满足下面几点就该停：
+
+- 每个模块只有一个清晰的状态 owner
+- 副作用入口能从名字看出责任，没有“双向调用”
+- UI 组件已经不直接知道 coupon/inventory/payment 的实现细节
+- 纯计算与 I/O 已经分开，核心规则可脱离 React 测试
+- 新需求能落到现有边界之一，而不是再造“协调层”
+
+反过来，以下情况说明拆过头了，应停止或回收：
+
+- 组件只是转发 props，没有独立表达价值
+- hook 只是包一层 `useState`/`useEffect`，没有领域语义
+- 为了“解耦”引入大量 context、事件总线、selector 层
+- 同一业务概念在多个模块重复缓存一份 state
+- 提交编排被拆散到 coupon/payment/inventory 各处，导致成功路径难追踪
+
+如果你愿意提供实际的 `features/checkout` 目录和 `CheckoutPage.tsx`，我可以把这套边界进一步收敛成针对你仓库的具体文件树、命名和迁移顺序。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

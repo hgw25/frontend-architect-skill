@@ -1,0 +1,102 @@
+2026-08-21T08:29:28.272946Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.274727Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.276188Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.277607Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.278770Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.279845Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.280899Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.282282Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.283349Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.284373Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.285397Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.286400Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.287407Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.288349Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.289289Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.290691Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.291685Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.292709Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.293677Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T08:29:28.294701Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+OpenAI Codex v0.145.0
+--------
+workdir: /var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a02370-774d-7902-b079-de0751cf7a63
+--------
+user
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: browser-update-to-pixels
+request: 一个 React 看板在拖动卡片时明显卡顿。指针位置被写入看板根组件 state，约 300 张卡片 都会参与更新；布局 Effect 遍历卡片，先修改 class，再立即读取 getBoundingClientRect， 最后写入 top。生产构建的 Chrome trace 显示交互期间有长任务，并反复出现 Style、Layout 和 Paint。请按最小改动顺序分析从状态更新到最终像素的成本，给出实现边界和验证方案； 不要默认给所有组件加 memo，也不要直接改用动画库。
+artifact:
+failure_rules: ["只建议 React.memo、useMemo 或防抖而不解释浏览器渲染阶段", "宣称 transform 或 GPU 合成必然更快而不验证 Paint、层和内存", "用 jsdom、render 次数或开发构建证明卡顿已经解决"]
+
+RESPONSE:
+我检查了工作区：当前仓库只有 `.git`，`HEAD` 下没有任何源码文件，最近唯一提交是 `5a41248 eval fixture`。所以这里不能基于真实组件树或现有 hooks 直接改代码，只能依据你给出的症状做成本拆解、改动优先级、实现边界和验证方案。
+
+这条链路的主要成本，按“最小改动优先”排序：
+
+1. `pointermove -> 根组件 state`
+   指针位置写进看板根组件 state，会让 300 张卡片所在子树一起进入 React render/commit。这里的首要问题不是“是否给每张卡片加 `memo`”，而是高频、交互态数据放错了层级。最小改动是把拖拽中的指针坐标、当前拖拽卡片 id、临时位移改成 `ref` 或外部可变对象，只让真正需要变的那一个拖拽层更新；非拖拽卡片在拖动期间不走 React render。
+
+2. `commit -> layout effect`
+   你描述的 effect 是“先改 class，再立刻读 `getBoundingClientRect`，再写 `top`”。这会把浏览器推入典型的强制同步布局：写样式使之前布局失效，随后读取几何信息必须立刻做 Style/Layout，后续再写 `top` 又触发下一轮失效。Chrome trace 里反复出现 `Style`、`Layout`、`Paint`，根因大概率就在这里。最小改动是把读写分相：
+   - 先统一读：收集所有需要的 rect
+   - 再统一写：批量应用 class / position
+   - 禁止在同一个 effect/同一帧里交错“写-读-写”
+
+3. `top/class -> layout + paint`
+   如果卡片位置通过 `top` 推动，而且 class 还影响文档流或尺寸，那么每次拖动都可能让 300 张卡片重排并重绘。这里第二优先级的改动不是动画库，而是把拖拽中的视觉位移尽量收敛到合成层：
+   - 拖拽中的卡片用 `transform: translate(...)`
+   - 占位符或排序预览尽量维持稳定尺寸，避免反复改高度/边距
+   - 只在落点确认时再提交真实顺序
+
+4. `paint -> final pixels`
+   即使 React render 压下去了，只要每帧都在改会触发布局和大面积重绘的属性，像素阶段还是会卡。最后一层优化边界是把交互帧目标收敛为“少量 JS + 尽量不 layout + 尽量只 composite”。
+
+实现边界建议：
+
+- 第一阶段，只改交互态数据通路：
+  把 pointer 坐标和拖拽瞬时位移从 board 根 state 移出，不改业务数据结构，不引入新库，不做全量 `memo`。
+- 第二阶段，只改 effect 的读写顺序：
+  保持现有排序逻辑，但拆掉“改 class 后马上测量”的交错流程；必要时把测量放到单独阶段，或缓存未变化卡片的 rect。
+- 第三阶段，只改拖拽中的定位属性：
+  拖拽预览优先改 `transform`，避免持续写 `top/left` 触发布局。不要顺手重做整套 DnD 架构。
+
+验证方案：
+
+- React 侧：
+  用 React Profiler 看一次拖动期间，确认从“整棵 board 子树频繁 commit”下降到“只有拖拽层或极少节点更新”。
+- Chrome Performance：
+  对比生产构建 trace。目标是拖动期间长任务明显下降，主线程上的 `Style`/`Layout` 次数和总时长下降，`Paint` 不再跟随每次 pointermove 大面积出现。
+- 指标门槛：
+  关注 `pointermove` 到下一帧的主线程耗时，目标单帧稳定低于 16ms；如果设备基线较低，至少要把长任务切碎，不再连续阻塞交互。
+- 回归点：
+  验证排序结果、占位符位置、自动滚动、拖拽取消、跨列移动。因为第一阶段会绕开 React state，最容易引入的是视觉状态和最终提交状态不一致。
+
+决策上，我建议先做这两个最小改动，再看 trace：
+1. 把高频 pointer 数据移出根 state。
+2. 把布局 effect 改成“先读后写”，并停止拖动中持续写 `top`。
+
+如果你把实际组件和 effect 代码补到仓库里，我可以按这个顺序直接落成最小 diff。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+codex
+{"audits":[{"id":"browser-update-to-pixels","triggered":[]}]}
+tokens used
+2,033

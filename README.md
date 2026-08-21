@@ -1,8 +1,8 @@
 # Frontend Architect
 
-一个面向 AI 编码代理的高级前端与前端架构 Skill。它既要求代理完成高质量产品代码，
-也要求代理在真实共性问题出现时具备建设组件库、设计系统、SDK、共享数据层、构建
-插件、代码生成器和 Monorepo 包的能力。
+一个面向 AI 编码代理的高级前端与前端架构 Skill，覆盖 Web、App/跨端和小程序运行时。
+它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
+设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
 ## 它解决什么问题
 
@@ -15,6 +15,7 @@ AI 很容易写出“能运行”的前端代码，也很容易产生另一种�
 - 在函数、Reducer、状态机、闭包和类之间选择合适表示；
 - 把状态、副作用、异步竞态和错误状态当成产品行为；
 - 明确服务端、浏览器、缓存、包和序列化边界；
+- 从状态更新、调度、跨层传输、宿主更新到布局、绘制、栅格化和呈现定位渲染成本；
 - 使用同一套高级工程标准，并按消费者数量、影响范围和迁移风险提高设计与验证深度；
 - 将公共 API、类型、构建产物、诊断、兼容性和发布视为基建正确性；
 - 把不可信数据、授权、秘密和第三方代码视为信任边界；
@@ -43,6 +44,10 @@ frontend-architect/
 │   ├── programming-paradigms.md
 │   ├── frontend-infrastructure.md
 │   ├── runtime-and-delivery.md
+│   ├── rendering-and-performance.md
+│   ├── rendering-web.md
+│   ├── rendering-app.md
+│   ├── rendering-mini-program.md
 │   ├── security-and-trust.md
 │   ├── interface-and-motion.md
 │   └── verification-and-review.md
@@ -65,12 +70,15 @@ frontend-architect/
 `SKILL.md` 只保存核心工作方式和专题路由。代理仅在任务需要时读取对应
 `references/`，避免每次加载完整的前端知识库。
 
+渲染专题采用两级按需加载：先读取跨平台成本模型，再只读取 Web、App/跨端或小程序
+中与当前运行时匹配的一个扩展；Hybrid WebView 等真实混合场景才会组合多个扩展。
+
 ## 开发、发布与安装
 
 本项目采用单向发布流程，不从开发目录建立长期全局链接：
 
 ```text
-project/skills/frontend-architect
+project/skills/frontend-architect-skill
         ↓ 开发与评测
 GitHub repository
         ↓ skill-installer
@@ -93,7 +101,7 @@ frontend-architect Skill。
 
 ```bash
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo OWNER/frontend-architect \
+  --repo OWNER/frontend-architect-skill \
   --path . \
   --ref v0.1.0 \
   --name frontend-architect
@@ -124,7 +132,7 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 使用 $frontend-architect 判断这里应该使用纯函数、Reducer、状态机还是类。
 ```
 
-该 Skill 默认也允许 Codex 在匹配的前端架构任务中自动发现。
+该 Skill 默认也允许 Codex 在匹配的前端开发与架构任务中自动发现。
 
 ## 核心观点
 
@@ -164,6 +172,15 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 现代前端代码可能运行在构建环境、服务端、边缘节点、浏览器或 Worker。Skill 要求
 根据秘密、权限、交互、延迟、缓存和 Bundle 成本决定放置位置，并把跨环境数据设计成
 明确的序列化契约。客户端权限判断只负责体验，服务端仍必须执行权威授权。
+
+### 跨平台渲染与性能
+
+Skill 先按目标运行时建立“状态或数据变化 → 调度与依赖计算 → 可选跨线程或跨层传输
+→ 宿主节点更新 → 布局 → 绘制或栅格化 → 合成与呈现”的最小模型，再根据证据处理
+真实瓶颈。浏览器、React Native、Flutter、原生声明式 UI、Hybrid WebView 和小程序
+拥有不同线程、树和通信边界，不能机械套用同一套优化。memoization、虚拟列表、GPU
+合成和固定帧预算都不是默认答案；性能结论必须来自目标版本、生产或 profile 构建、
+代表性设备和相同用户路径的前后测量。
 
 ### 交付与可观测性
 

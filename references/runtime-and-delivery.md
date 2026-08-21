@@ -4,6 +4,10 @@ Use this reference when frontend code may run during build, on a server or edge
 runtime, in a browser, or in a worker; when choosing rendering, routing, cache,
 package, and bundle boundaries; or when planning observability and rollout.
 
+Use [rendering-and-performance.md](rendering-and-performance.md) instead when
+the dominant concern is the target platform's update-to-display, thread, layout,
+paint, rasterization, frame, list, image, or memory cost.
+
 ## Map environments before components
 
 Identify which code and data belongs to each relevant environment:
@@ -88,25 +92,13 @@ When dependency direction matters, enforce it with available import rules,
 package exports, ownership rules, or build graph constraints. Documentation
 alone is insufficient when violations are easy and costly.
 
-## Define a performance contract
+## Set delivery budgets where they can be enforced
 
-For material performance work, record a contract before optimizing:
-
-- the user journey, device/network segments, and metric owner;
-- a field baseline and target for relevant Core Web Vitals—currently LCP, INP,
-  and CLS—plus product-specific completion or responsiveness metrics;
-- route or capability budgets for shipped JavaScript, critical resources, and
-  request waterfalls when those are plausible constraints;
-- long-task, main-thread, memory, layout, or rendering evidence for sustained
-  interactions where aggregate page metrics hide the bottleneck;
-- the controlled lab scenario used to diagnose and compare, kept distinct from
-  field evidence of real-user impact;
-- a regression threshold, release decision, and rollback or investigation owner.
-
-Budgets are project decisions, not universal numbers. A threshold without a
-representative baseline or enforcement point is documentation, not a control.
-Avoid blocking releases on noisy single-run lab results; use repeatable
-conditions and a tolerance that reflects measurement variance.
+For material delivery work, connect representative field metrics to route or
+capability budgets for shipped code, critical resources, and request waterfalls.
+Give each threshold a baseline, owner, enforcement point, tolerance, and
+regression decision. Keep controlled lab diagnostics distinct from field
+evidence, and do not block releases on a noisy single run.
 
 ## Make changes releasable and operable
 

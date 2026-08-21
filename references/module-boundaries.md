@@ -4,8 +4,8 @@ Use this reference when deciding between feature/domain grouping and technical
 role grouping, defining public module APIs, reorganizing a frontend codebase, or
 reviewing dependency direction.
 
-For workspace-package, build-graph, and server/client module boundaries,
-continue with [runtime-and-delivery.md](runtime-and-delivery.md).
+Use [runtime-and-delivery.md](runtime-and-delivery.md) instead when the dominant
+decision is workspace packaging, build graphs, or server/client placement.
 
 ## Start with change and ownership
 

@@ -4,12 +4,10 @@ Use this reference for frontend architecture, state and data flow, component
 boundaries, hooks/composables, utilities, TypeScript, API design, refactoring,
 and dependency choices.
 
-For project-level feature-versus-role organization, continue with
-[module-boundaries.md](module-boundaries.md). For functional-versus-object-
-oriented implementation choices, continue with
-[programming-paradigms.md](programming-paradigms.md). For server/client
-placement, rendering, and cache ownership, continue with
-[runtime-and-delivery.md](runtime-and-delivery.md).
+Use [module-boundaries.md](module-boundaries.md) instead when project or feature
+organization is the dominant decision, [programming-paradigms.md](programming-paradigms.md)
+for representation choices, and [runtime-and-delivery.md](runtime-and-delivery.md)
+for execution, placement, cache, or delivery boundaries.
 
 ## Contents
 

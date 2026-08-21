@@ -1,0 +1,344 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.4",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "derived-state-effect",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 1,
+            "reason": "明确说明只能基于给定组件片段评审，并抓住了“保持公开行为不变”的约束，但没有更多项目级现状、兼容性或上下文边界。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "优先删除冗余 state 和 Effect，默认不引入 memoization，并只在有真实性能证据或下游依赖引用稳定性时再升级到 `useMemo`，复杂度选择克制且有比较。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "指出现实现会出现先渲染旧派生值、再由 Effect 修正的时序问题；同时覆盖 `users`/`query` 变更、空数组、空查询、无匹配和重复切换等相关边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "给出了与风险对应的验证方式，包括渲染回归和 Profiler 对比，但没有实际执行结果、环境记录或阈值，因此只有建议级证据。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论先行，逐项说明 state、Effect、memoization 是否必要，并补充何时应提升到 `useMemo` 以及如何验证，取舍和范围都清楚。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "Only the supplied snippet was available; no broader project context or surrounding callers/tests were provided.",
+          "No executable fixture was available, so verification remained proposed rather than observed."
+        ],
+        "normalized_score": 12.8,
+        "case_failures": [],
+        "verdict": "basic"
+      },
+      {
+        "id": "feature-internal-decomposition",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 1,
+            "reason": "Acknowledges the missing repository/code context and limits claims to the responsibilities named in the prompt, but does not ground the recommendation in concrete project scale, compatibility constraints, or real existing boundaries beyond that partial context."
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "Explicitly rejects mechanical `components/hooks/services/utils` splitting, chooses decomposition by state ownership and side effects, keeps `CheckoutPage` as a composition root, and limits extra abstraction to at most one optional view-model layer."
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "Defines internal modules by responsibility, gives each a narrow public API, assigns state/effect ownership, sets dependency direction, places tests by responsibility, and includes concrete conditions for when to stop decomposing."
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "Covers task-relevant races and failure edges including double submit, stale inventory, late responses, snapshot freezing, abort/cancellation ownership, lifecycle cleanup, and error-source ownership."
+          },
+          {
+            "key": "verification_evidence",
+            "score": 0,
+            "reason": "Provides no executed validation or observed results. It suggests a test strategy, but the fixture has no executable validation and the response contains no actual verification evidence."
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "The answer is structured around actionable boundaries and ownership rules, explains tradeoffs clearly, states scope limits up front, and keeps the rationale tied to the requested decomposition problem."
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "Could not inspect any real `features/checkout` code or imports because the supplied repository evidence was empty, so boundary recommendations are necessarily generic to the described responsibilities.",
+          "No executable fixture or validation results were provided, so verification could only be judged from proposed tests rather than observed evidence."
+        ],
+        "normalized_score": 12.0,
+        "case_failures": [],
+        "verdict": "basic"
+      },
+      {
+        "id": "editor-paradigms",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确了目标是富文本编辑器模块设计，并结合空仓库现状给出边界；覆盖了 selection、history、纯文本转换、DOM 订阅、协作连接、销毁清理，以及状态所有权、序列化、竞态、生命周期等约束，没有把问题泛化成整项目范式之争。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "采用分层组合而非单一范式：纯函数/Reducer 用于可回放核心状态，闭包/状态机处理 DOM 时序，类加状态机处理长生命周期协作连接，复杂度与各子问题的运行特性匹配。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "按转换、状态、身份、生命周期和副作用分配范式，且逐项说明哪些部分适合纯函数、Reducer、状态机、闭包或类，并明确避免把整个项目限定为纯 FP 或纯 OOP。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "识别了与任务强相关的边界：DOM selection 不是源状态、undo/redo 与远端操作的 rebase、IME 与 selectionchange 乱序、销毁后晚到事件、事务号/版本号校验、mount/unmount/dispose 生命周期，覆盖了竞态与清理风险。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论优先，结构清晰，先给总体判断再分模块论证，并明确推荐接口、状态分层和不该采用的做法，取舍和理由都足够具体。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "仅提供设计文档与文字说明，没有实现代码或运行验证证据；但本用例的适用维度不包含 implementation_integrity 与 verification_evidence。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "browser-update-to-pixels",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确说明了当前只有空仓库、无法基于真实组件树改代码，并结合题目中的约束、现状和规模（根 state、约 300 张卡片、Chrome trace、不要默认 memo/动画库）来界定回答范围。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "按最小改动顺序给出分阶段方案，优先移动高频交互态数据、拆分 effect 读写，再考虑 `transform`，且明确避免全量 `memo`、新库和整套 DnD 重做。"
+          },
+          {
+            "key": "rendering_performance",
+            "score": 2,
+            "reason": "完整串起了从 `pointermove` 写根 state，到 React render/commit，再到 effect 中强制同步布局，以及 `top/class` 导致的 Style、Layout、Paint 和最终像素成本链，并给出与浏览器运行时匹配的优化边界。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "识别了拖拽期间绕开 React state 可能带来的视觉状态与最终提交状态不一致问题，并点出了排序结果、占位符、自动滚动、取消拖拽、跨列移动等关键回归边界。"
+          },
+          {
+            "key": "user_experience",
+            "score": 1,
+            "reason": "覆盖了交互卡顿、拖拽取消、占位符和自动滚动等相关体验边界，但没有展开键盘、焦点或其他交互语义层面的验证。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "给出了 React Profiler、生产构建 Chrome Performance trace 和单帧耗时阈值等合理验证方案，但没有实际执行结果；在该仓库无源码、无可执行 fixture 的前提下，证据停留在计划层。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论和优先级清楚，先说明证据边界，再按成本链和最小改动顺序展开，并明确风险点与下一步。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "仓库中没有源码文件，无法核对真实组件树、hooks、effect 实现边界或变更兼容性。",
+          "没有可执行 fixture 或已运行的性能验证结果，无法提供实际 trace/Profiler 对比证据。"
+        ],
+        "normalized_score": 13.71,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "derived-state-effect",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确了目标约束是“保持公开行为不变”，识别了现状中 `useState(users)` 与初始 `query` 的首帧时序问题，并指出这使修改不只是机械重构。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "选择更简单的直接派生方案，并明确说明 `useEffect`/`state`/`useMemo` 何时不该存在、何时才值得考虑 memoization，体现了先简化再按证据增加复杂度。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "抓到了与此任务最相关的边界：初始非空 `query` 的首帧错误输出，以及 `users`、`query` 更新后的可见结果；也强调验证应围绕用户可见行为而非内部实现。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "给出了有针对性的验证方案，覆盖初始渲染、更新和闪烁确认，但没有实际执行结果、环境记录或真实边界证据。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论优先，理由、取舍和风险都说清楚了，尤其明确区分了“更合理实现”和“严格保持当前公开行为”之间的冲突。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "No executable fixture for this case, so there is no actual validation output to confirm implementation or behavioral claims.",
+          "The response proposes verification steps but provides no executed test results, environment details, or measured observations."
+        ],
+        "normalized_score": 14.4,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "feature-internal-decomposition",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确说明缺少 `features/checkout` 与 `CheckoutPage.tsx` 的实际源码，避免假装基于现状细节下结论；同时抓住了目标、现状问题、团队当前机械拆分倾向，以及“不以行数为主要理由”的规则。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "没有默认套用 `components/hooks/services/utils` 模板，而是按草稿、优惠券、库存、支付、提交等真实职责收敛边界，并给出停止继续拆分的条件，体现了克制和比较。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "在 feature 内给出清晰的实现单元划分，说明了对外只暴露少量稳定 API、各单元的状态与副作用所有权、单向依赖方向、测试放置，以及何时不再继续拆分，边界设计完整。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖了与该任务直接相关的竞态和异常边界，包括优惠券过期响应丢弃、请求取消、库存订阅清理、支付 SDK 生命周期、双击提交、依赖快照冻结，以及支付成功但下单失败等情况。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 0,
+            "reason": "没有提供任何实际验证结果；只提出了建议测试位置和关注点，未给出运行环境、结果或未验证范围之外的实证。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论先行，结构清楚，重点围绕模块边界、所有权、依赖方向和停止条件展开，取舍理由明确，范围控制也清晰。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "工作区缺少 `features/checkout`、`CheckoutPage.tsx` 等实际源码，无法核对方案是否贴合现有实现。",
+          "没有可执行 fixture，且回复中也未提供任何实际运行或验证结果。"
+        ],
+        "normalized_score": 13.33,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "editor-paradigms",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 1,
+            "reason": "说明了当前缺少现有实现可对齐，也识别了“不要纯 FP/纯 OOP”和无特定框架前提，但未覆盖规模、兼容性或更具体项目规则。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "没有引入统一大抽象，而是按模块职责选择纯函数、reducer、状态机、闭包或类，并明确状态机只用于真实阶段迁移与竞态场景。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "按可序列化数据转换、资源生命周期、异步阶段流转、状态所有权分别分配范式，判断依据与 selection、history、DOM、协作连接的特性直接对应。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "明确了序列化边界、selection/history/协作/销毁竞态、单一事实来源和 dispose 后禁止派发等关键边界，覆盖了该任务相关的状态与清理问题。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论先行，结构清楚，理由、取舍与边界都讲明白，并用简短接口草图收束到可执行设计。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供具体仓库、现有消费者或兼容约束，无法进一步验证该设计与真实项目规则、规模和迁移要求的贴合度。"
+        ],
+        "normalized_score": 14.4,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "browser-update-to-pixels",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确复述了目标、现状与约束：300 张卡片、根 state 广播、layout effect 读写交错、Chrome trace 现象，以及“不默认 memo/不直接上动画库”的规则。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "按最小改动顺序给出分层方案，先收窄高频状态与订阅面，再处理 DOM 读写和位移方式，最后才考虑 memo/虚拟化等更重手段。"
+          },
+          {
+            "key": "rendering_performance",
+            "score": 2,
+            "reason": "完整分析了从 pointermove 到 React 更新、commit、Style/Layout/Paint 再到最终像素的成本链，并把 `top` 与 `transform`、读写交错与强制同步布局的关系讲清楚。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "覆盖了快速拖动、跨列、取消、滚动容器、占位和命中区域等常见交互边界，但没有更深入展开身份键、并发更新或清理时序。"
+          },
+          {
+            "key": "user_experience",
+            "score": 1,
+            "reason": "考虑了输入延迟、掉帧、键盘拖拽语义和交互回退风险，但对焦点、可访问性反馈和异常/慢速状态的用户表现展开有限。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "给出了与真实风险对应的复测方案和环境要素（生产构建、同 Chrome、同数据量、同拖拽路径），但没有实际执行结果或阈值结论。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论和优先级清楚，理由、取舍和适用边界明确，也说明了缺少源码时的证据范围。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供看板源码或实际组件结构，无法核对实现边界是否能直接落到现有代码。",
+          "未提供 trace 截图或具体测量数值，性能判断只能基于题述现象与通用运行时机制。",
+          "没有可执行验证或实测结果，无法确认方案在真实构建中的改善幅度。"
+        ],
+        "normalized_score": 12.57,
+        "case_failures": [],
+        "verdict": "basic"
+      }
+    ]
+  }
+}

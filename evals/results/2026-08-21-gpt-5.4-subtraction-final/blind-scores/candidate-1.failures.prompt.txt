@@ -1,0 +1,62 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: derived-state-effect
+request: 请评审下面的 React 组件。保持公开行为不变，判断 state、Effect 和 memoization 是否必要，并说明应该如何验证修改。
+artifact: function UserList({ users, query }) {
+  const [filteredUsers, setFilteredUsers] = useState(users)
+
+  useEffect(() => {
+    setFilteredUsers(
+      users.filter((user) => user.name.includes(query)),
+    )
+  }, [users, query])
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+
+failure_rules: ["只修改 Effect 依赖数组", "无依据增加 memoization"]
+
+RESPONSE:
+**评审结论**
+
+1. `state` 不必要，而且当前写法引入了重复事实。`filteredUsers` 完全可以由 `users` 和 `query` 推导出来，不是组件需要“记住”的独立状态。
+2. `useEffect` 不必要。这里没有在同步外部系统，只是在用 Effect 做纯计算，这会多一次渲染，并带来时序问题。
+3. 当前实现有一个可观察的问题：`useState(users)` 忽略了初始 `query`。如果 `query` 初始非空，首帧会先渲染全部用户，Effect 之后才变成过滤结果。这不是“纯重构”，而是会改变首屏时序。
+4. `memoization` 默认也不必要。`filter` 是直接、局部的派生计算，除非已经量到 `users` 很大、过滤明显影响交互，或者下游明确依赖稳定引用，否则不应先加 `useMemo`。
+
+**建议改法**
+
+如果产品期望是“渲染时立刻按 `query` 过滤”，更合理的实现是直接派生：
+
+```jsx
+function UserList({ users, query }) {
+  const filteredUsers = users.filter((user) => user.name.includes(query))
+
+  return filteredUsers.map((user) => <User key={user.id} user={user} />)
+}
+```
+
+如果你们必须“保持当前公开行为完全不变”，那就不能直接这样改，因为它会消除“先全量、后过滤”的中间态。这个中间态大概率是缺陷，不像应被保留的契约，但需要先确认。
+
+**如何验证**
+
+1. 组件测试覆盖初始渲染：
+   `query=""` 时展示全部用户；`query="a"` 时首帧就只展示匹配用户。
+2. 组件测试覆盖更新：
+   `query` 改变后，列表应立即反映新结果；`users` 改变后，也应立即反映新结果。
+3. 针对这次修改，重点断言“可见输出”，不要测内部 state 或 Effect 次数。
+4. 如果担心行为变化，用浏览器/组件测试额外验证是否存在旧实现的中间闪烁；确认产品不需要这个时序后再落地重构。
+5. 不要为这次修改加 `useMemo` 的验证；只有在做过性能基线和 profiling 后，才值得把 memoization 纳入变更范围。
+
+如果要一句话定性：这里应删掉 `state` 和 `Effect`，通常也不要补 `useMemo`；但这会修正一个首帧行为，是否允许要先确认它是不是既有契约。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

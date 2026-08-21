@@ -1,0 +1,72 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: browser-update-to-pixels
+request: 一个 React 看板在拖动卡片时明显卡顿。指针位置被写入看板根组件 state，约 300 张卡片 都会参与更新；布局 Effect 遍历卡片，先修改 class，再立即读取 getBoundingClientRect， 最后写入 top。生产构建的 Chrome trace 显示交互期间有长任务，并反复出现 Style、Layout 和 Paint。请按最小改动顺序分析从状态更新到最终像素的成本，给出实现边界和验证方案； 不要默认给所有组件加 memo，也不要直接改用动画库。
+artifact:
+failure_rules: ["只建议 React.memo、useMemo 或防抖而不解释浏览器渲染阶段", "宣称 transform 或 GPU 合成必然更快而不验证 Paint、层和内存", "用 jsdom、render 次数或开发构建证明卡顿已经解决"]
+
+RESPONSE:
+工作区里没有看板源码可审，只有 [`.frontend-architect/SKILL.md`](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-browser-update-to-pixels-candidate-cne37cg2/.frontend-architect/SKILL.md:1) 和 `.git` 元数据，所以这里的结论只基于你描述的现象，不假设仓库内已有特定组件结构。
+
+这条链路的成本应按“最小改动优先”这样拆：
+
+1. `pointermove -> board 根 state`
+   当前最先超支的是无差别失效。指针位置写进看板根组件 state，会让约 300 张卡片跟着进入 React 的更新路径；哪怕很多卡片最终 DOM 不变，render、diff、commit 的成本已经发生。第一优先不是“全量加 memo”，而是把高频拖拽态从看板全局订阅里拿出去，只让真正依赖它的那一小块更新。
+   实现边界：
+   - 保留业务数据 state 在 React。
+   - 拖拽中的瞬时坐标、悬停目标、位移预览，收敛到拖拽控制器、被拖卡片、占位符或列级局部状态。
+   - 如果只有一张卡片跟手，优先让这张卡片直接消费位置；其余卡片只在“排序结果真的变化”时更新。
+
+2. `React 更新 -> 300 卡片重新计算`
+   第二优先是订阅面太宽，不是先上 `memo`。如果根组件每次都把新对象、新数组、新回调往下传，`memo` 也很容易失效。先做边界收缩：
+   - 拆出“拖拽层”和“静态卡片列表”两个更新域。
+   - 卡片只订阅自己的稳定 props：`id`、内容、是否被占位影响。
+   - 排序未变化时，不重建整列卡片数据。
+   只有在这些边界做完后，少量热点卡片仍因稳定输入而重复 render，再对这些点状组件加 `memo` 才有意义。
+
+3. `commit -> layout effect`
+   你描述的 `layoutEffect` 里“先改 class，再读 `getBoundingClientRect`，最后写 `top`”是明确的强制同步布局模式。它会把 JS、Style、Layout 串成同一条阻塞链，而且在卡片循环里重复发生时最贵。
+   最小改动顺序：
+   - 先把“所有读”和“所有写”分批，不要在循环里 write/read/write 交错。
+   - 如果必须测量，先统一读取旧位置和新位置，再统一写样式。
+   - 不要通过改 class 触发布局后立刻测量同一批节点；把决定布局的 class 变更和测量拆开，至少保证每帧只有一次集中测量。
+   - 能用 `transform: translate(...)` 表达位移，就不要写 `top`。`top` 往往继续参与 layout；`transform` 更容易把成本留在 composite 阶段。
+
+4. `Style/Layout/Paint -> 最终像素`
+   Trace 里反复出现 Style、Layout、Paint，说明现在不是单纯 React render 慢，而是 DOM/CSS 更新方式也在放大成本。这里的边界是：
+   - 排序中的“预览位移”尽量只改 transform。
+   - 真正落位时再一次性更新文档流位置。
+   - 如果拖拽时有阴影、模糊、大面积背景变化，先确认 Paint 是否也是主因；否则即使减少 render，仍会卡。
+   - 300 张卡片如果始终全挂载，且单卡 DOM 较重，最后才考虑窗口化/虚拟化；这是更大改动，不应作为第一手段。
+
+建议的实现边界是三层：
+- React 持有低频、可提交的业务排序结果。
+- 拖拽控制器持有高频瞬时状态，不挂在看板根上广播。
+- DOM 层负责每帧视觉位移，优先 `transform`，读写分批，避免在 `useLayoutEffect` 中形成强制回流循环。
+
+验证不要只看 render 次数，按同一交互复测同一条证据链：
+- Baseline：生产构建、同一 Chrome、同一数据量（300 卡片）、同一拖拽路径录一条 trace。
+- React 层：看 commit 数、单次 commit 时长、实际更新的卡片数。
+- 浏览器层：看 Long Task 是否下降，`Style`/`Layout` 是否从多次交错变成每帧至多一次集中阶段，`Paint` 总时长是否下降。
+- 交互层：看 Input delay、拖拽帧率、掉帧段是否缩短。
+- 正确性：快速拖动、跨列拖动、取消拖动、滚动容器内拖动，确认命中区域、占位、键盘拖拽语义没有回退。
+
+决策顺序我会定成：
+1. 先缩小拖拽 state 的拥有者和订阅面。
+2. 再消除 `layoutEffect` 中的读写交错，改成批量测量 + 批量写入。
+3. 再把位移从 `top` 切到 `transform`。
+4. 只有还有证据表明单卡 render 仍是热点时，才对局部组件加 `memo`。
+5. 只有 mounted 节点数本身成为瓶颈时，才讨论虚拟化或更重的方案。
+
+如果你补充实际组件代码或 trace 关键截图，我可以把这套分析收敛成具体到组件边界和 effect 重写方式的修改方案。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

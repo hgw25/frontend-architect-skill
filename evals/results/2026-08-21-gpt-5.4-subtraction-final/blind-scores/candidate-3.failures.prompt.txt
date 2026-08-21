@@ -1,0 +1,88 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: editor-paradigms
+request: 设计一个富文本编辑器模块。它包含 selection、history、纯文本转换、DOM 订阅、 协作连接和销毁清理。请判断哪些部分适合纯函数、Reducer、状态机、闭包或类， 并说明状态所有权、序列化、竞态和生命周期边界。不要把整个项目限定为纯 FP 或纯 OOP。
+artifact:
+failure_rules: ["宣称前端应全部函数式", "把全部逻辑放入一个 Editor 类"]
+
+RESPONSE:
+我检查了当前 workspace；除 `.frontend-architect` 指南外，没有可供对齐的现有编辑器实现，因此这里给的是一个可落地的模块划分判断，不假设仓库已有特定框架或状态库。
+
+这类富文本编辑器适合混合范式，不应强行做成纯 FP 或纯 OOP。比较稳的划分是：`纯函数 + reducer` 负责可序列化、可回放的编辑核心；`闭包或类` 负责 DOM、协作连接、订阅与销毁等资源生命周期；`状态机` 只用于真正存在阶段切换和竞态的异步流程，不要泛化到整个编辑器。
+
+**建议分配**
+- `纯文本转换`：纯函数。输入是文档 snapshot / selection / schema，输出是纯文本、patch 或 normalization 结果。它应无 DOM、无时间依赖、无连接状态，便于测试、复放和服务端复用。
+- `history`：核心部分用 `Reducer`。`apply(op, state) -> nextState`、`undo/redo`、合并连续输入、压缩历史都适合纯数据转换。因为 history 天然需要序列化、调试和回放，不适合藏在对象私有状态里。
+- `selection`：拆成两层。文档内的逻辑 selection 用 plain data + reducer；浏览器 DOM selection 读取/同步用闭包或类适配器。不要把 `window.getSelection()` 当作唯一真相，否则协作回放和 SSR/测试都会很差。
+- `DOM 订阅`：闭包或类。它本质是资源拥有者，负责 `addEventListener`、`MutationObserver`、`selectionchange`、IME/composition 监听与 cleanup。这里需要稳定 identity 和显式 `dispose()`。
+- `协作连接`：状态机包裹的连接管理器。连接本身适合类或闭包适配器；其状态流转更适合状态机：`idle -> connecting -> syncing -> live -> reconnecting -> closed`。ACK、重发、断线重连、远端覆盖、本地未确认操作，这些是“合法/非法迁移”问题，不只是 reducer。
+- `销毁清理`：不要分散。由最外层 `EditorSession` 或 `useEditorSession()` 统一拥有，内部再级联释放 DOM 订阅、协作连接、定时器、observer、缓存句柄。
+
+**状态所有权**
+- `EditorState`：单一事实来源。包含文档模型、逻辑 selection、历史游标、未确认本地操作队列等可序列化状态。
+- `DOM state`：不是源状态，只是外部投影。浏览器 selection、focus、composition 中间态、scroll 位置归适配层持有，并通过事件转成 editor action。
+- `Collaboration transport state`：连接器拥有，不要混进文档 reducer。比如 websocket readyState、retry timer、last heartbeat 属于资源层，不属于文档模型。
+- `Composition root`：页面/组件只负责装配，不应重新拥有 history、selection、connection 的内部状态，否则会形成双重真相。
+
+**序列化边界**
+- 可序列化：
+  - 文档 snapshot
+  - 编辑 operation / transaction log
+  - 逻辑 selection
+  - history stack
+  - 协作协议消息
+- 不应直接序列化：
+  - DOM `Range` / `Selection`
+  - observer / event listener
+  - websocket/socket 实例
+  - timer id / abort controller
+- 规则是：跨边界交换 plain data；资源句柄留在 imperative shell。
+
+**竞态处理**
+- selection 竞态：本地输入、DOM `selectionchange`、远端 patch 同时发生时，先把 DOM 事件标准化成 action，再由 reducer 基于版本号或 transaction id 决定是否接受。不要直接在事件回调里改文档。
+- history 竞态：远端协作变更通常不直接进本地 undo 栈，或至少要单独分轨；否则用户 undo 会撤销别人的操作。
+- 协作竞态：需要明确 `local pending ops`、`server acked version`、`rebased remote ops`。这部分如果只有 reducer 而没有连接状态机，重连/重放时会很乱。
+- 销毁竞态：`dispose()` 后禁止继续派发。连接器和 DOM 订阅器都应有 `closed` 标志或 abort signal，避免晚到事件写入已销毁实例。
+
+**生命周期边界**
+- 最外层建议是 `EditorSession`：
+  - 创建时装配 `reducer store + DOM adapter + collaboration adapter`
+  - 暴露 `dispatch/getSnapshot/subscribe/dispose`
+  - 内部把纯函数核心和资源型适配器隔开
+- 如果在 React/Vue 中：
+  - 组件生命周期只拥有 `EditorSession` 实例
+  - session 生命周期拥有 DOM/网络资源
+  - reducer state 生命周期独立于具体 DOM，可被持久化、测试、离线回放
+
+一个比较稳的结构是：
+
+```ts
+type EditorState = { doc: Doc; selection: LogicalSelection; history: HistoryState }
+
+function editorReducer(state: EditorState, action: EditorAction): EditorState
+
+function toPlainText(doc: Doc): string
+
+class EditorSession {
+  dispatch(action: EditorAction): void
+  getSnapshot(): EditorState
+  subscribe(listener: () => void): () => void
+  attachDom(root: HTMLElement): void
+  connectCollab(transport: CollabTransport): void
+  dispose(): void
+}
+```
+
+核心判断很简单：
+`可回放的事实` 用纯函数/Reducer；`有阶段和非法迁移的异步流程` 用状态机；`有资源和 cleanup 的边界` 用闭包或类；不要让 DOM 或 websocket 成为文档状态的 owner。这样历史、协作、销毁边界都会清楚。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

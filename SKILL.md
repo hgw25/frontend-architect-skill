@@ -1,6 +1,6 @@
 ---
 name: frontend-architect
-description: Design, implement, refactor, or review high-quality frontend applications and infrastructure when component boundaries, state and data flow, runtime placement, public APIs, design systems, build tooling, security, accessibility, performance, testing, delivery, or maintainability require senior architectural judgment. Apply framework-independent decision principles through the user's chosen stack and project-local rules; do not use for backend-only work or purely visual asset generation.
+description: Design, implement, refactor, or review production-quality frontend code for web, app, and mini-program work. Use for frontend code changes of any size, from small product features to shared infrastructure, to apply proportional senior judgment about state, module and runtime boundaries, rendering, accessibility, security, performance, and verification. Do not use for backend-only work or visual assets without frontend code.
 ---
 
 # Frontend Architect
@@ -13,8 +13,8 @@ that merely looks sophisticated.
 
 Every task uses the same engineering foundation: understand the requirement,
 model state and data flow, place ownership and side effects, define module and
-runtime boundaries, preserve accessibility, use accurate types, and verify
-observable behavior.
+runtime boundaries, account for the target rendering model where it matters,
+preserve accessibility, use accurate types, and verify observable behavior.
 
 Increase design and verification depth with the change's blast radius:
 
@@ -50,31 +50,42 @@ downstream consumers.
   preferred style.
 - Keep unrelated cleanup outside the change. Report a material architectural
   conflict rather than silently expanding scope.
-- Check current official documentation when platform support, framework
-  behavior, accessibility requirements, or performance guidance may have
-  changed.
+- When another applicable Skill is active, use this Skill for cross-cutting
+  engineering judgment and the shared quality bar, and use the specialized
+  Skill for its current framework, platform, design, or tool mechanics. Neither
+  overrides the user's scope, repository contracts, detected versions, or
+  current official documentation.
 
 ## Load only relevant guidance
 
-Choose one **primary reference** for the task's main risk. Load a secondary
-reference only when inspected code or an acceptance condition triggers its
-specific concern. A feature that happens to render, fetch, and ship does not by
-itself require every reference; widen context when a concrete boundary must be
-decided. Use verification guidance while implementing or reviewing risky work,
-not as an automatic requirement to load the entire reference set.
+Route references by the dominant decision and concrete additional risks, not by
+task size. Select zero or one **primary topic**, then add a secondary topic only
+when the request, inspected code, or evidence exposes another material concern.
+A bounded local change should normally use only this file.
 
-- For architecture, state, data flow, components, hooks/composables, utilities,
-  TypeScript, API design, or refactoring, read
+For every secondary topic, be able to name its trigger. Load incrementally and
+apply only relevant guidance; a feature that happens to render, fetch, and ship
+does not require every reference. Task size controls breadth, ceremony, and
+verification depth, not correctness.
+
+- For local state, data flow, component or hook ownership, TypeScript, API
+  design, utilities, or refactoring decisions that are not already clear, read
   [references/architecture-and-code.md](references/architecture-and-code.md).
-- For feature-versus-role organization, module ownership, public boundaries,
-  dependency direction, or project structure, read
+- For project, feature, workflow, or internal module organization; public
+  boundaries; or dependency direction, read
   [references/module-boundaries.md](references/module-boundaries.md).
 - For functional-versus-object-oriented design, classes, closures, reducers,
   state machines, or imperative adapters, read
   [references/programming-paradigms.md](references/programming-paradigms.md).
-- For browser-versus-server execution, rendering strategy, hydration,
-  streaming, routing, caching, package boundaries, bundles, observability, or
+- For execution and data placement across build, server, browser, or worker;
+  rendering strategy, hydration, routing, caching, bundles, observability, or
   rollout, read [references/runtime-and-delivery.md](references/runtime-and-delivery.md).
+- For update-to-display pipelines, framework scheduling, render invalidation,
+  layout, paint, rasterization, composition, frame pacing, UI and JavaScript
+  threads, native or host bridges, long lists, images, memory, or rendering
+  performance across web, app, and mini-program runtimes, read
+  [references/rendering-and-performance.md](references/rendering-and-performance.md)
+  and the single platform extension it selects. Treat them as one routed topic.
 - For component libraries, design systems, SDKs, shared packages, build tools,
   plugins, codemods, lint rules, generators, compatibility, or versioned public
   APIs, read
@@ -85,17 +96,18 @@ not as an automatic requirement to load the entire reference set.
 - For HTML, CSS, responsive layout, design systems, interaction, accessibility,
   animation, View Transitions, FLIP, or perceived performance, read
   [references/interface-and-motion.md](references/interface-and-motion.md).
-- For implementation verification, code review, testing strategy, performance
-  evidence, or final quality checks, read
+- For a requested review, uncertain test strategy, important regression or
+  public-contract risk, performance evidence, or production-readiness judgment,
+  read
   [references/verification-and-review.md](references/verification-and-review.md).
 
-Read more than one reference when the task materially crosses those concerns.
-For example, a product form normally starts with architecture; add runtime when
-URL, server rendering, cache, or navigation ownership is part of the change,
-interface when interaction or localization is being changed, and security when
-uploads or other untrusted sinks are present. Do not load an interface reference
-for an unrelated data helper or an architecture reference for a purely visual
-critique. Specialized references extend the shared engineering foundation;
+Primary means the main focus, not higher authority. Do not load verification
+merely because every change needs a proportionate check, or rendering merely
+because a component updates. When guidance overlaps or
+appears to conflict, preserve explicit user requirements and repository
+contracts, satisfy applicable safety and correctness obligations, then choose
+the least-complex coherent solution and disclose any unresolved material
+tradeoff. Specialized references extend the shared engineering foundation;
 they never replace or disable it.
 
 ## Scale the workflow to the task
@@ -138,37 +150,27 @@ Before adding any of the following, answer the corresponding question:
 | State | Is this irreducible memory, or can it be derived from existing data? |
 | Effect/subscription | Which external system is being synchronized, and how is cleanup handled? |
 | Component/file/module | At this scale, does the split create a meaningful semantic, ownership, lifecycle, dependency, or reuse boundary? |
-| Project grouping | Which code changes together, who owns it, and what dependency direction should be visible? |
-| Infrastructure | Which current consumers, repeated policy, or platform constraint justifies a maintained public foundation? |
-| Runtime placement | Which environment needs this code or data, and what must cross the network or serialization boundary? |
-| Cache | Who owns identity, scope, freshness, invalidation, and mutation reconciliation? |
-| Form state | Which values are draft, derived, server-authoritative, invalid, submitting, or unsaved, and which event owns each transition? |
-| URL state | Must this state survive reload, sharing, history navigation, or deep linking, and what is its canonical parse/serialize contract? |
-| Package | Does independent consumption, ownership, build, or versioning justify a package boundary? |
+| Shared foundation | Which consumers, repeated policy, or platform constraint justify a maintained public contract? |
+| Runtime or cache | Which environment owns the data, and who owns serialization, identity, freshness, and invalidation? |
 | Programming paradigm | Does the problem center on transformation, explicit state transitions, stable identity, or resource lifecycle? |
-| Shared abstraction | Are the semantics and reasons for change genuinely stable across callers? |
-| Configuration option | Is composition or a smaller explicit API clearer than another branch? |
-| Dependency | What proven problem does it solve beyond the platform and current stack? |
 | Trust boundary | Which input, output sink, capability, secret, or authorization decision must be constrained? |
-| Memoization/optimization | What measurement or known cost justifies it? |
-| Performance budget | Which user path and metric have a baseline, owner, threshold, and regression decision? |
-| Animation | What relationship or state change does it explain, and how does reduced motion behave? |
+| Performance or motion | Which user path and measured stage are costly, or which state change does motion explain? |
 | Test | Which important observable failure would this test detect? |
-| Telemetry/rollout | Which production risk needs evidence, privacy controls, staged exposure, or rollback? |
 
 If the answer is unclear, prefer the simpler representation and keep the
 decision reversible.
 
 ## Quality standard
 
-- Make valid states easy to represent and invalid states difficult to create.
-- Keep one authoritative source for each fact; derive secondary values.
+- Model behavior with plain data and explicit state transitions where practical;
+  keep one authoritative source for each fact and derive secondary values.
 - When behavior must remain stable, distinguish the intended observable contract
   from an accidental defect or timing artifact. Disclose any observable change
   instead of silently treating it as cleanup. Do not assume an undesirable
   behavior is outside the contract; when requirements do not decide, condition
   the correction on confirming that contract.
-- Keep side effects and external I/O at explicit boundaries.
+- Keep side effects and external I/O at explicit boundaries with owned cleanup,
+  cancellation, race, and error policies.
 - Apply module boundaries at every useful scale: package, feature, workflow,
   component, hook/composable, and helper. Keep code together while it shares one
   owner and reason to change; split only when the smaller unit gains a coherent
@@ -177,31 +179,24 @@ decision reversible.
   controller may compose smaller capabilities, but must not become the default
   owner of unrelated draft, request, subscription, SDK, and submission
   lifecycles merely to present one convenient view model.
-- Keep secrets and privileged operations out of browser code; treat client-side
-  permission checks as presentation, not authorization enforcement.
-- Make rendering, cache, and server/client ownership explicit when code can run
-  in more than one environment.
-- Preserve semantic HTML, keyboard behavior, focus, and user preferences.
-- Treat locale, language direction, pluralization, date, number, and currency as
-  data and behavior when the product serves more than one locale; do not encode
-  them as string concatenation or layout assumptions.
-- Treat loading, empty, error, retry, permission, stale, cancellation, and race
-  states as product behavior when relevant.
-- Prefer explicit, narrow APIs over clever overloads and boolean combinations.
-- Let types describe domain constraints; do not use assertions or `any` to hide
-  uncertainty.
+- Keep secrets and privileged operations out of client code; treat client-side
+  permission checks as presentation, not authorization. Make server/client,
+  cache, rendering, and host-transfer ownership explicit when relevant.
+- Preserve semantics, keyboard and focus behavior, user preferences, and locale
+  behavior. Treat loading, empty, error, retry, permission, stale,
+  cancellation, and race states as product behavior when relevant.
+- Prefer explicit, narrow, accurately typed APIs over clever overloads, boolean
+  combinations, assertions, or `any` that hide uncertainty.
 - Complete the relevant contract: implementation, exported types, affected
   consumers, error behavior, and the highest-value tests and documentation that
   the risk or public API requires. Do not add tests merely to mirror private
   structure, and do not leave placeholders or illustrative fragments in
   delivered code.
-- For infrastructure, identify which accessibility, compatibility, diagnostics,
-  build-output, migration, and release obligations apply, then treat those
-  obligations as correctness rather than optional polish.
-- Measure before optimizing, but remove obvious algorithmic or rendering waste.
-- Make material production failures diagnosable without collecting unnecessary
-  sensitive data.
-- Test behavior and contracts, not incidental implementation structure.
+- For infrastructure, treat applicable accessibility, compatibility,
+  diagnostics, build-output, migration, and release obligations as correctness.
+- Measure before optimizing, remove obvious waste, make material failures
+  diagnosable without unnecessary sensitive data, and test observable contracts
+  rather than private structure.
 
 ## Report the result
 

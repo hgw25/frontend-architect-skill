@@ -3,6 +3,10 @@
 Use this reference for HTML, CSS, responsive layout, design systems,
 interaction, accessibility, animation, FLIP, and perceived performance.
 
+Use [rendering-and-performance.md](rendering-and-performance.md) instead when
+the dominant concern is measured update-to-display, thread, layout, paint,
+rasterization, frame, list, image, or memory cost rather than interface behavior.
+
 ## Contents
 
 - Build the semantic and resilient layer first
