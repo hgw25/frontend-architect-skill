@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,8 @@ MAX_SKILL_NAME_LENGTH = 64
 
 REQUIRED_FILES = (
     ".github/workflows/validate.yml",
+    "VERSION",
+    "CHANGELOG.md",
     "SKILL.md",
     "README.md",
     "CONTRIBUTING.md",
@@ -50,6 +53,7 @@ REQUIRED_FILES = (
     "scripts/test_run_behavior_evals.py",
     "scripts/score_behavior_evals.py",
     "scripts/test_score_behavior_evals.py",
+    "scripts/test_validate_skill.py",
 )
 
 ALLOWED_SKILL_KEYS = {
@@ -101,6 +105,11 @@ MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 UNFINISHED_MARKER = re.compile(r"\b(?:TODO|PLACEHOLDER)\b|\[TODO:", re.IGNORECASE)
 FRONTMATTER = re.compile(r"\A---\n(?P<body>.*?)\n---(?:\n|\Z)", re.DOTALL)
 KEBAB_CASE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SEMANTIC_VERSION = re.compile(r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
+CHANGELOG_RELEASE = re.compile(
+    r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})$",
+    re.MULTILINE,
+)
 IGNORED_TREE_NAMES = {
     ".git",
     "dist",
@@ -130,6 +139,45 @@ def validate_required_files(errors: list[str]) -> None:
     for relative_path in REQUIRED_FILES:
         if not (ROOT / relative_path).is_file():
             add_error(errors, f"Missing required file: {relative_path}")
+
+
+def validate_release_metadata(errors: list[str]) -> None:
+    version_path = ROOT / "VERSION"
+    changelog_path = ROOT / "CHANGELOG.md"
+    readme_path = ROOT / "README.md"
+    if not version_path.is_file() or not changelog_path.is_file() or not readme_path.is_file():
+        return
+
+    version = version_path.read_text(encoding="utf-8").strip()
+    if not SEMANTIC_VERSION.fullmatch(version):
+        add_error(errors, "VERSION must contain one semantic version such as 0.2.0")
+        return
+
+    changelog = changelog_path.read_text(encoding="utf-8")
+    releases = list(CHANGELOG_RELEASE.finditer(changelog))
+    if not releases:
+        add_error(errors, "CHANGELOG.md must contain a dated release heading")
+    else:
+        latest = releases[0]
+        if latest.group("version") != version:
+            add_error(
+                errors,
+                "The first CHANGELOG.md release must match VERSION "
+                f"({version})",
+            )
+        try:
+            date.fromisoformat(latest.group("date"))
+        except ValueError:
+            add_error(errors, "The latest CHANGELOG.md release date is invalid")
+
+    readme = readme_path.read_text(encoding="utf-8")
+    expected_ref = f"--ref v{version}"
+    if expected_ref not in readme:
+        add_error(errors, f"README.md install command must contain {expected_ref!r}")
+    if "--repo hgw25/frontend-architect-skill" not in readme:
+        add_error(errors, "README.md install command must use the canonical GitHub repository")
+    if "heguangwei/frontend-architect-skill" in readme or "OWNER/frontend-architect-skill" in readme:
+        add_error(errors, "README.md contains a stale GitHub repository owner")
 
 
 def validate_frontmatter(errors: list[str]) -> None:
@@ -429,6 +477,7 @@ def main() -> int:
     errors: list[str] = []
 
     validate_required_files(errors)
+    validate_release_metadata(errors)
     validate_frontmatter(errors)
     validate_markdown(errors)
     validate_agent_metadata(errors)

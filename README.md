@@ -4,6 +4,9 @@
 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
+当前发布版本：[v0.2.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.2.0)。
+版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 它解决什么问题
 
 AI 很容易写出“能运行”的前端代码，也很容易产生另一种问题：为了显得高级而增加
@@ -34,8 +37,10 @@ AI 很容易写出“能运行”的前端代码，也很容易产生另一种�
 ## 项目结构
 
 ```text
-frontend-architect/
+frontend-architect-skill/
 ├── SKILL.md
+├── VERSION
+├── CHANGELOG.md
 ├── agents/
 │   └── openai.yaml
 ├── references/
@@ -58,8 +63,10 @@ frontend-architect/
 ├── scripts/
 │   ├── validate_skill.py
 │   ├── run_behavior_evals.py
+│   ├── test_run_behavior_evals.py
 │   ├── score_behavior_evals.py
-│   └── test_score_behavior_evals.py
+│   ├── test_score_behavior_evals.py
+│   └── test_validate_skill.py
 ├── requirements-dev.txt
 ├── .github/workflows/
 │   └── validate.yml
@@ -93,7 +100,7 @@ GitHub repository
 仓库发布后，可以请求 Codex：
 
 ```text
-使用 skill-installer 从 GitHub 安装 heguangwei/frontend-architect-skill 仓库根目录的
+使用 skill-installer 从 GitHub 安装 hgw25/frontend-architect-skill 仓库根目录的
 frontend-architect Skill。
 ```
 
@@ -101,9 +108,9 @@ frontend-architect Skill。
 
 ```bash
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo OWNER/frontend-architect-skill \
+  --repo hgw25/frontend-architect-skill \
   --path . \
-  --ref v0.1.0 \
+  --ref v0.2.0 \
   --name frontend-architect
 ```
 
@@ -112,9 +119,40 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 静默覆盖现有版本。这里的 `--path .` 是单 Skill 仓库的有意选择；如果未来改为一个
 仓库存放多个 Skill，再将发布内容移动到独立子目录并调整安装路径。
 
-使用不可变 Git tag 发布，例如 `v0.1.0`。不要在正式安装说明中省略 `--ref`，否则不同
-时间安装到的 `main` 内容可能不同。升级时先记录当前版本并将现有安装目录移动到明确的
-备份位置，再使用新 tag 安装；确认新版本正常后再处理备份。安装后重新启动 Codex。
+正式安装只使用不可变 Git tag，不省略 `--ref`，否则不同时间安装到的 `main` 内容可能
+不同。Codex 通常会自动检测 Skill 文件变化；如果更新没有出现，再重新启动 Codex。
+
+### 从已安装版本升级
+
+安装器不会覆盖已有目录。先把新版本下载到临时目录，确认下载成功后再替换现有安装；
+备份放在 `~/.codex/skills` 之外，避免 Codex 同时发现两个同名 Skill：
+
+```bash
+set -euo pipefail
+
+skill_release="v0.2.0"
+skill_stage_dir="$(mktemp -d)"
+skill_backup_root="$HOME/.codex/skill-backups"
+skill_backup_dir="$skill_backup_root/frontend-architect-$(date +%Y%m%d-%H%M%S)"
+
+python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+  --repo hgw25/frontend-architect-skill \
+  --path . \
+  --ref "$skill_release" \
+  --name frontend-architect \
+  --dest "$skill_stage_dir"
+
+mkdir -p "$skill_backup_root"
+mv ~/.codex/skills/frontend-architect "$skill_backup_dir"
+mv "$skill_stage_dir/frontend-architect" ~/.codex/skills/frontend-architect
+rmdir "$skill_stage_dir"
+
+printf 'Backup: %s\n' "$skill_backup_dir"
+```
+
+新版本在下一次调用时通常即可使用。如果需要回滚，先把当前目录移到
+`~/.codex/skill-backups` 下的另一个名称，再将上面输出的备份目录移回
+`~/.codex/skills/frontend-architect`。
 
 ## 使用
 
@@ -247,6 +285,6 @@ python3 scripts/test_score_behavior_evals.py
 
 该目录已具备独立 GitHub 仓库结构，并已保存首版 baseline/candidate
 [行为评测结果](evals/results/2026-08-20-gpt-5.4/summary.md)。目标仓库为
-`heguangwei/frontend-architect-skill`。当前尚未选择许可证，也没有安装到全局 Skill
-目录；仓库应在选定许可证和建立版本 tag 之前保持 private，公开发布后再从 GitHub
-执行安装。
+`hgw25/frontend-architect-skill`。当前版本由 [VERSION](VERSION) 和对应的不可变 Git
+tag 标识，发布变化记录在 [CHANGELOG.md](CHANGELOG.md)。仓库当前尚未选择许可证；在
+明确许可证之前应保持 private。

@@ -21,5 +21,10 @@ jobs:
         run: python3 -m pip install -r requirements-dev.txt
       - name: Validate skill, metadata, links, scripts, and eval fixtures
         run: python3 scripts/validate_skill.py
-      - name: Test evaluation verdict and failure handling
-        run: python3 scripts/test_score_behavior_evals.py
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          expected_tag="v$(tr -d '\n' < VERSION)"
+          test "$GITHUB_REF_NAME" = "$expected_tag"
+      - name: Run deterministic script tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
