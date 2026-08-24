@@ -107,10 +107,12 @@ cases:
       - 定义外部消费者只使用窄公开入口，内部依赖不绕 barrel 隐藏循环
       - 保留与单一所有者共同变化的小 helper、类型、样式和测试，不为对称性建空层
       - 使用语义、变化原因、生命周期和契约决定组件或 hook 拆分，而不是行数或 JSX 区块
+      - 说明新增边界隐藏了什么易变决策或复杂度，避免只改名转发调用的浅层模块
     fail_if:
       - 只把原文件按 components、hooks、services、utils 分类移动
       - 用一个万能 hook、store 或 controller 继续拥有全部状态与副作用
       - 无条件建立每层目录、接口和依赖注入，即使没有替换或边界需求
+      - 将只改名转发调用且继续泄漏相同数据、错误和生命周期的封装宣称为架构边界
 
   - id: editor-paradigms
     title: 富文本编辑器选择 FP 还是 OOP
@@ -277,6 +279,7 @@ cases:
       - 检查 response.ok 并在运行时边界拒绝无效响应
       - 明确权威资料、草稿和乐观投影的所有权
       - 使用请求身份、版本或取消策略防止乱序响应覆盖
+      - 较早请求确认成功但更新请求随后失败时，回滚到最新已确认权威值而不是初始值
       - 失败时恢复可解释状态并提供可访问的错误和重试路径
       - 给出代码、类型、调用点和行为测试的一致修改
       - 测试成功、失败回滚和快速重复提交而不是内部 state 名称
@@ -438,6 +441,12 @@ cases:
         }
       }
     fixture: evals/fixtures/vite-feature-flags-plugin
+    protected_paths:
+      - package.json
+      - scripts/check-build.mjs
+      - scripts/check-dev.mjs
+      - scripts/check-diagnostics.mjs
+      - scripts/check-package.mjs
     validation_commands:
       - npm ci
       - npm run check
@@ -457,13 +466,16 @@ cases:
       - 区分允许暴露的客户端 flags 与服务端秘密并在边界验证配置
       - 提供 virtual module 的 TypeScript 声明和稳定公共导出
       - 说明 dev、production build、HMR、缓存输入和 source map 的实际行为
+      - 验证客户端 bundle 和 source map 都不包含 expose 白名单之外的配置或秘密
       - 给出清楚定位错误配置的诊断信息
       - 用最小真实 Vite consumer 同时验证开发和构建产物
+      - 实际生成 npm tarball，并在临时消费者中安装和导入最终发布包
       - 考虑 package exports、peer dependency、支持版本和破坏性迁移
     fail_if:
       - 继续使用 replaceAll 修改任意源码
       - 将完整 process.env 或未筛选配置序列化到客户端
       - 只有 transform 单元测试而没有真实宿主集成验证
+      - 将 npm pack dry-run 或构建目录检查当成最终发布包已经过消费者验证
       - 留下伪代码、any 或未定义的公共类型
 
   - id: browser-update-to-pixels

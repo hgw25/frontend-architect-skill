@@ -8,6 +8,10 @@ const scripts = await Promise.all(
   assets.filter((name) => name.endsWith('.js')).map((name) => readFile(`${dist}/assets/${name}`, 'utf8')),
 )
 const bundle = scripts.join('\n')
+const sourceMaps = await Promise.all(
+  assets.filter((name) => name.endsWith('.map')).map((name) => readFile(`${dist}/assets/${name}`, 'utf8')),
+)
+const clientArtifacts = [...scripts, ...sourceMaps].join('\n')
 
 assert.match(bundle, /checkoutV2/)
-assert.doesNotMatch(bundle, /server-token-for-eval/)
+assert.doesNotMatch(clientArtifacts, /server-token-for-eval/)

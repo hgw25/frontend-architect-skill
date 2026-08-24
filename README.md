@@ -216,9 +216,10 @@ python3 scripts/run_behavior_evals.py \
   --results-dir evals/results/$(date +%F)-gpt-5.4
 ```
 
-该脚本关闭全局 Skill 和插件发现，baseline 不加载本 Skill，candidate 只加载当前目录的
-`SKILL.md` 与按需 reference。它不会替代盲评；运行后仍需按照 rubric 在看不到另一组
-结果的上下文中评分。
+该脚本关闭插件发现，并审计实际 reference 读取：baseline 必须保持零 Skill 引用，
+candidate 只能加载隔离工作区中的 `SKILL.md` 与按需 reference；读取全局副本、超出路由
+宽度或修改用例声明的受保护验收脚本都会让运行失败。它不会替代盲评；运行后仍需按照
+rubric 在看不到另一组结果的上下文中评分。
 
 生成完成后，可在与生成会话分离的上下文中执行两阶段评测。脚本先在隐藏
 `must_observe`、`fail_if` 和另一条件的情况下盲评分，再为同一匿名条件单独执行

@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -25,6 +26,14 @@ DISABLED_FEATURES = (
     "multi_agent_v2",
     "plugins",
     "skill_search",
+)
+REFERENCE_PATH = re.compile(
+    r"(?P<path>(?:\.frontend-architect|/[^\"'`\s;|]+)?/references/"
+    r"(?P<file>[a-z0-9-]+\.md))"
+)
+SKILL_PATH = re.compile(
+    r"(?P<path>(?:\.frontend-architect|/[^\"'`\s;|]*frontend-architect[^\"'`\s;|]*)/"
+    r"SKILL\.md)"
 )
 
 
@@ -127,7 +136,16 @@ def build_prompt(case: dict[str, Any], mode: str) -> str:
         sections.extend(
             [
                 "Before solving the task, read .frontend-architect/SKILL.md completely.",
-                "Follow it as $frontend-architect and read only the references it routes to for this task.",
+                "Treat that local copy as the only task-specific Skill for this evaluation.",
+                "Read routed references only from .frontend-architect/references; do not read an installed or global frontend-architect Skill or reference.",
+                "Do not read any eval definitions, rubric, expected observations, or prior results.",
+            ]
+        )
+    else:
+        sections.extend(
+            [
+                "This is a no-Skill baseline. Do not read or use any local, installed, or global "
+                "frontend-architect Skill or reference file.",
                 "Do not read any eval definitions, rubric, expected observations, or prior results.",
             ]
         )
@@ -136,6 +154,12 @@ def build_prompt(case: dict[str, Any], mode: str) -> str:
             "Implement the complete solution directly in this workspace and run the relevant checks. "
             "Do not leave pseudocode or TODOs."
         )
+        protected_paths = case.get("protected_paths", [])
+        if protected_paths:
+            sections.append(
+                "Treat these existing evaluation harness files as read-only; add separate tests if "
+                "you need more coverage: " + ", ".join(protected_paths) + "."
+            )
     else:
         sections.append("Return a concrete, decision-oriented answer; do not invent repository facts.")
 
@@ -144,6 +168,85 @@ def build_prompt(case: dict[str, Any], mode: str) -> str:
     if artifact:
         sections.append("\nPROVIDED ARTIFACT:\n" + artifact)
     return "\n".join(sections)
+
+
+def analyze_reference_reads(events_text: str, workspace: Path) -> dict[str, Any]:
+    files: set[str] = set()
+    contaminated_files: set[str] = set()
+    skill_paths: set[str] = set()
+    contaminated_skill_paths: set[str] = set()
+    local_references = (workspace / ".frontend-architect/references").resolve()
+    local_skill = (workspace / ".frontend-architect/SKILL.md").resolve()
+
+    for line in events_text.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = event.get("item")
+        if event.get("type") != "item.completed" or not isinstance(item, dict):
+            continue
+        if item.get("type") != "command_execution":
+            continue
+        command = item.get("command")
+        if not isinstance(command, str):
+            continue
+
+        for match in SKILL_PATH.finditer(command):
+            skill_path = match.group("path")
+            skill_paths.add(skill_path)
+            if skill_path == ".frontend-architect/SKILL.md":
+                continue
+            candidate_path = Path(skill_path)
+            if candidate_path.is_absolute() and candidate_path.resolve() == local_skill:
+                continue
+            contaminated_skill_paths.add(skill_path)
+
+        for match in REFERENCE_PATH.finditer(command):
+            reference_file = match.group("file")
+            reference_path = match.group("path")
+            files.add(reference_file)
+
+            if reference_path.startswith(".frontend-architect/references/"):
+                continue
+
+            candidate_path = Path(reference_path)
+            if candidate_path.is_absolute() and candidate_path.resolve().is_relative_to(
+                local_references
+            ):
+                continue
+            contaminated_files.add(reference_file)
+
+    rendering_extensions = {
+        "rendering-app.md",
+        "rendering-mini-program.md",
+        "rendering-web.md",
+    }
+    selected_rendering_extensions = rendering_extensions.intersection(files)
+    has_rendering_common = "rendering-and-performance.md" in files
+    rendering_ok = len(selected_rendering_extensions) <= 1 and (
+        not selected_rendering_extensions or has_rendering_common
+    )
+    topic_count = len(files)
+    if has_rendering_common and len(selected_rendering_extensions) == 1:
+        topic_count -= 1
+
+    return {
+        "files": sorted(files),
+        "topic_count": topic_count,
+        "breadth_ok": topic_count <= 2 and rendering_ok,
+        "rendering_route_ok": rendering_ok,
+        "skill_paths": sorted(skill_paths),
+        "local_skill_read": any(
+            path == ".frontend-architect/SKILL.md"
+            or (Path(path).is_absolute() and Path(path).resolve() == local_skill)
+            for path in skill_paths
+        ),
+        "skill_isolation_ok": not contaminated_skill_paths,
+        "isolation_ok": not contaminated_files and not contaminated_skill_paths,
+        "contaminated_files": sorted(contaminated_files),
+        "contaminated_skill_paths": sorted(contaminated_skill_paths),
+    }
 
 
 def codex_command(args: argparse.Namespace, workspace: Path, output_path: Path) -> list[str]:
@@ -183,8 +286,46 @@ def capture_diff(workspace: Path) -> str:
     return completed.stdout
 
 
+def validate_protected_paths(case: dict[str, Any], workspace: Path) -> dict[str, Any] | None:
+    fixture = case.get("fixture")
+    protected_paths = case.get("protected_paths", [])
+    if not fixture or not protected_paths:
+        return None
+
+    fixture_root = (ROOT / fixture).resolve()
+    failures: list[str] = []
+    for raw_path in protected_paths:
+        relative_path = Path(raw_path)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            failures.append(f"invalid protected path: {raw_path}")
+            continue
+
+        expected_path = fixture_root / relative_path
+        actual_path = workspace / relative_path
+        if not expected_path.is_file():
+            failures.append(f"protected fixture file is missing: {raw_path}")
+        elif not actual_path.is_file():
+            failures.append(f"protected workspace file was removed: {raw_path}")
+        elif actual_path.read_bytes() != expected_path.read_bytes():
+            failures.append(f"protected workspace file was modified: {raw_path}")
+
+    return {
+        "command": "verify protected evaluation harness",
+        "exit_code": 1 if failures else 0,
+        "duration_seconds": 0.0,
+        "stdout": "\n".join(failures) + ("\n" if failures else ""),
+        "stderr": "",
+    }
+
+
 def validate_fixture(case: dict[str, Any], workspace: Path, timeout: int) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
+    protected_result = validate_protected_paths(case, workspace)
+    if protected_result:
+        results.append(protected_result)
+        if protected_result["exit_code"] != 0:
+            return results
+
     for command in case.get("validation_commands", []):
         result = run_command(command, cwd=workspace, timeout=timeout, shell=True)
         results.append({"command": command, **result})
@@ -244,7 +385,8 @@ def main() -> int:
                 timeout=args.timeout_seconds,
                 input_text=prompt,
             )
-            (case_dir / "events.jsonl").write_text(generation.pop("stdout"), encoding="utf-8")
+            events_text = generation.pop("stdout")
+            (case_dir / "events.jsonl").write_text(events_text, encoding="utf-8")
             (case_dir / "generation.stderr.log").write_text(
                 generation.pop("stderr"), encoding="utf-8"
             )
@@ -262,6 +404,7 @@ def main() -> int:
                     "mode": mode,
                     "workspace": str(workspace),
                     "generation": generation,
+                    "reference_routing": analyze_reference_reads(events_text, workspace),
                     "validations": validations,
                     "response": str(final_path.relative_to(results_dir)),
                     "diff": str(diff_path.relative_to(results_dir)),
@@ -276,10 +419,21 @@ def main() -> int:
     )
     candidates_valid = all(
         all(item["exit_code"] == 0 for item in record["validations"])
+        and record.get("reference_routing", {}).get("local_skill_read", False)
+        and record.get("reference_routing", {}).get("skill_isolation_ok", True)
+        and record.get("reference_routing", {}).get("isolation_ok", True)
+        and record.get("reference_routing", {}).get("breadth_ok", True)
         for record in manifest["cases"]
         if record["mode"] == "candidate"
     )
-    return 0 if infrastructure_ok and candidates_valid else 1
+    baselines_isolated = all(
+        not record.get("reference_routing", {}).get("files")
+        and not record.get("reference_routing", {}).get("skill_paths")
+        and record.get("reference_routing", {}).get("isolation_ok", True)
+        for record in manifest["cases"]
+        if record["mode"] == "baseline"
+    )
+    return 0 if infrastructure_ok and candidates_valid and baselines_isolated else 1
 
 
 if __name__ == "__main__":

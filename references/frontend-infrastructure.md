@@ -106,7 +106,10 @@ Tooling runs inside another system and must respect its lifecycle and contracts.
   behavior-affecting inputs in cache identity.
 - Validate configuration early with actionable file, option, and remediation
   context. Distinguish user configuration errors from internal failures.
-- Preserve source maps and source identity for code transforms.
+- Preserve source maps and source identity for code transforms, but build them
+  only from client-safe transformed inputs. Never let unfiltered server
+  configuration, credentials, or private source data re-enter a client artifact
+  through `sourcesContent` or another debugging channel.
 - Handle paths, URLs, case sensitivity, separators, and symlinks according to
   supported environments rather than the author's machine.
 - Prefer established host filtering, resolver, AST, and diagnostic utilities

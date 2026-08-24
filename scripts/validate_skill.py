@@ -47,6 +47,7 @@ REQUIRED_FILES = (
     "evals/rubric.md",
     "scripts/validate_skill.py",
     "scripts/run_behavior_evals.py",
+    "scripts/test_run_behavior_evals.py",
     "scripts/score_behavior_evals.py",
     "scripts/test_score_behavior_evals.py",
 )
@@ -94,7 +95,7 @@ REQUIRED_CASE_KEYS = {
     "must_observe",
     "fail_if",
 }
-OPTIONAL_CASE_KEYS = {"fixture", "validation_commands"}
+OPTIONAL_CASE_KEYS = {"fixture", "protected_paths", "validation_commands"}
 
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 UNFINISHED_MARKER = re.compile(r"\b(?:TODO|PLACEHOLDER)\b|\[TODO:", re.IGNORECASE)
@@ -338,6 +339,7 @@ def validate_evals(errors: list[str]) -> None:
         validate_string_list(case_id, "fail_if", case.get("fail_if"), errors)
 
         fixture = case.get("fixture")
+        protected_paths = case.get("protected_paths")
         validation_commands = case.get("validation_commands")
         requires_implementation = (
             isinstance(dimensions, list) and "implementation_integrity" in dimensions
@@ -380,8 +382,30 @@ def validate_evals(errors: list[str]) -> None:
                 validation_commands,
                 errors,
             )
+            if protected_paths is not None:
+                validate_string_list(case_id, "protected_paths", protected_paths, errors)
+                if isinstance(protected_paths, list):
+                    for protected_path in protected_paths:
+                        if not isinstance(protected_path, str):
+                            continue
+                        relative_path = Path(protected_path)
+                        if relative_path.is_absolute() or ".." in relative_path.parts:
+                            add_error(
+                                errors,
+                                f"Eval case {case_id!r} has unsafe protected path: {protected_path}",
+                            )
+                        elif isinstance(fixture, str) and not (
+                            ROOT / fixture / relative_path
+                        ).is_file():
+                            add_error(
+                                errors,
+                                f"Eval case {case_id!r} protected path is not a fixture file: "
+                                f"{protected_path}",
+                            )
         elif validation_commands is not None:
             add_error(errors, f"Eval case {case_id!r} defines commands without a fixture")
+        elif protected_paths is not None:
+            add_error(errors, f"Eval case {case_id!r} protects paths without a fixture")
 
     if not {"react", "vue"}.issubset(framework_fixtures):
         add_error(errors, "Executable eval fixtures must cover both React and Vue")

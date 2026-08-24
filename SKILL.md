@@ -63,6 +63,13 @@ task size. Select zero or one **primary topic**, then add a secondary topic only
 when the request, inspected code, or evidence exposes another material concern.
 A bounded local change should normally use only this file.
 
+Outside the rendering topic's common reference plus one platform extension,
+stop after at most two reference files for one task. When more concerns are
+present, use this file's shared quality standard for the remaining obligations
+and choose the two references that most change the current decision.
+Reading a third reference is a routing error unless it is that single rendering
+platform extension.
+
 For every secondary topic, be able to name its trigger. Load incrementally and
 apply only relevant guidance; a feature that happens to render, fetch, and ship
 does not require every reference. Task size controls breadth, ceremony, and
@@ -149,7 +156,7 @@ Before adding any of the following, answer the corresponding question:
 | --- | --- |
 | State | Is this irreducible memory, or can it be derived from existing data? |
 | Effect/subscription | Which external system is being synchronized, and how is cleanup handled? |
-| Component/file/module | At this scale, does the split create a meaningful semantic, ownership, lifecycle, dependency, or reuse boundary? |
+| Component/file/module | At this scale, does the split create a meaningful semantic, ownership, lifecycle, dependency, or reuse boundary, and what volatile decision or complexity does it hide from consumers? |
 | Shared foundation | Which consumers, repeated policy, or platform constraint justify a maintained public contract? |
 | Runtime or cache | Which environment owns the data, and who owns serialization, identity, freshness, and invalidation? |
 | Programming paradigm | Does the problem center on transformation, explicit state transitions, stable identity, or resource lifecycle? |

@@ -157,6 +157,28 @@ become harder to follow after extraction. A main component and its small private
 render helpers may share one file. A one-use calculation can stay near its call
 site. Colocation is still modular when the ownership boundary is clear.
 
+### Hide complexity, not just code
+
+A useful boundary reduces what its consumers must know. It may hide a volatile
+implementation decision such as a transport shape, SDK mechanism, validation or
+cache policy, platform-specific lifecycle, or it may contain cohesive complexity
+such as focus management, concurrency, cancellation, and resource ownership
+behind a smaller stable contract.
+
+A forwarding wrapper that only renames one call while exposing the same data,
+ordering, errors, and lifecycle is not automatically a module. Keep the direct
+call until the boundary owns policy, normalization, lifecycle, or a meaningful
+replacement seam. Do not create an interface solely to make a thin wrapper look
+architectural.
+
+Before extracting, ask:
+
+- What can change internally without forcing consumers to change?
+- Which implementation knowledge no longer leaks through the new contract?
+- Is the public surface meaningfully simpler than the behavior it provides?
+
+If none has a concrete answer, keep the code with its current owner.
+
 Do not use line count, visual rectangles, or the ability to write a custom hook
 as sufficient evidence. In particular:
 
