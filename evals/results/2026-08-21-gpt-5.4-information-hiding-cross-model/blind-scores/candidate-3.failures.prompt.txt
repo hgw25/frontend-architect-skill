@@ -1,0 +1,816 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: vite-feature-flags-plugin
+request: 请评审并重构下面的 Vite 插件原型，使它可以作为公司前端基建包发布。消费者应从 virtual:feature-flags 导入类型化 flags；插件需要在 dev、build 和 HMR 下行为一致， 配置错误要有可执行诊断，不能把服务端秘密带入客户端，并需要说明公共类型、包导出、 source map、缓存、集成测试和版本演进。请给出完整关键代码而不是只有架构图。
+artifact: export function featureFlags(flags: Record<string, unknown>) {
+  return {
+    name: 'feature-flags',
+    transform(code: string) {
+      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
+    },
+  }
+}
+
+failure_rules: ["继续使用 replaceAll 修改任意源码", "将完整 process.env 或未筛选配置序列化到客户端", "只有 transform 单元测试而没有真实宿主集成验证", "留下伪代码、any 或未定义的公共类型"]
+
+RESPONSE:
+已把原型重构成可发布的共享 Vite 插件，核心从“源码字符串替换”改成了“受控虚拟模块 + 白名单暴露 + 明确诊断”。关键实现见 [packages/plugin/src/index.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/packages/plugin/src/index.ts:1) 和 [packages/plugin/src/virtual.d.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/packages/plugin/src/virtual.d.ts:1)。现在插件会在 `buildStart`/`load` 走统一的 `read -> validate -> pick -> serialize` 流程，只把 `expose` 白名单里的标量值带进客户端；缺失 key、非法值、重复暴露、不可读文件都会给出带修复建议的 `[feature-flags]` 诊断。为保证 `middlewareMode` 下也稳定，我加了受控的源文件 watcher 兜底，并在变更时清缓存、失效虚拟模块、触发 HMR/SSR 重新加载。
+
+类型和发布面也补齐了。消费者现在通过增强 `virtual:feature-flags` 的 `FeatureFlagsShape` 获得精确类型，示例在 [examples/consumer/src/feature-flags.d.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/examples/consumer/src/feature-flags.d.ts:1) 和 [examples/consumer/src/flags.type-test.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/examples/consumer/src/flags.type-test.ts:1)。包导出、`types`、`sideEffects`、README 一并整理在 [packages/plugin/package.json](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/packages/plugin/package.json:1) 和 [packages/plugin/README.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/packages/plugin/README.md:1)。README 里把公共类型、包导出、source map、缓存、集成测试和版本演进策略都写实了。另一个环境性问题是 `npm pack` 默认 cache 权限，我把发布检查脚本改成使用工作区内临时 cache，见 [scripts/check-package.mjs](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/scripts/check-package.mjs:1)。
+
+已运行并通过：`npm run check`。
+
+DIFF:
+diff --git a/.npm-cache/_cacache/content-v2/sha512/4c/80/64ba428c2e7b1df2026958d2d546b765484919f3cd1e75120c23e680ac7ad28ae5d0268ff5a4db72ba6f45d4de5407a4aead32aa424f5770ff36151f5473 b/.npm-cache/_cacache/content-v2/sha512/4c/80/64ba428c2e7b1df2026958d2d546b765484919f3cd1e75120c23e680ac7ad28ae5d0268ff5a4db72ba6f45d4de5407a4aead32aa424f5770ff36151f5473
+new file mode 100644
+index 0000000000000000000000000000000000000000..4cea529969d432d91906f1d5ef80c56141167511
+GIT binary patch
+literal 7411
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/.npm-cache/_cacache/index-v5/6a/2a/a10112ccb2a1557acc1f6a4a6ed869ec8b5b9da9bd63cd98dfe0d4014aaa b/.npm-cache/_cacache/index-v5/6a/2a/a10112ccb2a1557acc1f6a4a6ed869ec8b5b9da9bd63cd98dfe0d4014aaa
+new file mode 100644
+index 0000000..5c04e05
+--- /dev/null
++++ b/.npm-cache/_cacache/index-v5/6a/2a/a10112ccb2a1557acc1f6a4a6ed869ec8b5b9da9bd63cd98dfe0d4014aaa
+@@ -0,0 +1,2 @@
++
++cf49a541dee23680c206ea664cae87bd1df58672	{"key":"pacote:tarball:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/packages/plugin","integrity":"sha512-TIBkukKMLnsd8gJpWNLVRrdlSEkZ880edRIMI+aArHrSiuXQJo/1pNtyum9F1N5UB6SurTKqQk9XcP82FR9Ucw==","time":1787308340320,"size":7411}
+\ No newline at end of file
+diff --git a/.npm-cache/_logs/2026-08-21T10_32_20_224Z-debug-0.log b/.npm-cache/_logs/2026-08-21T10_32_20_224Z-debug-0.log
+new file mode 100644
+index 0000000..ed8a192
+--- /dev/null
++++ b/.npm-cache/_logs/2026-08-21T10_32_20_224Z-debug-0.log
+@@ -0,0 +1,19 @@
++0 verbose cli /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/node /Users/heguangwei/.nvm/versions/node/v22.22.2/bin/npm
++1 info using npm@10.9.7
++2 info using node@v22.22.2
++3 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/lib/node_modules/npm/npmrc
++4 silly config load:file:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/.npmrc
++5 silly config load:file:/Users/heguangwei/.npmrc
++6 silly config load:file:/Users/heguangwei/.nvm/versions/node/v22.22.2/etc/npmrc
++7 verbose title npm pack
++8 verbose argv "pack" "--dry-run" "--json" "--workspace" "@frontend-architect-eval/feature-flags"
++9 verbose logfile logs-max:10 dir:/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/.npm-cache/_logs/2026-08-21T10_32_20_224Z-
++10 verbose logfile /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob/.npm-cache/_logs/2026-08-21T10_32_20_224Z-debug-0.log
++11 silly logfile done cleaning log files
++12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
++13 verbose cwd /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-j8008xob
++14 verbose os Darwin 25.6.0
++15 verbose node v22.22.2
++16 verbose npm  v10.9.7
++17 verbose exit 0
++18 info ok
+diff --git a/examples/consumer/src/feature-flags.d.ts b/examples/consumer/src/feature-flags.d.ts
+new file mode 100644
+index 0000000..6a16857
+--- /dev/null
++++ b/examples/consumer/src/feature-flags.d.ts
+@@ -0,0 +1,13 @@
++import type { FeatureFlagsOf } from '@frontend-architect-eval/feature-flags'
++
++declare module 'virtual:feature-flags' {
++  interface FeatureFlagsShape
++    extends FeatureFlagsOf<
++      {
++        checkoutV2: boolean
++        theme: 'dark' | 'light'
++        SERVER_TOKEN: string
++      },
++      ['checkoutV2', 'theme']
++    > {}
++}
+diff --git a/examples/consumer/src/flags.ts b/examples/consumer/src/flags.ts
+index 4d752f9..8693556 100644
+--- a/examples/consumer/src/flags.ts
++++ b/examples/consumer/src/flags.ts
+@@ -1,3 +1 @@
+-import { flags } from 'virtual:feature-flags'
+-
+-export { flags }
++export { default as flags } from 'virtual:feature-flags'
+diff --git a/examples/consumer/src/flags.type-test.ts b/examples/consumer/src/flags.type-test.ts
+new file mode 100644
+index 0000000..7d2a43e
+--- /dev/null
++++ b/examples/consumer/src/flags.type-test.ts
+@@ -0,0 +1,10 @@
++import { flags } from 'virtual:feature-flags'
++
++const checkoutFlag: boolean = flags.checkoutV2
++const themeFlag: 'dark' | 'light' = flags.theme
++
++void checkoutFlag
++void themeFlag
++
++// @ts-expect-error SERVER_TOKEN is intentionally not exposed to the client bundle.
++flags.SERVER_TOKEN
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..45c27ae
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,102 @@
++# @frontend-architect-eval/feature-flags
++
++一个可发布的 Vite 特性开关插件。它通过 `virtual:feature-flags` 暴露经过白名单过滤的客户端 flags，并保证 dev、build 与 HMR 读取的是同一份受控 JSON 来源。
++
++## 使用方式
++
++```ts
++import { featureFlags } from '@frontend-architect-eval/feature-flags'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  plugins: [
++    featureFlags({
++      source: new URL('./flags.json', import.meta.url),
++      expose: ['checkoutV2', 'theme'],
++    }),
++  ],
++})
++```
++
++```ts
++import { flags } from 'virtual:feature-flags'
++
++if (flags.checkoutV2) {
++  console.log(flags.theme)
++}
++```
++
++## 公共类型
++
++- `FeatureFlagValue`: 允许进入客户端的基础标量类型，只支持 `boolean | number | string`。
++- `FeatureFlagsOf<TAllFlags, TExpose>`: 从完整服务端 flags 形状中裁剪出客户端暴露子集，供消费者做类型增强。
++- `virtual:feature-flags` 内部的 `FeatureFlagsShape`: 供消费者通过 declaration merging 扩展的空接口。`flags` 类型来自这里。
++
++消费者示例：
++
++```ts
++import type { FeatureFlagsOf } from '@frontend-architect-eval/feature-flags'
++
++declare module 'virtual:feature-flags' {
++  interface FeatureFlagsShape
++    extends FeatureFlagsOf<
++      {
++        checkoutV2: boolean
++        theme: 'dark' | 'light'
++        SERVER_TOKEN: string
++      },
++      ['checkoutV2', 'theme']
++    > {}
++}
++```
++
++这样 `virtual:feature-flags` 的导入会只暴露 `checkoutV2` 和 `theme` 两个强类型字段。
++
++## 包导出
++
++- `@frontend-architect-eval/feature-flags`: 插件运行时代码和公共类型。
++- `@frontend-architect-eval/feature-flags/virtual`: 仅用于 TypeScript `types` 配置的虚拟模块声明入口。
++
++包通过 `exports` 限制公共入口，内部实现文件不会成为发布契约的一部分。
++
++## source map
++
++- 发布构建开启了 `sourceMap` 与 `declarationMap`，方便消费方定位插件运行时和类型声明来源。
++- 虚拟模块 `virtual:feature-flags` 在 `load` 阶段返回显式 source map，并把原始 JSON 内容作为 `sourcesContent` 挂到 map 上，便于构建调试与错误归因。
++
++## 缓存与 HMR
++
++- 插件对解析后的 flags 做基于源文件 `mtime` 的内存缓存，避免同一轮 dev/build 中重复 JSON 解析。
++- 当 flags 文件变化时，插件会清空缓存、失效 `virtual:feature-flags` 模块，并让 Vite 的 HMR/SSR 模块图重新加载同一个虚拟模块实现。
++- 因为 dev 与 build 共用同一套 `read -> validate -> pick -> serialize` 流程，所以行为一致，不会出现开发态和产物态分叉。
++
++## 诊断
++
++配置或数据错误会尽早失败，并给出可执行 remediation：
++
++- 源文件不存在或不可读
++- JSON 顶层不是对象
++- `expose` 引用了不存在的 key
++- 暴露值不是 `boolean | number | string`
++- `expose` 列表存在重复 key
++
++所有诊断都带 `[feature-flags]` 前缀与源文件路径，方便 CI 和开发者直接定位。
++
++## 集成测试
++
++建议至少覆盖以下场景：
++
++1. 真实 Vite build 产物不包含未暴露的服务端字段。
++2. dev server 在修改源 JSON 后，`virtual:feature-flags` 能通过 HMR/SSR 看到最新值。
++3. 错误配置会在构建期返回带修复建议的诊断。
++4. `npm pack --dry-run` 校验发布产物是否包含 JS、声明文件和 source map。
++
++当前仓库已经按上述四类场景提供自动化检查。
++
++## 版本演进
++
++- 新增 flag 能力但不改变现有公开 key 行为：`minor`
++- 调整默认模块 id、收紧允许值类型、修改导出的公共类型名称或删除导出：`major`
++- 修复诊断文案、source map、缓存失效等不改变公开契约的缺陷：`patch`
++
++如果未来需要支持多来源、环境分层或远程拉取，优先通过新增窄接口扩展，而不是把当前插件改成布尔开关驱动的万能 options bag。
+diff --git a/packages/plugin/package.json b/packages/plugin/package.json
+index f5b6fe3..22ee32e 100644
+--- a/packages/plugin/package.json
++++ b/packages/plugin/package.json
+@@ -1,10 +1,13 @@
+ {
+   "name": "@frontend-architect-eval/feature-flags",
+   "version": "0.0.0",
+-  "private": true,
++  "private": false,
+   "type": "module",
++  "types": "./dist/index.d.ts",
++  "sideEffects": false,
+   "files": [
+-    "dist"
++    "dist",
++    "README.md"
+   ],
+   "exports": {
+     ".": {
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..759b442 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,326 @@
+-import type { Plugin } from 'vite'
++import { unwatchFile, watchFile } from 'node:fs'
++import { readFile, stat } from 'node:fs/promises'
++import path from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++import type { ModuleNode, Plugin, ResolvedConfig, ViteDevServer } from 'vite'
++
++export type FeatureFlagValue = boolean | number | string
++export type FeatureFlagRecord = Record<string, FeatureFlagValue>
++
++export interface FeatureFlagsShape {}
++
++export type FeatureFlagsOf<
++  TAllFlags extends FeatureFlagRecord,
++  TExpose extends readonly (keyof TAllFlags)[],
++> = Readonly<Pick<TAllFlags, TExpose[number]>>
++
++export interface FeatureFlagsOptions<TExpose extends string = string> {
++  source: string | URL
++  expose: readonly TExpose[]
++  moduleId?: string
++}
++
++interface PluginState {
++  config: ResolvedConfig | null
++  server: ViteDevServer | null
++  sourcePath: string | null
++  publicModuleId: string
++  resolvedModuleId: string
++  cachedSnapshot: FlagsSnapshot | null
++  stopWatchingSource: (() => void) | null
++}
++
++interface FlagsSnapshot {
++  mtimeMs: number
++  sourceText: string
++  publicFlags: FeatureFlagRecord
++}
++
++const DEFAULT_MODULE_ID = 'virtual:feature-flags'
++const RESOLVED_ID_PREFIX = '\0feature-flags:'
++
++export function featureFlags<TExpose extends string>(
++  options: FeatureFlagsOptions<TExpose>,
++): Plugin {
++  const state: PluginState = {
++    config: null,
++    server: null,
++    sourcePath: null,
++    publicModuleId: options.moduleId ?? DEFAULT_MODULE_ID,
++    resolvedModuleId: `${RESOLVED_ID_PREFIX}${options.moduleId ?? DEFAULT_MODULE_ID}`,
++    cachedSnapshot: null,
++    stopWatchingSource: null,
++  }
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+     name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++    enforce: 'pre',
++    configResolved(config) {
++      state.config = config
++      state.sourcePath = resolveSourcePath(options.source, config.root)
++    },
++    configureServer(server) {
++      state.server = server
++      if (state.sourcePath) {
++        server.watcher.add(state.sourcePath)
++        attachSourceWatcher(state)
++      }
++    },
++    async buildStart() {
++      const sourcePath = getSourcePath(state)
++      this.addWatchFile(sourcePath)
++      await readSnapshot(state, options)
++    },
++    resolveId(id) {
++      if (id === state.publicModuleId) {
++        return state.resolvedModuleId
++      }
++      return null
++    },
++    async load(id) {
++      if (id !== state.resolvedModuleId) {
++        return null
++      }
++
++      const snapshot = await readSnapshot(state, options)
++      return {
++        code: createModuleCode(snapshot.publicFlags),
++        map: createModuleMap(state.publicModuleId, getSourcePath(state), snapshot.sourceText),
++      }
++    },
++    watchChange(id) {
++      if (state.sourcePath && sameFilePath(id, state.sourcePath)) {
++        state.cachedSnapshot = null
++      }
++    },
++    handleHotUpdate(ctx) {
++      if (!state.sourcePath || !sameFilePath(ctx.file, state.sourcePath)) {
++        return
++      }
++
++      state.cachedSnapshot = null
++      return invalidateVirtualModules(state)
++    },
++    buildEnd() {
++      state.stopWatchingSource?.()
++      state.stopWatchingSource = null
+     },
+   }
+ }
++
++function getSourcePath(state: PluginState): string {
++  if (!state.sourcePath) {
++    throw createDiagnostic(
++      'The plugin was used before Vite resolved the source path.',
++      'Pass the plugin through Vite config instead of calling its hooks directly.',
++    )
++  }
++  return state.sourcePath
++}
++
++function resolveSourcePath(source: string | URL, root: string): string {
++  if (source instanceof URL) {
++    if (source.protocol !== 'file:') {
++      throw createDiagnostic(
++        `Unsupported source URL protocol "${source.protocol}".`,
++        'Use a file URL such as new URL("./flags.json", import.meta.url).',
++      )
++    }
++    return path.resolve(fileURLToPath(source))
++  }
++
++  if (path.isAbsolute(source)) {
++    return path.resolve(source)
++  }
++
++  return path.resolve(root, source)
++}
++
++async function readSnapshot<TExpose extends string>(
++  state: PluginState,
++  options: FeatureFlagsOptions<TExpose>,
++): Promise<FlagsSnapshot> {
++  const sourcePath = getSourcePath(state)
++  validateExposeList(options.expose, sourcePath)
++
++  const metadata = await stat(sourcePath).catch((error: unknown) => {
++    throw createDiagnostic(
++      `Cannot read feature flag source at ${sourcePath}.`,
++      'Ensure the file exists and the Vite process has read access.',
++      error,
++    )
++  })
++
++  if (state.cachedSnapshot && state.cachedSnapshot.mtimeMs === metadata.mtimeMs) {
++    return state.cachedSnapshot
++  }
++
++  const sourceText = await readFile(sourcePath, 'utf8').catch((error: unknown) => {
++    throw createDiagnostic(
++      `Cannot load feature flag source at ${sourcePath}.`,
++      'Ensure the file exists and contains UTF-8 encoded JSON.',
++      error,
++    )
++  })
++
++  const parsed = parseFlagsFile(sourceText, sourcePath)
++  const publicFlags = pickExposedFlags(parsed, options.expose, sourcePath)
++  const snapshot: FlagsSnapshot = {
++    mtimeMs: metadata.mtimeMs,
++    sourceText,
++    publicFlags,
++  }
++
++  state.cachedSnapshot = snapshot
++  return snapshot
++}
++
++function parseFlagsFile(sourceText: string, sourcePath: string): FeatureFlagRecord {
++  const parsed = JSON.parse(sourceText) as unknown
++
++  if (!isPlainRecord(parsed)) {
++    throw createDiagnostic(
++      `Expected ${sourcePath} to contain a top-level JSON object.`,
++      'Store feature flags as a flat object whose values are boolean, number, or string.',
++    )
++  }
++
++  return parsed
++}
++
++function pickExposedFlags<TExpose extends string>(
++  allFlags: FeatureFlagRecord,
++  expose: readonly TExpose[],
++  sourcePath: string,
++): FeatureFlagRecord {
++  const publicFlags: FeatureFlagRecord = {}
++
++  for (const key of expose) {
++    if (!Object.prototype.hasOwnProperty.call(allFlags, key)) {
++      throw createDiagnostic(
++        `Cannot expose "${key}" because it is missing from ${sourcePath}.`,
++        'Update the "expose" list or add the flag to the source JSON file.',
++      )
++    }
++
++    const value = allFlags[key]
++    if (!isFeatureFlagValue(value)) {
++      throw createDiagnostic(
++        `Flag "${key}" in ${sourcePath} is not serializable as a public feature flag.`,
++        'Only boolean, number, and string values can cross into the client bundle.',
++      )
++    }
++
++    publicFlags[key] = value
++  }
++
++  return publicFlags
++}
++
++function validateExposeList(expose: readonly string[], sourcePath: string): void {
++  const seen = new Set<string>()
++  for (const key of expose) {
++    if (seen.has(key)) {
++      throw createDiagnostic(
++        `The "expose" list contains "${key}" more than once for ${sourcePath}.`,
++        'Remove duplicate keys so cache invalidation and diagnostics stay deterministic.',
++      )
++    }
++    seen.add(key)
++  }
++}
++
++function createModuleCode(flags: FeatureFlagRecord): string {
++  const serialized = JSON.stringify(flags, null, 2)
++  return [
++    `const flags = Object.freeze(${serialized})`,
++    'export { flags }',
++    'export default flags',
++  ].join('\n')
++}
++
++function createModuleMap(moduleId: string, sourcePath: string, sourceText: string) {
++  return {
++    version: 3 as const,
++    file: moduleId,
++    sources: [normalizeForSourceMap(sourcePath)],
++    sourcesContent: [sourceText],
++    names: [],
++    mappings: '',
++  }
++}
++
++function normalizeForSourceMap(filePath: string): string {
++  return filePath.split(path.sep).join('/')
++}
++
++function invalidateVirtualModules(state: PluginState): ModuleNode[] {
++  const server = state.server
++  if (!server) {
++    return []
++  }
++
++  const modules = [
++    server.moduleGraph.getModuleById(state.publicModuleId),
++    server.moduleGraph.getModuleById(state.resolvedModuleId),
++  ].filter((module): module is ModuleNode => module != null)
++
++  for (const module of modules) {
++    server.moduleGraph.invalidateModule(module)
++  }
++
++  return modules
++}
++
++function attachSourceWatcher(state: PluginState): void {
++  const sourcePath = getSourcePath(state)
++  state.stopWatchingSource?.()
++
++  const onSourceChange = () => {
++    state.cachedSnapshot = null
++    invalidateVirtualModules(state)
++    state.server?.watcher.emit('change', sourcePath)
++  }
++
++  watchFile(sourcePath, { interval: 100 }, (current, previous) => {
++    if (current.mtimeMs === previous.mtimeMs) {
++      return
++    }
++    onSourceChange()
++  })
++
++  const closeServer = state.server?.close.bind(state.server)
++  if (closeServer) {
++    state.server!.close = async () => {
++      state.stopWatchingSource?.()
++      state.stopWatchingSource = null
++      await closeServer()
++    }
++  }
++
++  state.stopWatchingSource = () => {
++    unwatchFile(sourcePath)
++  }
++}
++
++function sameFilePath(left: string, right: string): boolean {
++  return path.resolve(left) === path.resolve(right)
++}
++
++function isPlainRecord(value: unknown): value is FeatureFlagRecord {
++  return typeof value === 'object' && value != null && !Array.isArray(value)
++}
++
++function isFeatureFlagValue(value: unknown): value is FeatureFlagValue {
++  return (
++    typeof value === 'boolean' ||
++    typeof value === 'number' ||
++    typeof value === 'string'
++  )
++}
++
++function createDiagnostic(message: string, remediation: string, cause?: unknown): Error {
++  const details = cause instanceof Error && cause.message ? ` Cause: ${cause.message}` : ''
++  return new Error(`[feature-flags] ${message} ${remediation}${details}`)
++}
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..1b701c1 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,6 @@
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
+-  export const flags: Readonly<Record<string, FeatureFlagValue>>
++  export interface FeatureFlagsShape {}
++
++  export const flags: Readonly<FeatureFlagsShape>
++  export default flags
+ }
+diff --git a/scripts/check-package.mjs b/scripts/check-package.mjs
+index 05a131b..49f5efe 100644
+--- a/scripts/check-package.mjs
++++ b/scripts/check-package.mjs
+@@ -1,15 +1,22 @@
+ import assert from 'node:assert/strict'
+ import { execFile } from 'node:child_process'
++import { fileURLToPath } from 'node:url'
+ import { promisify } from 'node:util'
+ 
+ const run = promisify(execFile)
++const cache = fileURLToPath(new URL('../.npm-cache/', import.meta.url))
+ const { stdout } = await run('npm', [
+   'pack',
+   '--dry-run',
+   '--json',
+   '--workspace',
+   '@frontend-architect-eval/feature-flags',
+-])
++], {
++  env: {
++    ...process.env,
++    npm_config_cache: cache,
++  },
++})
+ const [manifest] = JSON.parse(stdout)
+ const files = new Set(manifest.files.map(({ path }) => path))
+ 
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 21 packages, and audited 24 packages in 993ms
+
+8 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run build:plugin && npm run typecheck && npm run test:build && npm run test:dev && npm run test:diagnostics && npm run test:package
+
+
+> build:plugin
+> npm run build --workspace @frontend-architect-eval/feature-flags
+
+
+> @frontend-architect-eval/feature-flags@0.0.0 build
+> tsc -p tsconfig.build.json && node scripts/copy-static.mjs
+
+
+> typecheck
+> tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p examples/consumer/tsconfig.json --noEmit
+
+
+> test:build
+> vite build --config examples/consumer/vite.config.ts && node scripts/check-build.mjs
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 6 modules transformed.
+rendering chunks...
+computing gzip size...
+examples/consumer/dist/index.html                0.33 kB │ gzip: 0.23 kB
+examples/consumer/dist/assets/index-DWVt8pmn.js  0.81 kB │ gzip: 0.46 kB
+
+✓ built in 19ms
+
+> test:dev
+> node scripts/check-dev.mjs
+
+
+> test:diagnostics
+> node scripts/check-diagnostics.mjs
+
+
+> test:package
+> node scripts/check-package.mjs
+

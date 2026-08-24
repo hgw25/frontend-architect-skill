@@ -1,0 +1,242 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: optimistic-profile-update
+request: 保持现有 React 和 TypeScript 技术栈，为下面的资料编辑功能给出可编译的最小修改。 用户保存后可以立即看到新名称；请求失败必须恢复权威值并显示可重试错误；快速重复 提交不能让旧响应覆盖新结果。同步更新类型、API 边界和最有价值的行为测试，不要留下 伪代码或 TODO。
+artifact: 使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或 删除已有公开 API。
+failure_rules: ["只展示核心 hook 或 reducer 片段而没有完整调用关系", "吞掉错误或让失败后的乐观值继续伪装成已保存", "使用 any 或类型断言掩盖未验证响应"]
+
+RESPONSE:
+已完成最小可编译修改，保留了现有 React + TypeScript 技术栈和 `updateProfile(displayName): Promise<Profile>` 公开 API。
+
+关键改动在于把资料编辑的显示逻辑收敛成“权威值 + 最新一次乐观提交”模型：[`src/ProfileForm.tsx`](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-j4dp1qxx/src/ProfileForm.tsx) 现在会在提交后立刻显示新名称；如果最新请求失败，会回退到最近一次已确认的权威资料并显示 `Save failed. Please retry.`；旧请求即使晚到，也只会在它仍是最新已确认提交时更新权威值，不能覆盖更晚提交的结果。[`src/api.ts`](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-j4dp1qxx/src/api.ts) 补上了 HTTP 状态和响应 shape 的运行时校验，非法响应会按失败路径处理。
+
+测试也同步更新了：[`src/ProfileForm.test.tsx`](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-j4dp1qxx/src/ProfileForm.test.tsx) 现在覆盖了乐观显示、非法响应回滚、最新提交失败时回退到先前确认值，以及旧成功响应晚到时不覆盖新结果这几个最有价值的行为。
+
+已验证：
+- `npm run typecheck`
+- `npm test`
+
+DIFF:
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 6ef4411..e741df0 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,14 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { act, render, screen } from '@testing-library/react'
++import { act, cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -115,3 +116,51 @@ test('rolls back to an older confirmed response when the latest overlapping save
+     'Grace',
+   )
+ })
++
++test('keeps the latest confirmed name when an older overlapping save resolves last', async () => {
++  const requests: Array<{ resolve: (response: Response) => void }> = []
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(
++      () =>
++        new Promise<Response>((resolve) => {
++          requests.push({ resolve })
++        }),
++    ),
++  )
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Lin')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  await act(async () => {
++    requests[1]?.resolve(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Lin', version: 3 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  })
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++
++  await act(async () => {
++    requests[0]?.resolve(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  })
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..79b8793 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,17 +1,44 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
++  const [authoritativeProfile, setAuthoritativeProfile] = useState(profile)
+   const [displayName, setDisplayName] = useState(profile.displayName)
+-  const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [errorMessage, setErrorMessage] = useState<string | null>(null)
++  const [pendingName, setPendingName] = useState<string | null>(null)
++  const latestSubmissionIdRef = useRef(0)
++  const latestConfirmedSubmissionIdRef = useRef(0)
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++
++    const submissionId = latestSubmissionIdRef.current + 1
++    latestSubmissionIdRef.current = submissionId
++    setPendingName(displayName)
++    setErrorMessage(null)
++
++    try {
++      const updatedProfile = await updateProfile(displayName)
++
++      if (submissionId > latestConfirmedSubmissionIdRef.current) {
++        latestConfirmedSubmissionIdRef.current = submissionId
++        setAuthoritativeProfile(updatedProfile)
++      }
++
++      if (submissionId === latestSubmissionIdRef.current) {
++        setPendingName(null)
++      }
++    } catch {
++      if (submissionId === latestSubmissionIdRef.current) {
++        setPendingName(null)
++        setErrorMessage('Save failed. Please retry.')
++      }
++    }
+   }
+ 
++  const visibleName = pendingName ?? authoritativeProfile.displayName
++
+   return (
+     <form onSubmit={handleSubmit}>
+       <p aria-label="Current profile name">{visibleName}</p>
+@@ -19,10 +46,14 @@ export function ProfileForm({ profile }: { profile: Profile }) {
+         Display name
+         <input
+           value={displayName}
+-          onChange={(event) => setDisplayName(event.target.value)}
++          onChange={(event) => {
++            setDisplayName(event.target.value)
++            setErrorMessage(null)
++          }}
+         />
+       </label>
+       <button>Save</button>
++      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+     </form>
+   )
+ }
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..c79ed23 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,20 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const candidate = value as Record<string, unknown>
++
++  return (
++    typeof candidate.id === 'string' &&
++    typeof candidate.displayName === 'string' &&
++    typeof candidate.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +25,15 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error('Profile update failed')
++  }
++
++  const payload: unknown = await response.json()
++
++  if (!isProfile(payload)) {
++    throw new Error('Invalid profile response')
++  }
++
++  return payload
+ }
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 118 packages, and audited 119 packages in 1s
+
+25 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run typecheck && npm test
+
+
+> typecheck
+> tsc --noEmit
+
+
+> test
+> vitest run
+
+
+ RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-j4dp1qxx
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  18:48:00
+   Duration  447ms (transform 16ms, setup 0ms, import 72ms, tests 195ms, environment 120ms)
+

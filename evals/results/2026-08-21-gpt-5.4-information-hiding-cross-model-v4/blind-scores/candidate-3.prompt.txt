@@ -1,0 +1,667 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 按平台、项目能力、局部组合、抽象顺序选择 |
+| `module_boundaries` | 按文件类型机械分组 | 给出 feature 建议但内部边界含糊 | 在项目、功能和实现单元等适用尺度上，依据变化、所有权、信息隐藏、公开 API 和依赖方向设计，并知道何时停止拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `rendering_performance` | 套用与目标平台无关的优化技巧，或把减少 render 次数直接等同于用户性能 | 能识别重渲染、线程、布局或帧问题中的一部分，但缺少完整成本链或目标运行时证据 | 根据目标平台映射状态更新、调度、跨层传输、宿主更新、布局、绘制/栅格化与呈现边界，并用对应运行时的真实测量定位和验证 |
+| `security_trust` | 信任客户端或把验证等同安全 | 泛泛提醒安全 | 追踪不可信数据到 sink，在服务端执行授权，保护秘密并给出匹配威胁的验证 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证、泛泛而谈或用模拟层冒充真实边界 | 建议运行工具但没有结果、环境或阈值 | 验证对应真实风险，记录实际结果与环境，并说明未验证部分；浏览器、宿主、产物或字段结论使用其真实边界证据 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+- 用 DOM 模拟器证明真实浏览器焦点、水合、布局或视觉行为，或用单次实验室分数证明真实用户性能。
+- 把浏览器渲染管线、旧版跨端 Bridge、固定 16ms 帧预算或某个小程序宿主限制当作所有平台和版本的通用事实。
+
+
+CASE
+id: vite-feature-flags-plugin
+request: 请评审并重构下面的 Vite 插件原型，使它可以作为公司前端基建包发布。消费者应从 virtual:feature-flags 导入类型化 flags；插件需要在 dev、build 和 HMR 下行为一致， 配置错误要有可执行诊断，不能把服务端秘密带入客户端，并需要说明公共类型、包导出、 source map、缓存、集成测试和版本演进。请给出完整关键代码而不是只有架构图。
+artifact: export function featureFlags(flags: Record<string, unknown>) {
+  return {
+    name: 'feature-flags',
+    transform(code: string) {
+      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
+    },
+  }
+}
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "infrastructure_design", "developer_experience", "compatibility_evolution", "implementation_integrity", "runtime_delivery", "security_trust", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+已把原型重构成可发布的 Vite 前端基建包实现，核心不再做字符串替换，而是通过 `virtual:feature-flags` 提供统一的 dev/build/HMR 语义、生成消费者声明文件，并把未暴露的服务端字段挡在客户端外。[packages/plugin/src/index.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-b8mq8e98/packages/plugin/src/index.ts:1) 现在负责 JSON 读取、配置校验、公开子集过滤、声明生成、缓存和失效；[packages/plugin/src/virtual.d.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-b8mq8e98/packages/plugin/src/virtual.d.ts:1) 提供包内 ambient 类型；[examples/consumer/src/feature-flags.generated.d.ts](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-b8mq8e98/examples/consumer/src/feature-flags.generated.d.ts:1) 展示了消费者拿到的类型化 flags 结果。
+
+补齐的发布面内容放在 [packages/plugin/README.md](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-b8mq8e98/packages/plugin/README.md:1)，包含公共类型、包导出、source map 与 secrets 边界、缓存策略、集成验证和 SemVer 演进约束。测试侧我强化了 dev/HMR 与打包验证：[scripts/check-dev.mjs](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-b8mq8e98/scripts/check-dev.mjs:1) 覆盖声明再生成与运行时更新，[scripts/check-package.mjs](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-vite-feature-flags-plugin-candidate-b8mq8e98/scripts/check-package.mjs:1) 验证 packed artifact，并规避了本机 npm cache 权限问题。
+
+已运行 `npm run check`，通过。
+
+DIFF:
+diff --git a/examples/consumer/src/feature-flags.generated.d.ts b/examples/consumer/src/feature-flags.generated.d.ts
+new file mode 100644
+index 0000000..6800ebc
+--- /dev/null
++++ b/examples/consumer/src/feature-flags.generated.d.ts
+@@ -0,0 +1,6 @@
++declare module 'virtual:feature-flags' {
++  export const flags: {
++    readonly checkoutV2: boolean
++    readonly theme: string
++  }
++}
+diff --git a/examples/consumer/tsconfig.json b/examples/consumer/tsconfig.json
+index 98526f3..69e6f47 100644
+--- a/examples/consumer/tsconfig.json
++++ b/examples/consumer/tsconfig.json
+@@ -4,8 +4,7 @@
+     "module": "ESNext",
+     "moduleResolution": "Bundler",
+     "strict": true,
+-    "noEmit": true,
+-    "types": ["@frontend-architect-eval/feature-flags/virtual"]
++    "noEmit": true
+   },
+-  "include": ["src/**/*.ts", "vite.config.ts"]
++  "include": ["src/**/*.ts", "src/**/*.d.ts", "vite.config.ts"]
+ }
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..5e07c38
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,53 @@
++# `@frontend-architect-eval/feature-flags`
++
++Vite plugin that exposes a client-safe subset of JSON feature flags through
++`virtual:feature-flags`.
++
++## Public contract
++
++- `featureFlags(options)` reads a JSON file, validates the public keys listed in
++  `options.expose`, and exposes them to both dev and build through the same
++  virtual module.
++- `FeatureFlagPrimitive`, `FeatureFlagsShape`, and `FeatureFlagsOptions` are the
++  supported public types from the package root.
++- `virtual:feature-flags` exports a readonly `flags` object.
++
++## Generated consumer types
++
++The plugin writes `src/feature-flags.generated.d.ts` by default. Consumers keep
++that file in `tsconfig` includes so `virtual:feature-flags` stays typed in the
++editor and in CI.
++
++## Package exports
++
++- `.` exposes the runtime plugin and root types.
++- `./virtual` exposes the ambient declaration for `virtual:feature-flags`.
++
++Internal helpers stay private to preserve room for implementation changes.
++
++## Source maps and secrets
++
++The client module is generated from the filtered public subset only. Unexposed
++values never enter the virtual module code path, so they do not leak into
++bundles or source maps through `sourcesContent`.
++
++## Cache and invalidation
++
++The plugin caches parsed output by source content and `expose` list. When the
++source file changes, it clears the cache, regenerates the declaration, and
++invalidates the virtual module so HMR and SSR reload see the same flags.
++
++## Verification
++
++- package build output and packed files
++- example app type-checking
++- production build artifact inspection
++- dev server SSR/HMR reloading
++- configuration diagnostics
++
++## Versioning
++
++- additive flags or new optional plugin options: minor
++- stronger validation, changed generated types, renamed exports, or changed
++  virtual module behavior: major
++- implementation-only fixes that preserve the public contract: patch
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..fe148b7 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,325 @@
+-import type { Plugin } from 'vite'
++import { watch } from 'node:fs'
++import type { FSWatcher } from 'node:fs'
++import { mkdir, readFile, writeFile } from 'node:fs/promises'
++import path from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++import type { ModuleNode, Plugin, ResolvedConfig, ViteDevServer } from 'vite'
++import { normalizePath } from 'vite'
++
++export type FeatureFlagPrimitive = boolean | number | string | null
++export interface FeatureFlagsShape extends Record<string, FeatureFlagPrimitive> {}
++
++export interface FeatureFlagsOptions<T extends FeatureFlagsShape = FeatureFlagsShape> {
++  source: string | URL
++  expose: readonly (Extract<keyof T, string>)[]
++  declarationPath?: string
++}
++
++const PLUGIN_NAME = 'feature-flags'
++const VIRTUAL_MODULE_ID = 'virtual:feature-flags'
++const RESOLVED_VIRTUAL_MODULE_ID = '\0virtual:feature-flags'
++const DEFAULT_DECLARATION_PATH = 'src/feature-flags.generated.d.ts'
++const PACKAGE_NAME = '@frontend-architect-eval/feature-flags'
++
++type FeatureFlagsSnapshot = {
++  declarationCode: string
++  filteredFlags: FeatureFlagsShape
++  moduleCode: string
++}
++
++export function featureFlags<T extends FeatureFlagsShape = FeatureFlagsShape>(
++  options: FeatureFlagsOptions<T>,
++): Plugin {
++  let config: ResolvedConfig | null = null
++  let server: ViteDevServer | null = null
++  let cachedKey: string | null = null
++  let cachedSnapshot: FeatureFlagsSnapshot | null = null
++  let fileWatcher: FSWatcher | null = null
++  let refreshPromise: Promise<void> | null = null
++  let sourcePath = ''
++  let declarationPath = ''
++
++  function resolveSourcePath(): string {
++    if (options.source instanceof URL) {
++      return normalizePath(fileURLToPath(options.source))
++    }
++
++    const source = options.source.startsWith('file:')
++      ? fileURLToPath(new URL(options.source))
++      : path.resolve(config?.root ?? process.cwd(), options.source)
++
++    return normalizePath(source)
++  }
++
++  function resolveDeclarationPath(): string {
++    const target = options.declarationPath ?? DEFAULT_DECLARATION_PATH
++
++    if (path.isAbsolute(target)) {
++      return normalizePath(target)
++    }
++
++    return normalizePath(path.resolve(config?.root ?? process.cwd(), target))
++  }
++
++  async function readSnapshot(): Promise<FeatureFlagsSnapshot> {
++    const rawSource = await readFile(sourcePath, 'utf8').catch((error: unknown) => {
++      throw createDiagnostic(
++        `Cannot read feature flag source "${sourcePath}".`,
++        `Update the "source" option to point at a readable JSON file.`,
++        error,
++      )
++    })
++    const cacheKey = JSON.stringify([sourcePath, declarationPath, [...options.expose], rawSource])
++
++    if (cacheKey === cachedKey && cachedSnapshot) {
++      return cachedSnapshot
++    }
++
++    const parsed = parseFeatureFlagSource(rawSource, sourcePath)
++    const filteredFlags = selectExposedFlags(parsed, options.expose, sourcePath)
++    const snapshot = {
++      declarationCode: createDeclarationCode(filteredFlags),
++      filteredFlags,
++      moduleCode: createVirtualModuleCode(filteredFlags),
++    }
++
++    cachedKey = cacheKey
++    cachedSnapshot = snapshot
++    return snapshot
++  }
++
++  async function writeDeclaration(snapshot: FeatureFlagsSnapshot): Promise<void> {
++    await mkdir(path.dirname(declarationPath), { recursive: true })
++
++    const current = await readFile(declarationPath, 'utf8').catch(() => null)
++    if (current === snapshot.declarationCode) {
++      return
++    }
++
++    await writeFile(declarationPath, snapshot.declarationCode, 'utf8')
++  }
++
++  async function syncArtifacts(): Promise<FeatureFlagsSnapshot> {
++    const snapshot = await readSnapshot()
++    await writeDeclaration(snapshot)
++    return snapshot
++  }
++
++  function invalidateVirtualModules(): ModuleNode[] {
++    if (!server) {
++      return []
++    }
++
++    const moduleIds = [VIRTUAL_MODULE_ID, RESOLVED_VIRTUAL_MODULE_ID]
++    const modules = moduleIds
++      .map((id) => server?.moduleGraph.getModuleById(id))
++      .filter((module): module is ModuleNode => module != null)
++
++    for (const module of modules) {
++      server.moduleGraph.invalidateModule(module)
++    }
++
++    return modules
++  }
++
++  function refreshFromSourceChange(): Promise<void> {
++    const refresh = async () => {
++      cachedKey = null
++      cachedSnapshot = null
++      await syncArtifacts()
++      invalidateVirtualModules()
++      server?.watcher.emit('change', sourcePath)
++    }
++
++    refreshPromise = (refreshPromise ?? Promise.resolve()).then(refresh, refresh)
++    return refreshPromise.finally(() => {
++      if (refreshPromise) {
++        refreshPromise = null
++      }
++    })
++  }
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+-    name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++    name: PLUGIN_NAME,
++    enforce: 'pre',
++    configResolved(resolvedConfig) {
++      config = resolvedConfig
++      sourcePath = resolveSourcePath()
++      declarationPath = resolveDeclarationPath()
++    },
++    async buildStart() {
++      if (!config) {
++        throw createDiagnostic(
++          'The Vite config was not resolved before buildStart.',
++          'This indicates Vite called the plugin out of order; retry with a standard Vite config pipeline.',
++        )
++      }
++
++      this.addWatchFile(sourcePath)
++      await syncArtifacts()
++    },
++    configureServer(configuredServer) {
++      server = configuredServer
++      configuredServer.watcher.add(sourcePath)
++      fileWatcher = watch(sourcePath, { persistent: false }, () => {
++        void refreshFromSourceChange()
++      })
++      configuredServer.watcher.once('close', () => {
++        fileWatcher?.close()
++        fileWatcher = null
++      })
++    },
++    resolveId(id) {
++      if (id === VIRTUAL_MODULE_ID) {
++        return RESOLVED_VIRTUAL_MODULE_ID
++      }
++      return null
++    },
++    async load(id) {
++      if (id !== RESOLVED_VIRTUAL_MODULE_ID) {
++        return null
++      }
++
++      const snapshot = await syncArtifacts()
++      return {
++        code: snapshot.moduleCode,
++        map: null,
++      }
++    },
++    async handleHotUpdate(context) {
++      if (normalizePath(context.file) !== sourcePath) {
++        return
++      }
++
++      await refreshFromSourceChange()
++      return invalidateVirtualModules()
+     },
++    watchChange(id) {
++      if (normalizePath(id) === sourcePath) {
++        cachedKey = null
++        cachedSnapshot = null
++      }
++    },
++  }
++}
++
++function parseFeatureFlagSource(rawSource: string, sourcePath: string): Record<string, unknown> {
++  let parsed: unknown
++
++  try {
++    parsed = JSON.parse(rawSource)
++  } catch (error) {
++    throw createDiagnostic(
++      `Cannot parse feature flag source "${sourcePath}" as JSON.`,
++      'Fix the JSON syntax or point the "source" option at a valid JSON file.',
++      error,
++    )
++  }
++
++  if (!isPlainRecord(parsed)) {
++    throw createDiagnostic(
++      `Feature flag source "${sourcePath}" must contain a top-level JSON object.`,
++      'Export a flat object whose values are booleans, numbers, strings, or null.',
++    )
++  }
++
++  return parsed
++}
++
++function selectExposedFlags(
++  source: Record<string, unknown>,
++  expose: readonly string[],
++  sourcePath: string,
++): FeatureFlagsShape {
++  if (expose.length === 0) {
++    throw createDiagnostic(
++      'The "expose" option must contain at least one public flag name.',
++      'Add the public flag keys you want the client bundle to receive.',
++    )
++  }
++
++  const missingFlags = expose.filter((name) => !(name in source))
++  if (missingFlags.length > 0) {
++    throw createDiagnostic(
++      `The "expose" list references missing flags in "${sourcePath}": ${missingFlags.join(', ')}.`,
++      `Available flags: ${Object.keys(source).sort().join(', ') || '(none)'}.`,
++    )
++  }
++
++  const filteredFlags: FeatureFlagsShape = {}
++
++  for (const flagName of expose) {
++    const value = source[flagName]
++
++    if (!isFeatureFlagPrimitive(value)) {
++      throw createDiagnostic(
++        `Flag "${flagName}" in "${sourcePath}" is not client-safe.`,
++        'Only booleans, numbers, strings, and null can be exposed through "virtual:feature-flags".',
++      )
++    }
++
++    filteredFlags[flagName] = value
++  }
++
++  return filteredFlags
++}
++
++function createVirtualModuleCode(flags: FeatureFlagsShape): string {
++  return [
++    `const flags = Object.freeze(${JSON.stringify(flags, null, 2)})`,
++    '',
++    'export { flags }',
++    '',
++  ].join('\n')
++}
++
++function createDeclarationCode(flags: FeatureFlagsShape): string {
++  const properties = Object.entries(flags)
++    .sort(([left], [right]) => left.localeCompare(right))
++    .map(([name, value]) => `    readonly ${formatPropertyName(name)}: ${mapDeclarationType(value)}`)
++    .join('\n')
++
++  return [
++    "declare module 'virtual:feature-flags' {",
++    '  export const flags: {',
++    properties || '    // no public flags',
++    '  }',
++    '}',
++    '',
++  ].join('\n')
++}
++
++function mapDeclarationType(value: FeatureFlagPrimitive): string {
++  if (value === null) {
++    return 'null'
++  }
++  switch (typeof value) {
++    case 'boolean':
++      return 'boolean'
++    case 'number':
++      return 'number'
++    default:
++      return 'string'
++  }
++}
++
++function formatPropertyName(name: string): string {
++  return /^[A-Za-z_$][\w$]*$/u.test(name) ? name : JSON.stringify(name)
++}
++
++function isPlainRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value)
++}
++
++function isFeatureFlagPrimitive(value: unknown): value is FeatureFlagPrimitive {
++  return value === null || ['boolean', 'number', 'string'].includes(typeof value)
++}
++
++function createDiagnostic(summary: string, detail: string, cause?: unknown): Error {
++  const message = [`[${PLUGIN_NAME}] ${summary}`, detail]
++  if (cause instanceof Error && cause.message) {
++    message.push(`Cause: ${cause.message}`)
+   }
++  return new Error(message.join('\n'))
+ }
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..ca2ba0a 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,3 @@
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
+-  export const flags: Readonly<Record<string, FeatureFlagValue>>
++  export const flags: Readonly<import('./index.js').FeatureFlagsShape>
+ }
+diff --git a/scripts/check-dev.mjs b/scripts/check-dev.mjs
+index a63d52b..4e6a9cb 100644
+--- a/scripts/check-dev.mjs
++++ b/scripts/check-dev.mjs
+@@ -7,7 +7,11 @@ import { createServer } from 'vite'
+ 
+ const root = fileURLToPath(new URL('../examples/consumer/', import.meta.url))
+ const source = fileURLToPath(new URL('../examples/consumer/flags.json', import.meta.url))
++const declaration = fileURLToPath(
++  new URL('../examples/consumer/src/feature-flags.generated.d.ts', import.meta.url),
++)
+ const original = await readFile(source, 'utf8')
++const originalFlags = JSON.parse(original)
+ const server = await createServer({
+   root,
+   configFile: false,
+@@ -18,13 +22,24 @@ const server = await createServer({
+ 
+ try {
+   const first = await server.ssrLoadModule('/src/flags.ts')
+-  assert.deepEqual(first.flags, { checkoutV2: true, theme: 'dark' })
++  assert.deepEqual(first.flags, {
++    checkoutV2: originalFlags.checkoutV2,
++    theme: originalFlags.theme,
++  })
++  const initialDeclaration = await readFile(declaration, 'utf8')
++  assert.match(initialDeclaration, /checkoutV2: boolean/)
++  assert.match(initialDeclaration, /theme: string/)
+ 
+   const changed = JSON.stringify({
+-    checkoutV2: false,
+-    theme: 'light',
++    ...originalFlags,
++    checkoutV2: !originalFlags.checkoutV2,
++    theme: originalFlags.theme === 'dark' ? 'light' : 'dark',
+     SERVER_TOKEN: 'server-token-for-eval',
+   })
++  const expectedFlags = {
++    checkoutV2: !originalFlags.checkoutV2,
++    theme: originalFlags.theme === 'dark' ? 'light' : 'dark',
++  }
+   const changeSeen = new Promise((resolve) => server.watcher.once('change', resolve))
+   await writeFile(source, changed)
+   await changeSeen
+@@ -37,8 +52,13 @@ try {
+     await new Promise((resolve) => setTimeout(resolve, 25))
+   } while (Date.now() < deadline)
+ 
+-  assert.deepEqual(updated.flags, { checkoutV2: false, theme: 'light' })
++  assert.deepEqual(updated.flags, expectedFlags)
++  assert.notDeepEqual(updated.flags, first.flags)
+   assert.doesNotMatch(JSON.stringify(updated.flags), /server-token-for-eval/)
++  const updatedDeclaration = await readFile(declaration, 'utf8')
++  assert.match(updatedDeclaration, /checkoutV2: boolean/)
++  assert.match(updatedDeclaration, /theme: string/)
++  assert.doesNotMatch(updatedDeclaration, /SERVER_TOKEN/)
+ } finally {
+   await writeFile(source, original)
+   await server.close()
+diff --git a/scripts/check-package.mjs b/scripts/check-package.mjs
+index 05a131b..d933f2d 100644
+--- a/scripts/check-package.mjs
++++ b/scripts/check-package.mjs
+@@ -1,19 +1,30 @@
+ import assert from 'node:assert/strict'
+ import { execFile } from 'node:child_process'
++import { mkdir } from 'node:fs/promises'
++import os from 'node:os'
++import path from 'node:path'
+ import { promisify } from 'node:util'
+ 
+ const run = promisify(execFile)
++const cacheDir = path.join(os.tmpdir(), 'feature-flags-npm-cache')
++await mkdir(cacheDir, { recursive: true })
+ const { stdout } = await run('npm', [
+   'pack',
+   '--dry-run',
+   '--json',
+   '--workspace',
+   '@frontend-architect-eval/feature-flags',
+-])
++], {
++  env: {
++    ...process.env,
++    npm_config_cache: cacheDir,
++  },
++})
+ const [manifest] = JSON.parse(stdout)
+ const files = new Set(manifest.files.map(({ path }) => path))
+ 
+ for (const expected of [
++  'dist/empty.js',
+   'dist/index.js',
+   'dist/index.js.map',
+   'dist/index.d.ts',
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 21 packages, and audited 24 packages in 1s
+
+8 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run build:plugin && npm run typecheck && npm run test:build && npm run test:dev && npm run test:diagnostics && npm run test:package
+
+
+> build:plugin
+> npm run build --workspace @frontend-architect-eval/feature-flags
+
+
+> @frontend-architect-eval/feature-flags@0.0.0 build
+> tsc -p tsconfig.build.json && node scripts/copy-static.mjs
+
+
+> typecheck
+> tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p examples/consumer/tsconfig.json --noEmit
+
+
+> test:build
+> vite build --config examples/consumer/vite.config.ts && node scripts/check-build.mjs
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 6 modules transformed.
+rendering chunks...
+computing gzip size...
+examples/consumer/dist/index.html                0.33 kB │ gzip: 0.23 kB
+examples/consumer/dist/assets/index-DWVt8pmn.js  0.86 kB │ gzip: 0.50 kB │ map: 0.39 kB
+
+✓ built in 20ms
+
+> test:dev
+> node scripts/check-dev.mjs
+
+
+> test:diagnostics
+> node scripts/check-diagnostics.mjs
+
+
+> test:package
+> node scripts/check-package.mjs
+

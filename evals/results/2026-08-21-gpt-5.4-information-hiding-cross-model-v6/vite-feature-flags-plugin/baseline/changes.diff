@@ -1,0 +1,492 @@
+diff --git a/examples/consumer/src/feature-flags.d.ts b/examples/consumer/src/feature-flags.d.ts
+new file mode 100644
+index 0000000..6f7d5ac
+--- /dev/null
++++ b/examples/consumer/src/feature-flags.d.ts
+@@ -0,0 +1,10 @@
++import '@frontend-architect-eval/feature-flags'
++
++declare module '@frontend-architect-eval/feature-flags' {
++  interface FeatureFlagsShape {
++    checkoutV2: boolean
++    theme: 'dark' | 'light'
++  }
++}
++
++export {}
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..5263336
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,82 @@
++# `@frontend-architect-eval/feature-flags`
++
++Vite plugin that exposes a typed `virtual:feature-flags` module backed by a JSON file. Only the allowlisted `expose` keys are emitted to browser bundles.
++
++## Public API
++
++```ts
++import { featureFlags } from '@frontend-architect-eval/feature-flags'
++
++export default {
++  plugins: [
++    featureFlags({
++      source: new URL('./flags.json', import.meta.url),
++      expose: ['checkoutV2', 'theme'],
++    }),
++  ],
++}
++```
++
++```ts
++import flags from 'virtual:feature-flags'
++```
++
++## Typing `virtual:feature-flags`
++
++Augment `FeatureFlagsShape` once in the consumer app:
++
++```ts
++declare module '@frontend-architect-eval/feature-flags' {
++  interface FeatureFlagsShape {
++    checkoutV2: boolean
++    theme: 'dark' | 'light'
++  }
++}
++```
++
++After augmentation, `virtual:feature-flags` exports `Readonly<FeatureFlagsShape>`.
++
++## Diagnostics
++
++The plugin fails fast with actionable errors when:
++
++- the source file is missing or invalid JSON;
++- `expose` contains duplicates;
++- an exposed flag is absent from the source file;
++- an exposed flag name looks like a secret such as `SERVER_TOKEN`.
++
++Each diagnostic includes the source file path and a concrete remediation.
++
++## Secrets and Source Maps
++
++- Only keys in `expose` are serialized into the virtual module.
++- Secret-looking keys are rejected before build or dev serve.
++- The generated source map embeds only the sanitized public payload, so private values do not leak through `.map` files.
++
++## Cache and HMR
++
++- The plugin caches the last raw file contents and skips re-parsing when the source is unchanged.
++- The source file is added to Vite's watcher.
++- On change, the plugin invalidates the virtual module and triggers a reload so dev and build always see the same public flag payload.
++
++## Package Exports
++
++- `@frontend-architect-eval/feature-flags`: plugin factory and public types.
++- `@frontend-architect-eval/feature-flags/virtual`: ambient declaration for `virtual:feature-flags`.
++
++The package publishes ESM plus declarations only. `vite` stays a peer dependency because the host app owns the Vite singleton and version range.
++
++## Integration Coverage
++
++This workspace validates:
++
++- production build output and client source maps;
++- dev-server reload behavior after editing the source file;
++- diagnostics for invalid `expose` configuration;
++- packed artifact exports and consumer installation.
++
++## Versioning Guidance
++
++- Additive flags or broader `FeatureFlagsShape` unions are minor releases.
++- Changing the virtual module name, removing exports, or tightening accepted config is a major release.
++- New diagnostics that reject previously accepted secret-like names should ship behind a documented deprecation window when upgrading existing consumers.
+diff --git a/packages/plugin/package.json b/packages/plugin/package.json
+index f5b6fe3..6849215 100644
+--- a/packages/plugin/package.json
++++ b/packages/plugin/package.json
+@@ -4,7 +4,8 @@
+   "private": true,
+   "type": "module",
+   "files": [
+-    "dist"
++    "dist",
++    "README.md"
+   ],
+   "exports": {
+     ".": {
+@@ -16,6 +17,7 @@
+       "import": "./dist/empty.js"
+     }
+   },
++  "sideEffects": false,
+   "scripts": {
+     "build": "tsc -p tsconfig.build.json && node scripts/copy-static.mjs"
+   },
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..d1c857f 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,343 @@
+-import type { Plugin } from 'vite'
++import { statSync } from 'node:fs'
++import { readFile, stat } from 'node:fs/promises'
++import { fileURLToPath } from 'node:url'
++
++import type { ModuleNode, Plugin, ViteDevServer } from 'vite'
++
++export type FeatureFlagPrimitive = boolean | number | string | null
++export type FeatureFlagRecord = Record<string, FeatureFlagPrimitive>
++
++export interface FeatureFlagsShape extends FeatureFlagRecord {}
++
++export interface FeatureFlagsOptions<FlagName extends string = string> {
++  source: string | URL
++  expose: readonly FlagName[]
++}
++
++const PLUGIN_NAME = 'feature-flags'
++const VIRTUAL_MODULE_ID = 'virtual:feature-flags'
++const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`
++const DEFAULT_SECRET_TOKENS = [
++  'token',
++  'secret',
++  'password',
++  'credential',
++  'private',
++  'apikey',
++  'api-key',
++  'accesskey',
++  'access-key',
++]
++
++interface LoadedFlags {
++  raw: string
++  publicFlags: FeatureFlagRecord
++}
++
++export function featureFlags<FlagName extends string>(
++  options: FeatureFlagsOptions<FlagName>,
++): Plugin {
++  let sourcePath = ''
++  let cachedFlags: LoadedFlags | undefined
++  let stopWatchingDevFile = () => {}
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+-    name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++    name: PLUGIN_NAME,
++
++    configResolved() {
++      sourcePath = normalizePath(resolveSourcePath(options.source))
++      validatePluginOptions(sourcePath, options.expose)
++    },
++
++    buildStart() {
++      this.addWatchFile(sourcePath)
++    },
++
++    configureServer(server) {
++      server.watcher.add(sourcePath)
++
++      stopWatchingDevFile()
++      let active = true
++      let checking = false
++      let lastKnownMtimeMs = getMtimeOrFallback(sourcePath)
++
++      const interval = setInterval(async () => {
++        if (!active || checking) {
++          return
++        }
++
++        checking = true
++
++        try {
++          const current = await stat(sourcePath)
++
++          if (lastKnownMtimeMs >= 0 && current.mtimeMs !== lastKnownMtimeMs) {
++            cachedFlags = undefined
++            invalidateFeatureFlagModule(server)
++            server.watcher.emit('change', sourcePath)
++            server.ws.send({ type: 'full-reload' })
++          }
++
++          lastKnownMtimeMs = current.mtimeMs
++        } finally {
++          checking = false
++        }
++      }, 50)
++
++      stopWatchingDevFile = () => {
++        active = false
++        clearInterval(interval)
++      }
++
++      const closeServer = server.close.bind(server)
++      server.close = async () => {
++        stopWatchingDevFile()
++        stopWatchingDevFile = () => {}
++        return closeServer()
++      }
++    },
++
++    resolveId(id) {
++      if (id === VIRTUAL_MODULE_ID) {
++        return RESOLVED_VIRTUAL_MODULE_ID
++      }
++
++      return undefined
++    },
++
++    async load(id) {
++      if (id !== RESOLVED_VIRTUAL_MODULE_ID) {
++        return undefined
++      }
++
++      const loadedFlags = await readResolvedFlags(sourcePath, options.expose, cachedFlags)
++      cachedFlags = loadedFlags
++
++      return {
++        code: createVirtualModule(loadedFlags.publicFlags),
++        map: createSourceMap(sourcePath, loadedFlags.publicFlags),
++      }
++    },
++
++    async handleHotUpdate(context) {
++      if (normalizePath(context.file) !== sourcePath) {
++        return undefined
++      }
++
++      cachedFlags = undefined
++      invalidateFeatureFlagModule(context.server)
++      context.server.ws.send({ type: 'full-reload' })
++
++      return []
+     },
+   }
+ }
++
++async function readResolvedFlags(
++  sourcePath: string,
++  expose: readonly string[],
++  cachedFlags: LoadedFlags | undefined,
++): Promise<LoadedFlags> {
++  const raw = await readFile(sourcePath, 'utf8')
++
++  if (cachedFlags && cachedFlags.raw === raw) {
++    return cachedFlags
++  }
++
++  const parsed = parseFlagsJson(raw, sourcePath)
++  const publicFlags: FeatureFlagRecord = {}
++
++  for (const flagName of expose) {
++    if (!Object.hasOwn(parsed, flagName)) {
++      throw createDiagnostic(
++        `Flag "${flagName}" is missing from ${sourcePath}.`,
++        [
++          'Add the flag to the source file or remove it from `expose`.',
++          `Configured expose list: ${expose.join(', ') || '(empty)'}.`,
++        ],
++      )
++    }
++
++    const flagValue = parsed[flagName]
++
++    if (isSensitiveFlagName(flagName)) {
++      throw createDiagnostic(
++        `Flag "${flagName}" looks like a server secret and cannot be exposed to browser code.`,
++        [
++          'Move the secret out of the feature flags file or rename it to a non-secret client flag.',
++          `Only expose public browser flags from ${sourcePath}.`,
++        ],
++      )
++    }
++
++    publicFlags[flagName] = flagValue as FeatureFlagPrimitive
++  }
++
++  return { raw, publicFlags }
++}
++
++function parseFlagsJson(raw: string, sourcePath: string): FeatureFlagRecord {
++  let parsed: unknown
++
++  try {
++    parsed = JSON.parse(raw) as unknown
++  } catch (error) {
++    throw createDiagnostic(
++      `Could not parse ${sourcePath} as JSON.`,
++      ['Fix the JSON syntax in the configured source file.'],
++      error,
++    )
++  }
++
++  if (!isPlainObject(parsed)) {
++    throw createDiagnostic(
++      `Expected ${sourcePath} to contain a top-level JSON object.`,
++      ['Change the file to an object like `{ "checkoutV2": true }`.'],
++    )
++  }
++
++  const flags: FeatureFlagRecord = {}
++
++  for (const [flagName, flagValue] of Object.entries(parsed)) {
++    if (!isFeatureFlagPrimitive(flagValue)) {
++      throw createDiagnostic(
++        `Flag "${flagName}" in ${sourcePath} must be a JSON primitive.`,
++        ['Use only string, number, boolean, or null values for exposed feature flags.'],
++      )
++    }
++
++    flags[flagName] = flagValue
++  }
++
++  return flags
++}
++
++function createVirtualModule(publicFlags: FeatureFlagRecord): string {
++  return [
++    `export const flags = Object.freeze(${JSON.stringify(publicFlags, null, 2)});`,
++    'export default flags;',
++  ].join('\n')
++}
++
++function createSourceMap(sourcePath: string, publicFlags: FeatureFlagRecord) {
++  return {
++    version: 3,
++    file: VIRTUAL_MODULE_ID,
++    sources: [sourcePath],
++    sourcesContent: [JSON.stringify(publicFlags, null, 2)],
++    names: [],
++    mappings: '',
++  }
++}
++
++function validatePluginOptions(sourcePath: string, expose: readonly string[]): void {
++  if (!sourcePath) {
++    throw createDiagnostic(
++      'Missing feature flags source path.',
++      ['Pass a file path or file URL in `featureFlags({ source })`.'],
++    )
++  }
++
++  const duplicates = findDuplicates(expose)
++
++  if (duplicates.length > 0) {
++    throw createDiagnostic(
++      `Duplicate flag names found in \`expose\`: ${duplicates.join(', ')}.`,
++      ['Remove duplicate names so each public flag is declared once.'],
++    )
++  }
++}
++
++function invalidateFeatureFlagModule(server: ViteDevServer): void {
++  const modules = getFeatureFlagModules(server)
++
++  if (modules.length === 0) {
++    server.moduleGraph.invalidateAll()
++    return
++  }
++
++  for (const module of modules) {
++    server.moduleGraph.invalidateModule(module)
++  }
++
++  server.moduleGraph.invalidateAll()
++}
++
++function getFeatureFlagModules(server: ViteDevServer): ModuleNode[] {
++  const modules = [
++    server.moduleGraph.getModuleById(RESOLVED_VIRTUAL_MODULE_ID),
++    server.moduleGraph.getModuleById(VIRTUAL_MODULE_ID),
++  ]
++
++  return modules.filter((module): module is ModuleNode => module != null)
++}
++
++function resolveSourcePath(source: string | URL): string {
++  if (source instanceof URL) {
++    return fileURLToPath(source)
++  }
++
++  return source
++}
++
++function normalizePath(path: string): string {
++  return path.replaceAll('\\', '/')
++}
++
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value != null && !Array.isArray(value)
++}
++
++function isFeatureFlagPrimitive(value: unknown): value is FeatureFlagPrimitive {
++  return (
++    value == null ||
++    typeof value === 'boolean' ||
++    typeof value === 'number' ||
++    typeof value === 'string'
++  )
++}
++
++function findDuplicates(values: readonly string[]): string[] {
++  const seen = new Set<string>()
++  const duplicates = new Set<string>()
++
++  for (const value of values) {
++    if (seen.has(value)) {
++      duplicates.add(value)
++      continue
++    }
++
++    seen.add(value)
++  }
++
++  return [...duplicates]
++}
++
++function isSensitiveFlagName(flagName: string): boolean {
++  const normalized = flagName
++    .replaceAll(/([a-z0-9])([A-Z])/g, '$1-$2')
++    .replaceAll(/[_\s]+/g, '-')
++    .toLowerCase()
++
++  return DEFAULT_SECRET_TOKENS.some((token) => normalized.split('-').includes(token))
++}
++
++function createDiagnostic(message: string, advice: string[], cause?: unknown): Error {
++  const error = new Error(
++    [`[${PLUGIN_NAME}] ${message}`, ...advice.map((item) => `- ${item}`)].join('\n'),
++  )
++
++  if (cause instanceof Error) {
++    error.cause = cause
++  }
++
++  return error
++}
++
++function getMtimeOrFallback(path: string): number {
++  try {
++    return statSync(path).mtimeMs
++  } catch {
++    return -1
++  }
++}
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..a9ae9ce 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,6 @@
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
+-  export const flags: Readonly<Record<string, FeatureFlagValue>>
++  import type { FeatureFlagsShape } from '@frontend-architect-eval/feature-flags'
++
++  export const flags: Readonly<FeatureFlagsShape>
++  export default flags
+ }

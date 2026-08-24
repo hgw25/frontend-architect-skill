@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "vite-feature-flags-plugin",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 1,
+            "reason": "识别了虚拟模块、dev/build/HMR、类型、诊断、安全、发布与测试等主要约束，但未明确现有消费者规模、支持矩阵和项目兼容规则。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 0,
+            "reason": "同时使用 Vite watcher 与原生 fs.watch，并额外触发 change 和 full-reload，形成重复监听、竞态与清理负担；未论证为何项目内建能力不足。"
+          },
+          {
+            "key": "infrastructure_design",
+            "score": 1,
+            "reason": "提供了插件入口、虚拟模块、子路径导出、文档和打包测试，但类型产物契约不完整：生成声明只扩展接口，仍依赖消费者显式加载 fallback ambient 类型，且其索引签名破坏“精确键”承诺。"
+          },
+          {
+            "key": "developer_experience",
+            "score": 1,
+            "reason": "配置错误包含路径和可执行修复动作，README 也覆盖基本用法；但普通消费者若未配置 types 子路径，生成声明没有 flags 导出，而配置 fallback 后未知键仍被索引签名接受，类型体验不稳定。"
+          },
+          {
+            "key": "compatibility_evolution",
+            "score": 1,
+            "reason": "说明了 0.x、1.0、minor 和 major 的大致规则，但没有 Vite/Node 支持矩阵、旧原型 API 的消费者影响、弃用迁移流程、发布验证门槛或回滚方案。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "主路径代码、类型、示例、诊断和测试能够构建通过，但存在声明合并不精确、默认写入消费者源码且不创建目录、重复 watcher、开发服务器 watcher 清理不可靠等契约和失败路径缺口。"
+          },
+          {
+            "key": "runtime_delivery",
+            "score": 1,
+            "reason": "说明并实现了进程内缓存、失效、虚拟模块序列化、build/dev/SSR/HMR 和 source map 边界；但重复监听与全量刷新削弱 HMR 一致性，空 mappings 的 map 也不能支撑“可用调试映射”的说法。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "客户端产物只从显式 expose 白名单选取 primitive 值，原始 JSON 不嵌入模块或 source map，并对疑似秘密键提供阻断性诊断，形成了清晰的服务端配置到客户端 sink 边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "提供了实际成功的安装、插件构建、类型检查、生产构建、开发服务器、诊断和 packed-package 消费验证；评估记录中的 npm run check 及全部子命令均为 EXIT 0。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 1,
+            "reason": "结果优先且文件、行为和验证说明清楚，但主要以完成声明呈现，没有披露生成声明、重复 watcher、source map 精度及兼容迁移方面的关键取舍和风险。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供 test:dev、check-build、check-package 等测试脚本内容，因此无法确认它们是否真实修改源文件并覆盖重复事件、失效竞态、浏览器 HMR 和 SSR 更新边界。",
+          "未提供 npm pack 的文件清单、临时消费者配置或其验证输出细节，无法判断是否覆盖未显式配置 compilerOptions.types 的常见消费路径。",
+          "没有真实浏览器或长期开发服务器关闭证据，无法验证 full reload、source map 调试质量以及原生 FSWatcher 的资源清理。"
+        ],
+        "normalized_score": 8.8,
+        "case_failures": [],
+        "verdict": "fail"
+      }
+    ]
+  }
+}

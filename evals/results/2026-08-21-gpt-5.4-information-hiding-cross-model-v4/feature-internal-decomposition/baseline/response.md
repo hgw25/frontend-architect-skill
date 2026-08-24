@@ -1,0 +1,140 @@
+我检查了工作区和 `HEAD`：当前仓库只有 `.git`，`git ls-tree --full-tree HEAD` 为空，提交 `1f5dd80` 也没有前端文件。因此我不能根据真实的 `features/checkout/CheckoutPage.tsx` 内部实现做“贴仓库”的拆分，只能基于你给出的已知职责边界给出一个可执行的内部划分方案；下面我会把假设说清楚，避免伪造仓库事实。
+
+**建议的内部划分**
+
+把 `CheckoutPage` 降级为“页面装配层”，只负责路由参数、页面级布局、把各子模块接起来。不要让它继续拥有草稿、价格、库存、支付 SDK、提交竞态这些状态。
+
+建议以“状态和副作用所有权”拆，不以 JSX 块或文件大小拆：
+
+1. `features/checkout/model/useCheckoutDraft`
+   公开 API：`{ draft, updateField, touchField, resetDraft, validation }`
+   所有权：地址、配送方式、发票、备注、用户输入校验这类纯表单状态。
+   副作用：仅本地持久化草稿时才允许 effect；否则保持纯前端状态。
+   不负责：价格、优惠券请求、支付初始化、提交。
+
+2. `features/checkout/model/useCheckoutPricing`
+   公开 API：`{ pricing, applyCouponLocally, removeCouponLocally, pricingStatus }`
+   输入：`draft`, `cart`, `inventorySnapshot`, `couponSelection`
+   所有权：可推导的价格视图模型，例如小计、运费、税、折扣、应付总额、禁用原因。
+   副作用：无，优先做纯计算或 thin selector。
+   不负责：发请求验证优惠券，不直接读 UI 状态。
+
+3. `features/checkout/model/useCouponRedemption`
+   公开 API：`{ couponState, applyCoupon(code), removeCoupon(), retryApply() }`
+   所有权：优惠券远程校验/领取/失败重试的请求状态。
+   副作用：调用 coupon service，请求取消，去重，只保留最后一次请求结果。
+   不负责：最终价格计算规则本身；它只产出“已验证优惠权益”。
+
+4. `features/checkout/model/useInventorySubscription`
+   公开 API：`{ inventorySnapshot, inventoryStatus, hasBlockingStockIssue }`
+   所有权：库存订阅、失效、重连、最新快照。
+   副作用：订阅外部库存源，清理订阅，处理页面卸载。
+   不负责：是否允许提交之外的业务决策；只暴露事实和阻塞标记。
+
+5. `features/checkout/model/usePaymentSession`
+   公开 API：`{ paymentMethods, selectedPaymentMethod, selectPaymentMethod, paymentReady, paymentError, confirmPayment }`
+   所有权：支付 SDK 生命周期，mount/unmount，支付方式切换，SDK readiness。
+   副作用：初始化 SDK、销毁实例、处理 SDK 事件。
+   不负责：订单提交编排；`confirmPayment` 应作为能力暴露给提交层。
+
+6. `features/checkout/model/useCheckoutSubmission`
+   公开 API：`{ submit, submitting, submitError, lastResult }`
+   输入：`draft`, `validatedCoupon`, `inventorySnapshot`, `confirmPayment`
+   所有权：最终提交事务、幂等、防重复提交、取消过时结果、提交前最后校验。
+   副作用：创建订单、触发支付确认、处理成功跳转所需结果。
+   不负责：页面 toast/UI 呈现。
+
+7. `features/checkout/components/*`
+   只放展示和局部交互：
+   `CheckoutFormSection`
+   `PriceSummaryCard`
+   `CouponPanel`
+   `InventoryNotice`
+   `PaymentMethodSection`
+   `SubmitBar`
+   这些组件接收明确 props，不直接发请求，不直接订阅 SDK。
+
+8. `features/checkout/services/*`
+   `checkoutApi.ts`: 创建订单、获取结算初始数据
+   `couponApi.ts`: 校验/应用优惠券
+   `inventoryGateway.ts`: 库存订阅适配器
+   `paymentSdkAdapter.ts`: 第三方支付 SDK 的 imperative 包装
+   原则：services 负责外部系统协议，不持有 React 状态。
+
+9. `features/checkout/utils/*`
+   只放纯函数：
+   `priceMath.ts`
+   `couponRules.ts`
+   `checkoutMappers.ts`
+   `checkoutAssertions.ts`
+   不要把 React hook、请求、订阅混进 utils。
+
+**依赖方向**
+
+保持单向依赖：
+
+`components` -> 依赖 `model` 暴露的数据和回调  
+`model` -> 依赖 `services` 和 `utils`  
+`services` -> 不依赖 React，不依赖 `components`  
+`utils` -> 不依赖 React，不依赖 service
+
+页面层只组合多个 model，不反向被 model 引用。  
+如果两个 hook 开始互相调用，说明边界错了，应该抽成更上层协调 hook，例如 `useCheckoutPageModel`，但它只编排，不重新拥有底层资源。
+
+**推荐公开 API 形态**
+
+公开 API 以“能力 + 状态快照”为主，不要暴露内部 reducer action 枚举给页面。
+例如：
+
+- `useCheckoutDraft()` 返回用户输入能力
+- `useCouponRedemption()` 返回远程优惠券状态机
+- `usePaymentSession()` 返回支付资源状态和确认能力
+- `useCheckoutSubmission()` 返回一次性事务入口
+
+这样页面知道“怎么用”，但不知道“内部怎么实现”。
+
+**状态与副作用所有权**
+
+几个关键约束：
+
+- 草稿是 authoritative source；价格是 derived state，不单独再存一份可编辑价格。
+- 优惠券“输入框内容”属于 draft/UI；“已验证通过的优惠券结果”属于 coupon hook。
+- 库存快照属于 inventory hook，不要复制到 page state。
+- 支付 SDK 实例只允许在 payment hook 内存在，禁止泄漏到 JSX 层。
+- 提交中的竞态由 submission hook 统一收口，不要每个按钮、每个请求各自做一套 `isLoading` 判断。
+
+**测试放置**
+
+按可观察契约放，不按文件机械镜像：
+
+- `utils`：同目录单测，测价格、优惠、映射纯函数。
+- `services`：适配器级测试，重点测协议转换、错误归一化。
+- `model`：hook 测试，测状态迁移、取消过时请求、订阅清理、重复提交保护。
+- `components`：只测关键呈现和交互，不测实现细节。
+- `CheckoutPage`：保留少量集成测试，覆盖 happy path、优惠失败、库存阻塞、支付未就绪、重复提交。
+
+最值钱的测试通常是：
+- 过时优惠券请求结果不会覆盖新结果
+- 库存变化会阻止提交
+- 支付 SDK 未 ready 时无法提交
+- 双击提交不会创建两笔订单
+- 价格展示永远来自同一套计算输入
+
+**什么时候停止继续拆**
+
+可以停在这里，当且仅当：
+
+- 每个模块只拥有一种主要变化原因
+- 每个 effect 都能明确回答“在同步哪个外部系统”
+- 页面层主要是在装配，而不是重新写业务规则
+- 没有两个模块同时声称自己拥有同一份事实
+- 新需求能落到现有某个边界内，而不是再次把逻辑塞回页面
+
+继续拆分通常是过度设计的信号：
+
+- 为了“看起来整洁”把只有一个消费者的逻辑拆成过多目录
+- 纯计算还没稳定就先抽成共享基础设施
+- 一个 hook 只是把另一个 hook 原样透传
+- component、hook、service 之间来回传十几个布尔值和 setter
+
+如果你把真实的 `CheckoutPage.tsx` 和 `features/checkout` 目录贴出来，我可以基于实际代码把这份方案收敛成更贴仓库的模块图和迁移顺序。

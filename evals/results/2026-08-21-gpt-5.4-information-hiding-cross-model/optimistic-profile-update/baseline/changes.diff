@@ -1,0 +1,196 @@
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 2ba023d..ca3e8df 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,14 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { render, screen } from '@testing-library/react'
++import { cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -66,3 +67,66 @@ test('restores the authoritative name when a successful response has an invalid
+   )
+   expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
+ })
++
++test('ignores stale save responses when a newer submission finishes first', async () => {
++  let resolveFirstRequest: ((response: Response) => void) | undefined
++  let resolveSecondRequest: ((response: Response) => void) | undefined
++  const fetchMock = vi
++    .fn<() => Promise<Response>>()
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveFirstRequest = resolve
++        }),
++    )
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveSecondRequest = resolve
++        }),
++    )
++  vi.stubGlobal('fetch', fetchMock)
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent(
++    'Grace',
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Marie')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent(
++    'Marie',
++  )
++
++  resolveSecondRequest?.(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Marie', version: 2 }),
++      { status: 200, headers: { 'content-type': 'application/json' } },
++    ),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Marie',
++  )
++
++  resolveFirstRequest?.(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Grace', version: 3 }),
++      { status: 200, headers: { 'content-type': 'application/json' } },
++    ),
++  )
++
++  await vi.waitFor(() => {
++    expect(screen.getByLabelText('Current profile name')).toHaveTextContent(
++      'Marie',
++    )
++  })
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..5aacec8 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,25 +1,58 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
++  const [authoritativeProfile, setAuthoritativeProfile] = useState(profile)
+   const [displayName, setDisplayName] = useState(profile.displayName)
+   const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [errorMessage, setErrorMessage] = useState('')
++  const latestSubmissionId = useRef(0)
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++    const nextDisplayName = displayName
++    const submissionId = latestSubmissionId.current + 1
++    latestSubmissionId.current = submissionId
++
++    setErrorMessage('')
++    setVisibleName(nextDisplayName)
++
++    try {
++      const updatedProfile = await updateProfile(nextDisplayName)
++
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setAuthoritativeProfile(updatedProfile)
++      setVisibleName(updatedProfile.displayName)
++      setDisplayName(updatedProfile.displayName)
++    } catch {
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setVisibleName(authoritativeProfile.displayName)
++      setDisplayName(authoritativeProfile.displayName)
++      setErrorMessage('Save failed. Please retry.')
++    }
+   }
+ 
+   return (
+     <form onSubmit={handleSubmit}>
+       <p aria-label="Current profile name">{visibleName}</p>
++      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+       <label>
+         Display name
+         <input
+           value={displayName}
+-          onChange={(event) => setDisplayName(event.target.value)}
++          onChange={(event) => {
++            setDisplayName(event.target.value)
++            if (errorMessage) {
++              setErrorMessage('')
++            }
++          }}
+         />
+       </label>
+       <button>Save</button>
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..bb1165c 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,20 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const candidate = value as Record<string, unknown>
++
++  return (
++    typeof candidate.id === 'string' &&
++    typeof candidate.displayName === 'string' &&
++    typeof candidate.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +25,15 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error('Profile update failed')
++  }
++
++  const payload: unknown = await response.json()
++
++  if (!isProfile(payload)) {
++    throw new Error('Profile response is invalid')
++  }
++
++  return payload
+ }

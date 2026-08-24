@@ -1,0 +1,299 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 按平台、项目能力、局部组合、抽象顺序选择 |
+| `module_boundaries` | 按文件类型机械分组 | 给出 feature 建议但内部边界含糊 | 在项目、功能和实现单元等适用尺度上，依据变化、所有权、信息隐藏、公开 API 和依赖方向设计，并知道何时停止拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `rendering_performance` | 套用与目标平台无关的优化技巧，或把减少 render 次数直接等同于用户性能 | 能识别重渲染、线程、布局或帧问题中的一部分，但缺少完整成本链或目标运行时证据 | 根据目标平台映射状态更新、调度、跨层传输、宿主更新、布局、绘制/栅格化与呈现边界，并用对应运行时的真实测量定位和验证 |
+| `security_trust` | 信任客户端或把验证等同安全 | 泛泛提醒安全 | 追踪不可信数据到 sink，在服务端执行授权，保护秘密并给出匹配威胁的验证 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证、泛泛而谈或用模拟层冒充真实边界 | 建议运行工具但没有结果、环境或阈值 | 验证对应真实风险，记录实际结果与环境，并说明未验证部分；浏览器、宿主、产物或字段结论使用其真实边界证据 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+- 用 DOM 模拟器证明真实浏览器焦点、水合、布局或视觉行为，或用单次实验室分数证明真实用户性能。
+- 把浏览器渲染管线、旧版跨端 Bridge、固定 16ms 帧预算或某个小程序宿主限制当作所有平台和版本的通用事实。
+
+
+CASE
+id: optimistic-profile-update
+request: 保持现有 React 和 TypeScript 技术栈，为下面的资料编辑功能给出可编译的最小修改。 用户保存后可以立即看到新名称；请求失败必须恢复权威值并显示可重试错误；快速重复 提交不能让旧响应覆盖新结果。同步更新类型、API 边界和最有价值的行为测试，不要留下 伪代码或 TODO。
+artifact: 使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或 删除已有公开 API。
+applicable_dimensions: ["requirements_context", "solution_complexity", "implementation_integrity", "correctness_boundary", "user_experience", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+已完成最小可编译修改，保留了现有 React + TypeScript 技术栈和 `updateProfile(displayName)` 公开 API。
+
+关键实现是把资料编辑拆成三个明确事实：输入草稿、权威资料、当前乐观展示。`[src/ProfileForm.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-y2u551_d/src/ProfileForm.tsx)` 现在会在保存时立即显示新名称；如果请求失败或响应结构无效，会回退到最后一个权威名称并显示 `Save failed. Please retry.`；同时用递增提交序号忽略过期响应，避免旧请求晚到时覆盖新结果。`[src/api.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-y2u551_d/src/api.ts)` 补了 API 边界校验，非 2xx 和非法 payload 都会明确抛错。
+
+测试也同步更新到了最有价值的可观察行为：保留了“保存中立即看到新名称”和“非法成功响应要回滚”，并新增“快速重复提交时旧响应不能覆盖新结果”。相关测试在 `[src/ProfileForm.test.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-y2u551_d/src/ProfileForm.test.tsx)`。
+
+已验证：`npm run check` 通过。
+
+DIFF:
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 2ba023d..6f45a40 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,14 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { render, screen } from '@testing-library/react'
++import { cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -66,3 +67,61 @@ test('restores the authoritative name when a successful response has an invalid
+   )
+   expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
+ })
++
++test('keeps the latest successful save when earlier requests resolve later', async () => {
++  let resolveFirstRequest: ((response: Response) => void) | undefined
++  let resolveSecondRequest: ((response: Response) => void) | undefined
++  const fetchMock = vi
++    .fn()
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveFirstRequest = resolve
++        }),
++    )
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveSecondRequest = resolve
++        }),
++    )
++  vi.stubGlobal('fetch', fetchMock)
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Lin')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++
++  resolveSecondRequest?.(
++    new Response(JSON.stringify({ id: 'p1', displayName: 'Lin', version: 3 }), {
++      status: 200,
++      headers: { 'content-type': 'application/json' },
++    }),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Lin',
++  )
++
++  resolveFirstRequest?.(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }),
++      { status: 200, headers: { 'content-type': 'application/json' } },
++    ),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Lin',
++  )
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..c77be5f 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,20 +1,50 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
++  const [authoritativeProfile, setAuthoritativeProfile] = useState(profile)
+   const [displayName, setDisplayName] = useState(profile.displayName)
+-  const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [optimisticName, setOptimisticName] = useState<string | null>(null)
++  const [errorMessage, setErrorMessage] = useState<string | null>(null)
++  const submitSequenceRef = useRef(0)
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++    const submittedName = displayName
++    const submitSequence = submitSequenceRef.current + 1
++    submitSequenceRef.current = submitSequence
++
++    setErrorMessage(null)
++    setOptimisticName(submittedName)
++
++    try {
++      const updatedProfile = await updateProfile(submittedName)
++
++      if (submitSequence !== submitSequenceRef.current) {
++        return
++      }
++
++      setAuthoritativeProfile(updatedProfile)
++      setDisplayName(updatedProfile.displayName)
++      setOptimisticName(null)
++    } catch {
++      if (submitSequence !== submitSequenceRef.current) {
++        return
++      }
++
++      setDisplayName(authoritativeProfile.displayName)
++      setOptimisticName(null)
++      setErrorMessage('Save failed. Please retry.')
++    }
+   }
+ 
++  const visibleName = optimisticName ?? authoritativeProfile.displayName
++
+   return (
+     <form onSubmit={handleSubmit}>
+       <p aria-label="Current profile name">{visibleName}</p>
++      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+       <label>
+         Display name
+         <input
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..3511177 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,20 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const candidate = value as Record<string, unknown>
++
++  return (
++    typeof candidate.id === 'string' &&
++    typeof candidate.displayName === 'string' &&
++    typeof candidate.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +25,15 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error(`Profile update failed with status ${response.status}`)
++  }
++
++  const payload: unknown = await response.json()
++
++  if (!isProfile(payload)) {
++    throw new Error('Profile update returned an invalid payload')
++  }
++
++  return payload
+ }
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 118 packages, and audited 119 packages in 1s
+
+25 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run typecheck && npm test
+
+
+> typecheck
+> tsc --noEmit
+
+
+> test
+> vitest run
+
+
+ RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-y2u551_d
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  18:14:29
+   Duration  486ms (transform 19ms, setup 0ms, import 84ms, tests 161ms, environment 177ms)
+

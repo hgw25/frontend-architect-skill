@@ -1,0 +1,431 @@
+diff --git a/examples/consumer/src/feature-flags.d.ts b/examples/consumer/src/feature-flags.d.ts
+new file mode 100644
+index 0000000..8597e69
+--- /dev/null
++++ b/examples/consumer/src/feature-flags.d.ts
+@@ -0,0 +1,4 @@
++interface FeatureFlagTypes {
++  checkoutV2: boolean
++  theme: 'dark' | 'light'
++}
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..5560bd0
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,49 @@
++# `@frontend-architect-eval/feature-flags`
++
++Typed public feature flags for Vite applications.
++
++## Public API
++
++```ts
++import { featureFlags } from '@frontend-architect-eval/feature-flags'
++```
++
++```ts
++import flags from 'virtual:feature-flags'
++```
++
++The plugin reads a JSON object, exposes only the allowlisted keys, and rejects
++secret-like names and non-primitive values before they reach client bundles.
++
++## Consumer typing
++
++Add the package's virtual types in `tsconfig.json`:
++
++```json
++{
++  "compilerOptions": {
++    "types": ["@frontend-architect-eval/feature-flags/virtual"]
++  }
++}
++```
++
++Augment the global registry to type `virtual:feature-flags`:
++
++```ts
++interface FeatureFlagTypes {
++  checkoutV2: boolean
++  theme: 'dark' | 'light'
++}
++```
++
++## Release notes
++
++- Public entry points: package root and `@frontend-architect-eval/feature-flags/virtual`
++- Source maps: generated client modules use empty source maps so source JSON and
++  secrets never reappear through `sourcesContent`
++- Caching: the plugin caches the last parsed source contents and invalidates the
++  virtual module on source changes during HMR
++- Testing: validate dev, build, diagnostics, and packed-artifact consumption in
++  CI before publishing
++- Versioning: additive flags and diagnostics are minor changes; changing virtual
++  module types, option semantics, or stricter validation is potentially breaking
+diff --git a/packages/plugin/package.json b/packages/plugin/package.json
+index f5b6fe3..d085bf0 100644
+--- a/packages/plugin/package.json
++++ b/packages/plugin/package.json
+@@ -1,11 +1,14 @@
+ {
+   "name": "@frontend-architect-eval/feature-flags",
+   "version": "0.0.0",
+-  "private": true,
++  "description": "Vite plugin that exposes typed public feature flags through virtual:feature-flags.",
+   "type": "module",
+   "files": [
+-    "dist"
++    "dist",
++    "README.md"
+   ],
++  "sideEffects": false,
++  "types": "./dist/index.d.ts",
+   "exports": {
+     ".": {
+       "types": "./dist/index.d.ts",
+@@ -14,6 +17,9 @@
+     "./virtual": {
+       "types": "./dist/virtual.d.ts",
+       "import": "./dist/empty.js"
++    },
++    "./package.json": {
++      "default": "./package.json"
+     }
+   },
+   "scripts": {
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..5980d13 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,231 @@
+-import type { Plugin } from 'vite'
++import { watch } from 'node:fs'
++import { readFile } from 'node:fs/promises'
++import { isAbsolute, resolve } from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++import type { HmrContext, Plugin, ResolvedConfig, ViteDevServer } from 'vite'
++
++export type FeatureFlagValue = boolean | number | string | null
++
++export interface FeatureFlagRegistry {
++  [key: string]: FeatureFlagValue
++}
++
++export type ResolvedFeatureFlagRegistry<TRegistry extends FeatureFlagRegistry> =
++  keyof TRegistry extends never ? Record<string, FeatureFlagValue> : TRegistry
++
++export type FeatureFlags<TRegistry extends FeatureFlagRegistry = FeatureFlagRegistry> = Readonly<
++  ResolvedFeatureFlagRegistry<TRegistry>
++>
++
++export interface FeatureFlagsOptions<TRegistry extends FeatureFlagRegistry = FeatureFlagRegistry> {
++  source: string | URL
++  expose: readonly (keyof TRegistry & string)[]
++}
++
++const PLUGIN_NAME = 'feature-flags'
++const VIRTUAL_MODULE_ID = 'virtual:feature-flags'
++const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`
++const EMPTY_MAP = {
++  version: 3 as const,
++  sources: [],
++  names: [],
++  mappings: '',
++  sourcesContent: [],
++}
++const SECRET_LIKE_KEY = /(secret|token|password|private[_-]?key|api[_-]?key)/i
++
++interface CachedModule {
++  code: string
++  flags: Record<string, FeatureFlagValue>
++  sourceText: string
++}
++
++function normalizeSourcePath(source: string | URL): string {
++  return source instanceof URL ? fileURLToPath(source) : source
++}
++
++function createDiagnostic(message: string, nextStep: string): Error {
++  return new Error(`[${PLUGIN_NAME}] ${message}\nFix: ${nextStep}`)
++}
++
++function describeJsonValue(value: unknown): string {
++  if (value === null) return 'null'
++  if (Array.isArray(value)) return 'array'
++  return typeof value
++}
++
++function isFeatureFlagValue(value: unknown): value is FeatureFlagValue {
++  return value === null || ['boolean', 'number', 'string'].includes(typeof value)
++}
++
++function validateOptions(sourcePath: string, expose: readonly string[]): void {
++  if (expose.length === 0) {
++    throw createDiagnostic(
++      `No public flags were configured for ${JSON.stringify(sourcePath)}.`,
++      'Pass at least one key in the "expose" option.',
++    )
++  }
++
++  const duplicates = expose.filter((key, index) => expose.indexOf(key) !== index)
++  if (duplicates.length > 0) {
++    throw createDiagnostic(
++      `Duplicate public flags were configured: ${duplicates.map((key) => JSON.stringify(key)).join(', ')}.`,
++      'Remove duplicate entries from the "expose" option.',
++    )
++  }
++}
++
++async function loadPublicFlags(
++  sourcePath: string,
++  expose: readonly string[],
++): Promise<CachedModule> {
++  const sourceText = await readFile(sourcePath, 'utf8')
++
++  let parsed: unknown
++  try {
++    parsed = JSON.parse(sourceText)
++  } catch (error) {
++    const detail = error instanceof Error ? error.message : String(error)
++    throw createDiagnostic(
++      `Could not parse JSON in ${JSON.stringify(sourcePath)}. ${detail}`,
++      'Fix the JSON syntax in the source file.',
++    )
++  }
++
++  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
++    throw createDiagnostic(
++      `${JSON.stringify(sourcePath)} must contain a JSON object at the top level.`,
++      'Change the file to an object whose keys are the available flags.',
++    )
++  }
++
++  const record = parsed as Record<string, unknown>
++  const flags: Record<string, FeatureFlagValue> = {}
++
++  for (const key of expose) {
++    if (!(key in record)) {
++      throw createDiagnostic(
++        `Configured public flag ${JSON.stringify(key)} does not exist in ${JSON.stringify(sourcePath)}.`,
++        `Add ${JSON.stringify(key)} to the source file or remove it from "expose".`,
++      )
++    }
++
++    if (SECRET_LIKE_KEY.test(key)) {
++      throw createDiagnostic(
++        `Refusing to expose ${JSON.stringify(key)} because its name looks secret-like.`,
++        `Keep ${JSON.stringify(key)} on the server and expose a non-sensitive derived flag instead.`,
++      )
++    }
++
++    const value = record[key]
++    if (!isFeatureFlagValue(value)) {
++      throw createDiagnostic(
++        `Public flag ${JSON.stringify(key)} in ${JSON.stringify(sourcePath)} must be a primitive JSON value, received ${describeJsonValue(value)}.`,
++        `Flatten ${JSON.stringify(key)} to a string, number, boolean, or null before exposing it.`,
++      )
++    }
++
++    flags[key] = value
++  }
++
++  const code = [
++    `export const flags = Object.freeze(${JSON.stringify(flags)});`,
++    'export default flags;',
++  ].join('\n')
++
++  return { code, flags, sourceText }
++}
++
++export function featureFlags<TRegistry extends FeatureFlagRegistry = FeatureFlagRegistry>(
++  options: FeatureFlagsOptions<TRegistry>,
++): Plugin {
++  const configuredSourcePath = normalizeSourcePath(options.source)
++  const expose = [...options.expose]
++  let config: ResolvedConfig | undefined
++  let server: ViteDevServer | undefined
++  let cachedModule: CachedModule | undefined
++  let sourceWatcher: ReturnType<typeof watch> | undefined
++  let sourcePath = configuredSourcePath
++
++  validateOptions(configuredSourcePath, expose)
++
++  async function getCachedModule(): Promise<CachedModule> {
++    const nextModule = await loadPublicFlags(sourcePath, expose)
++    if (cachedModule && cachedModule.sourceText === nextModule.sourceText) {
++      return cachedModule
++    }
++
++    cachedModule = nextModule
++    return nextModule
++  }
++
++  function invalidateAllModules(): void {
++    if (!server) return
++
++    for (const environment of Object.values(server.environments)) {
++      environment.moduleGraph.invalidateAll()
++    }
++  }
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+-    name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++    name: PLUGIN_NAME,
++    enforce: 'pre',
++    configResolved(resolvedConfig) {
++      config = resolvedConfig
++      sourcePath = isAbsolute(configuredSourcePath)
++        ? configuredSourcePath
++        : resolve(resolvedConfig.root, configuredSourcePath)
++    },
++    configureServer(configuredServer) {
++      server = configuredServer
++      configuredServer.watcher.add(sourcePath)
++      sourceWatcher?.close()
++      sourceWatcher = watch(sourcePath, { persistent: false }, () => {
++        cachedModule = undefined
++        invalidateAllModules()
++        configuredServer.watcher.emit('change', sourcePath)
++      })
++    },
++    async buildStart() {
++      await getCachedModule()
++    },
++    resolveId(id) {
++      if (id === VIRTUAL_MODULE_ID) {
++        return RESOLVED_VIRTUAL_MODULE_ID
++      }
++      return null
++    },
++    async load(id) {
++      if (id !== RESOLVED_VIRTUAL_MODULE_ID) {
++        return null
++      }
++
++      this.addWatchFile(sourcePath)
++
++      const module = await getCachedModule()
++      return {
++        code: module.code,
++        map: EMPTY_MAP,
++      }
++    },
++    handleHotUpdate(context: HmrContext) {
++      if (context.file !== sourcePath) {
++        return
++      }
++
++      cachedModule = undefined
++      invalidateAllModules()
++    },
++    buildEnd(error) {
++      if (error || !config || config.command !== 'build') {
++        return
++      }
++      cachedModule = undefined
++    },
++    closeBundle() {
++      sourceWatcher?.close()
++      sourceWatcher = undefined
+     },
+   }
+ }
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..28080b0 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,12 @@
++type FeatureFlagTypesValue = boolean | number | string | null
++
++interface FeatureFlagTypes {}
++
++type ResolvedFeatureFlagTypes = keyof FeatureFlagTypes extends never
++  ? Record<string, FeatureFlagTypesValue>
++  : FeatureFlagTypes
++
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
+-  export const flags: Readonly<Record<string, FeatureFlagValue>>
++  export const flags: Readonly<ResolvedFeatureFlagTypes>
++  export default flags
+ }
+diff --git a/scripts/check-package.mjs b/scripts/check-package.mjs
+index 7622b19..09db70c 100644
+--- a/scripts/check-package.mjs
++++ b/scripts/check-package.mjs
+@@ -1,6 +1,6 @@
+ import assert from 'node:assert/strict'
+ import { execFile } from 'node:child_process'
+-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
++import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+@@ -11,6 +11,8 @@ const root = fileURLToPath(new URL('../', import.meta.url))
+ const temporaryConsumer = await mkdtemp(
+   join(tmpdir(), 'frontend-architect-packed-consumer-'),
+ )
++const npmCache = join(temporaryConsumer, '.npm-cache')
++const npmEnv = { ...process.env, npm_config_cache: npmCache }
+ 
+ try {
+   const { stdout } = await run(
+@@ -23,7 +25,7 @@ try {
+       '--pack-destination',
+       temporaryConsumer,
+     ],
+-    { cwd: root },
++    { cwd: root, env: npmEnv },
+   )
+   const [manifest] = JSON.parse(stdout)
+   const files = new Set(manifest.files.map(({ path }) => path))
+@@ -37,25 +39,20 @@ try {
+     assert.ok(files.has(expected), `packed package is missing ${expected}`)
+   }
+ 
+-  const vitePackage = JSON.parse(
+-    await readFile(join(root, 'node_modules/vite/package.json'), 'utf8'),
+-  )
++  const scopeDirectory = join(temporaryConsumer, 'node_modules', '@frontend-architect-eval')
++  const extractedDirectory = join(scopeDirectory, 'package')
++  const installedPackageDirectory = join(scopeDirectory, 'feature-flags')
++
++  await mkdir(scopeDirectory, { recursive: true })
++  await run('tar', ['-xzf', join(temporaryConsumer, manifest.filename), '-C', scopeDirectory], {
++    cwd: temporaryConsumer,
++  })
++  await rename(extractedDirectory, installedPackageDirectory)
++
+   await writeFile(
+     join(temporaryConsumer, 'package.json'),
+     JSON.stringify({ private: true, type: 'module' }),
+   )
+-  await run(
+-    'npm',
+-    [
+-      'install',
+-      '--ignore-scripts',
+-      '--no-audit',
+-      '--no-fund',
+-      join(temporaryConsumer, manifest.filename),
+-      `vite@${vitePackage.version}`,
+-    ],
+-    { cwd: temporaryConsumer },
+-  )
+   await writeFile(
+     join(temporaryConsumer, 'verify.mjs'),
+     [
+@@ -67,7 +64,7 @@ try {
+       "assert.equal(typeof plugin.load, 'function')",
+     ].join('\n'),
+   )
+-  await run(process.execPath, ['verify.mjs'], { cwd: temporaryConsumer })
++  await run(process.execPath, ['verify.mjs'], { cwd: temporaryConsumer, env: npmEnv })
+ } finally {
+   await rm(temporaryConsumer, { recursive: true, force: true })
+ }

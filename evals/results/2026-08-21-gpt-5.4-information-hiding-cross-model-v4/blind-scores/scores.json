@@ -1,0 +1,331 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "feature-internal-decomposition",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了目标职责、现有近 900 行页面的状态、仓库缺少实际源码这一证据边界，以及“不按行数机械拆分”的项目约束；方案也始终限定在 checkout 功能内部。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "按状态所有权、副作用和真实变化原因逐层划分，优先使用纯计算、局部 hook 和适配器；仅在 hook 相互依赖时才建议增加协调层，并明确列出过度拆分信号。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "细致说明了页面、model、components、services、utils 的职责、公开 API、信息隐藏和单向依赖，并处理了优惠券、库存、支付 SDK、提交事务等实现单元的所有权，同时给出了停止拆分的条件。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖了过时优惠券请求、请求取消和去重、订阅清理与重连、支付 SDK 生命周期、库存变化、幂等和重复提交等关键竞态与清理边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "说明了实际检查到仓库和 HEAD 为空，并如实声明无法做贴合源码的验证，还提出了风险对应的测试矩阵；但没有提供命令输出或任何可执行测试结果，且用例本身没有可执行 fixture。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先交代证据限制，再给出可执行结论；公开 API、取舍、风险、依赖方向、测试与拆分终止条件均清楚，且没有把建议冒充仓库事实。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供 CheckoutPage.tsx、features/checkout 目录或其他实现 artifact，无法核对建议与真实调用方、类型及现有项目约定是否一致。",
+          "该用例没有可执行 fixture，且证据中没有验证命令输出，因此无法确认任何编译、测试或运行时行为。"
+        ],
+        "normalized_score": 14.67,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "optimistic-profile-update",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确保持 React/TypeScript、最小修改、保留既有公开 API，并覆盖乐观显示、失败回滚和重复提交约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "修改局限于现有组件、API 边界和测试，使用本地状态与请求序号解决问题，没有新增依赖或不必要抽象。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "变更可通过类型检查和现有测试，API 错误路径也完整；但旧请求成功时仍会无条件 setDisplayName，可能把较新提交对应的输入框值从 Lin 改回 Grace，因而状态变更并未完整满足防陈旧覆盖契约。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "请求 ID 能保护展示名称和已应用成功结果，也处理了交叠失败；但只按 lastAppliedRequestId 保护响应，未保护较新的输入或提交状态，陈旧成功响应仍可覆盖受控输入框。"
+          },
+          {
+            "key": "user_experience",
+            "score": 1,
+            "reason": "提供了即时展示、role=alert 错误和可重试文案；然而交叠请求期间输入框可能被旧响应改回旧名称，造成展示名称与编辑值不一致并可能丢失较新输入。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "npm ci、类型检查和 4 个测试均有实际成功结果；但新增竞态测试只断言 Current profile name，没有断言输入框仍为最新值，因此没有捕获实现中的陈旧输入覆盖风险。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 1,
+            "reason": "交付说明结果优先且范围清楚，但“旧响应不能覆盖较新的结果”的表述过强，没有披露旧响应仍可覆盖输入框状态这一限制。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "仅提供了局部 diff，没有 ProfileForm.tsx 剩余 JSX，因此无法独立确认保存按钮、禁用状态及完整重试交互。",
+          "没有提供完整既有测试内容；只能依据测试名称、局部断言和验证摘要判断覆盖范围。"
+        ],
+        "normalized_score": 10.29,
+        "case_failures": [],
+        "verdict": "basic"
+      },
+      {
+        "id": "vite-feature-flags-plugin",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "识别了虚拟模块、类型化消费、dev/build/HMR、诊断、秘密隔离、包导出、source map、缓存、集成测试和版本演进等主要约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "使用 Vite 原生 resolveId/load/HMR 能力和局部 schema helper，没有引入额外依赖或不必要的通用框架。"
+          },
+          {
+            "key": "infrastructure_design",
+            "score": 1,
+            "reason": "设计了窄公共 API、导出面、消费者示例和验证脚本，但核心 virtual module 类型声明无法被消费者解析，发布契约尚未闭环。"
+          },
+          {
+            "key": "developer_experience",
+            "score": 1,
+            "reason": "配置诊断包含问题与修复建议，README 也给出接入示例；但消费者按示例仍出现 TS2307，常见类型接入路径不可用。"
+          },
+          {
+            "key": "compatibility_evolution",
+            "score": 1,
+            "reason": "列出了 major/minor/patch 判定，但没有明确 Vite/TypeScript/Node 支持矩阵、原型 API 的迁移或弃用路径、发布验证及回滚策略。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 0,
+            "reason": "npm run check 在消费者 typecheck 阶段失败，virtual:feature-flags 的声明未生效；此外 build watch 没有 watchChange 失效缓存，重建可能继续使用旧值。"
+          },
+          {
+            "key": "runtime_delivery",
+            "score": 1,
+            "reason": "说明并实现了虚拟模块序列化、白名单产物、source map、内存缓存和 dev HMR；但 build watch 的缓存失效边界不完整，dev/build/watch 一致性未成立。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "不可信 JSON 经解析和 schema 校验后，仅 expose 白名单字段进入虚拟模块与 sourcesContent，并提供客户端产物秘密扫描。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 0,
+            "reason": "npm ci 成功，但 npm run check 退出码为 2；集成、HMR、诊断和打包检查均未执行到，不能作为真实边界验证。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 1,
+            "reason": "交付范围和验证限制表达清楚，但把失败归因于缺少依赖与实际 npm ci 后暴露的类型声明缺陷不符，并过早宣称行为已经统一。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有成功的 TypeScript 编译结果，消费者公共类型契约未得到验证。",
+          "测试流程在 typecheck 阶段中止，未提供 Vite build、dev/HMR、诊断或 npm pack 的实际结果。",
+          "没有发布包内容、source map 内容或客户端 bundle 的成功检查证据。",
+          "没有 build watch 模式下源文件变化与缓存失效的验证证据。"
+        ],
+        "normalized_score": 8.8,
+        "case_failures": [
+          {
+            "rule": "留下伪代码、any 或未定义的公共类型",
+            "reason": "真实验证在 consumer typecheck 阶段失败：两个从 `virtual:feature-flags` 导入的文件均报 TS2307，说明发布给消费者的虚拟模块类型声明未被 TypeScript 正确解析。"
+          }
+        ],
+        "verdict": "fail"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "feature-internal-decomposition",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别 feature 已集中、页面职责混杂、不能按文件类型机械拆分、不能以行数为主要依据，并坦诚说明缺少实际源码，因此将结论限定为基于描述的可执行方案。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "优先保留现有 feature 边界并按状态与副作用所有权局部拆分，同时明确反对超级 hook、统一 service、无所有权的 helpers/types 和转发包装层，体现了克制的抽象顺序。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "细分了表单、定价、优惠券、库存、支付和流程编排的变化原因、状态所有权、公开 API、信息隐藏与单向依赖，并给出了具体的停止拆分条件。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖了优惠券请求取消与最后写入生效、库存订阅清理与过期状态、支付 SDK 重复初始化和销毁、重复提交、幂等键、依赖就绪及错误归一化等关键竞态和生命周期边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "测试建议与各模块真实风险对应，并明确页面测试只覆盖关键集成路径；但没有可执行 fixture、实际测试结果、运行环境或验证阈值，因此只有验证设计而没有验证证据。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给出核心判断，再依次说明边界、所有权、依赖、测试和停止条件；取舍、反例、适用范围及证据限制均表达清楚。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供实际 features/checkout 源码或 DIFF，无法核实建议是否适配现有类型、调用方和项目约束。",
+          "该用例没有可执行 fixture，且未记录任何测试、类型检查或运行时验证结果。"
+        ],
+        "normalized_score": 14.67,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "optimistic-profile-update",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "修改明确遵守现有 React、TypeScript 和公开 API 约束，并覆盖乐观显示、失败回滚、重复提交竞态、类型/API 边界及行为测试。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "采用组件内状态与递增提交 ID 的局部方案，没有引入依赖、通用基建或不必要抽象；API 校验也局限在既有边界。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "组件状态、异步成功与失败路径、API 返回类型及运行时校验、调用方和测试形成一致完整的变更；typecheck 与全部测试实际通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "区分权威资料、最新乐观值、最新提交和最近确认提交；仅最新失败触发回滚与错误，迟到的旧成功响应不能覆盖更新结果，相关交错顺序有测试覆盖。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "提交后立即显示新名称，失败使用 role=alert 给出明确可重试提示，再次编辑或提交会清除旧错误；原生表单仍支持键盘提交，重复保存未被禁用。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "提供了实际环境中的 npm ci、TypeScript 编译检查和 Vitest 结果：1 个测试文件、4 个行为测试全部通过，且测试直接覆盖主要失败与竞态风险。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先说明完成结果，再清楚概括状态模型、API 校验、竞态处理、测试范围和实际验证命令，范围与取舍明确。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "验证仅包含 TypeScript 检查和 jsdom 行为测试；没有真实浏览器或真实后端集成证据，但响应也未据此宣称焦点、布局、视觉或服务端并发语义已验证。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "vite-feature-flags-plugin",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了原型字符串替换的问题，并覆盖虚拟模块、类型化消费者接口、dev/build/HMR、一致性、诊断、秘密隔离、发布产物与项目验证要求。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "选择 Vite 原生的 resolveId/load/watchChange/handleHotUpdate 能力和局部生成声明文件，没有引入额外运行时依赖或不必要的通用框架。"
+          },
+          {
+            "key": "infrastructure_design",
+            "score": 2,
+            "reason": "给出了窄公共契约、私有实现辅助函数、虚拟模块入口、根类型、声明产物及打包检查，并以示例消费者和发布包验证真实消费边界。"
+          },
+          {
+            "key": "developer_experience",
+            "score": 2,
+            "reason": "公共选项和 flags 均有类型，生成声明可直接纳入 tsconfig；读取失败、JSON 错误、顶层结构、空 expose、缺失键和不安全值均提供了带修复建议的诊断。"
+          },
+          {
+            "key": "compatibility_evolution",
+            "score": 1,
+            "reason": "README 区分了 major/minor/patch 变化，但没有具体支持矩阵、弃用周期、消费者迁移步骤或发布后的回滚方案。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "主路径、类型、错误处理、生成产物和测试整体一致且验证命令通过；但同时使用 Node fs.watch、Vite watcher 和手工 emit change，存在重复刷新或递归触发风险，所示测试不足以排除真实客户端 HMR 生命周期问题。"
+          },
+          {
+            "key": "runtime_delivery",
+            "score": 1,
+            "reason": "明确了客户端生成代码、公开子集、source map 秘密边界、按内容缓存及变更失效，并覆盖 dev 与 build；但真实浏览器 HMR、客户端更新语义以及迁移和回滚边界没有充分证明。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "从 JSON 输入到客户端虚拟模块的路径实施显式 expose 白名单和原始类型校验，只有过滤后的快照进入 Bundle、声明和 source map 路径，测试也检查服务端字段未暴露。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "提供了实际成功的 npm ci、完整 check 流程和强化后的 tarball 消费检查结果，覆盖编译、类型检查、生产构建、开发服务器更新、诊断及发布文件；未覆盖部分可在证据限制中明确界定。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先说明完成结果，再定位关键代码、公共契约、秘密边界、缓存、版本和验证范围，结论简洁且与差异及验证输出一致。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供 package.json exports、构建配置以及完整 check-build/check-diagnostics/check-package 脚本内容，因此只能依据通过的验证输出确认这些边界。",
+          "dev 测试使用 Vite SSR 模块加载，没有真实浏览器客户端连接证据，无法确认浏览器 HMR 接受、状态更新及完整生命周期行为。",
+          "没有展示多 Vite 版本或多 Node 版本兼容矩阵，也没有实际迁移、弃用或回滚演练。"
+        ],
+        "normalized_score": 13.6,
+        "case_failures": [
+          {
+            "rule": "将 npm pack dry-run 或构建目录检查当成最终发布包已经过消费者验证",
+            "reason": "`scripts/check-package.mjs` 仍执行 `npm pack --dry-run --json` 并仅检查清单文件；它没有生成、安装并从消费者项目运行真实 tarball，但响应将其描述为已验证 packed artifact，验证记录也称为 tarball consumer check。"
+          }
+        ],
+        "verdict": "fail"
+      }
+    ]
+  }
+}

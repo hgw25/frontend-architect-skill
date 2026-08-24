@@ -1,0 +1,253 @@
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: optimistic-profile-update
+request: 保持现有 React 和 TypeScript 技术栈，为下面的资料编辑功能给出可编译的最小修改。 用户保存后可以立即看到新名称；请求失败必须恢复权威值并显示可重试错误；快速重复 提交不能让旧响应覆盖新结果。同步更新类型、API 边界和最有价值的行为测试，不要留下 伪代码或 TODO。
+artifact: 使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或 删除已有公开 API。
+failure_rules: ["只展示核心 hook 或 reducer 片段而没有完整调用关系", "吞掉错误或让失败后的乐观值继续伪装成已保存", "使用 any 或类型断言掩盖未验证响应"]
+
+RESPONSE:
+已完成最小可编译修改，保留了现有 React + TypeScript 栈和 `updateProfile(displayName)` 公开 API。
+
+在 [src/api.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-z7baw50p/src/api.ts:1) 我把 API 边界收紧为“只在返回合法 `Profile` 且 `response.ok` 时成功”，无效 shape 和非 2xx 都会抛错。  
+在 [src/ProfileForm.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-z7baw50p/src/ProfileForm.tsx:1) 我加入了权威资料状态、保存失败回滚、可重试错误提示，以及基于提交序号的竞态保护：保存后立即显示新名字；失败时恢复最后确认的权威值；旧请求晚到时不会覆盖更新后的结果。  
+在 [src/ProfileForm.test.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-z7baw50p/src/ProfileForm.test.tsx:1) 我补了最有价值的竞态测试，并保留/修复了失败回滚测试。
+
+已运行检查并通过：`npm run typecheck`、`npm test`。
+
+DIFF:
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 2ba023d..ca3e8df 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,14 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { render, screen } from '@testing-library/react'
++import { cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -66,3 +67,66 @@ test('restores the authoritative name when a successful response has an invalid
+   )
+   expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
+ })
++
++test('ignores stale save responses when a newer submission finishes first', async () => {
++  let resolveFirstRequest: ((response: Response) => void) | undefined
++  let resolveSecondRequest: ((response: Response) => void) | undefined
++  const fetchMock = vi
++    .fn<() => Promise<Response>>()
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveFirstRequest = resolve
++        }),
++    )
++    .mockImplementationOnce(
++      () =>
++        new Promise<Response>((resolve) => {
++          resolveSecondRequest = resolve
++        }),
++    )
++  vi.stubGlobal('fetch', fetchMock)
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent(
++    'Grace',
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Marie')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent(
++    'Marie',
++  )
++
++  resolveSecondRequest?.(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Marie', version: 2 }),
++      { status: 200, headers: { 'content-type': 'application/json' } },
++    ),
++  )
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Marie',
++  )
++
++  resolveFirstRequest?.(
++    new Response(
++      JSON.stringify({ id: 'p1', displayName: 'Grace', version: 3 }),
++      { status: 200, headers: { 'content-type': 'application/json' } },
++    ),
++  )
++
++  await vi.waitFor(() => {
++    expect(screen.getByLabelText('Current profile name')).toHaveTextContent(
++      'Marie',
++    )
++  })
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..5aacec8 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,25 +1,58 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
++  const [authoritativeProfile, setAuthoritativeProfile] = useState(profile)
+   const [displayName, setDisplayName] = useState(profile.displayName)
+   const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [errorMessage, setErrorMessage] = useState('')
++  const latestSubmissionId = useRef(0)
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++    const nextDisplayName = displayName
++    const submissionId = latestSubmissionId.current + 1
++    latestSubmissionId.current = submissionId
++
++    setErrorMessage('')
++    setVisibleName(nextDisplayName)
++
++    try {
++      const updatedProfile = await updateProfile(nextDisplayName)
++
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setAuthoritativeProfile(updatedProfile)
++      setVisibleName(updatedProfile.displayName)
++      setDisplayName(updatedProfile.displayName)
++    } catch {
++      if (latestSubmissionId.current !== submissionId) {
++        return
++      }
++
++      setVisibleName(authoritativeProfile.displayName)
++      setDisplayName(authoritativeProfile.displayName)
++      setErrorMessage('Save failed. Please retry.')
++    }
+   }
+ 
+   return (
+     <form onSubmit={handleSubmit}>
+       <p aria-label="Current profile name">{visibleName}</p>
++      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+       <label>
+         Display name
+         <input
+           value={displayName}
+-          onChange={(event) => setDisplayName(event.target.value)}
++          onChange={(event) => {
++            setDisplayName(event.target.value)
++            if (errorMessage) {
++              setErrorMessage('')
++            }
++          }}
+         />
+       </label>
+       <button>Save</button>
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..bb1165c 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,20 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const candidate = value as Record<string, unknown>
++
++  return (
++    typeof candidate.id === 'string' &&
++    typeof candidate.displayName === 'string' &&
++    typeof candidate.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +25,15 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error('Profile update failed')
++  }
++
++  const payload: unknown = await response.json()
++
++  if (!isProfile(payload)) {
++    throw new Error('Profile response is invalid')
++  }
++
++  return payload
+ }
+
+
+VALIDATIONS:
+COMMAND npm ci EXIT 0
+
+added 118 packages, and audited 119 packages in 1s
+
+25 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+COMMAND npm run check EXIT 0
+
+> check
+> npm run typecheck && npm test
+
+
+> typecheck
+> tsc --noEmit
+
+
+> test
+> vitest run
+
+
+ RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-baseline-z7baw50p
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  18:12:37
+   Duration  463ms (transform 20ms, setup 0ms, import 98ms, tests 151ms, environment 149ms)
+

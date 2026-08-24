@@ -1,0 +1,82 @@
+我先说明约束：当前工作区里没有实际前端源码可检查，`git ls-tree` 和文件系统都只看到 `.frontend-architect` 与 `.git`，没有你提到的 `features/checkout` 或 `CheckoutPage.tsx`。所以下面的方案只能基于你描述的职责来定边界，不能声称符合仓库里已存在的 import、状态库或表单库细节。
+
+在你描述的前提下，不建议机械拆成一排 `components/hooks/services/utils` 顶层技术目录。更合适的是继续保留 `features/checkout` 作为特性边界，在特性内部按“拥有的行为”拆：
+
+```text
+features/checkout/
+  index.ts
+  CheckoutPage.tsx                // 路由入口，只做组装
+  model/
+    checkoutTypes.ts              // 领域类型
+    pricing.ts                    // 纯价格/优惠计算
+    checkoutDraft.ts              // draft <-> payload 映射、默认值、校验前置规则
+  workflows/
+    useCheckoutDraft.ts           // 表单草稿与本地编辑工作流
+    useCouponApplication.ts       // 优惠券请求、竞态、错误态
+    useInventoryAvailability.ts   // 库存订阅生命周期
+    usePaymentSession.ts          // 支付 SDK 生命周期与可支付状态
+    useCheckoutSubmit.ts          // 最终提交、幂等/竞态/取消策略
+    useCheckoutPageModel.ts       // 只做组合，不重新拥有下层状态
+  adapters/
+    couponApi.ts
+    checkoutApi.ts
+    inventorySubscription.ts
+    paymentSdk.ts
+  ui/
+    CheckoutForm.tsx
+    OrderSummary.tsx
+    CouponField.tsx
+    PaymentSection.tsx
+    InventoryBanner.tsx
+    SubmitBar.tsx
+    CheckoutAlerts.tsx
+  __tests__/
+```
+
+核心决定是：`CheckoutPage.tsx` 只保留“页面组装”和少量路由级依赖注入；不要再做所有状态和副作用的拥有者。它可以调用 `useCheckoutPageModel()`，但这个 page model 只负责把几个能力拼起来，不要把下层 hook 的状态复制进一个大对象再二次管理。
+
+公开 API 建议尽量小。对特性外部，只暴露 `CheckoutPage`，最多再暴露少量稳定类型，比如 `CheckoutSubmitResult` 这类确实被上层路由或埋点消费的结果类型。不要把 `pricing`、`couponApi`、`paymentSdk` 这些内部能力从 `features/checkout/index.ts` 全部 re-export。对特性内部，每个 hook 的 API 也要窄：
+- `useCheckoutDraft()` 暴露 `fields`、`errors`、`updateField`、`resetDraft`、`getSnapshot`。
+- `useCouponApplication()` 暴露 `appliedCoupon`、`status`、`applyCoupon`、`removeCoupon`。
+- `useInventoryAvailability()` 暴露 `availability`、`isStale`、`refresh`。
+- `usePaymentSession()` 暴露 `paymentMethodState`、`mountPaymentElement`、`confirmPaymentIfNeeded`、`dispose`。
+- `useCheckoutSubmit()` 暴露 `submit`、`status`、`error`，并内部拥有“只接受最后一次/只允许一次进行中”的策略。
+
+状态与副作用所有权应该这样落：
+- 草稿状态归 `useCheckoutDraft`。这是页面内可编辑记忆，不应散落到 JSX section 组件里。
+- 价格、优惠后金额、按钮可用性这类可推导值，不单独存 state，放在 `model/pricing.ts` 里纯计算，页面或组合 hook 即时 derive。
+- 优惠券请求的 loading、error、request identity 归 `useCouponApplication`。
+- 库存订阅的订阅建立、清理、重连、stale 标记归 `useInventoryAvailability`。
+- 支付 SDK 的初始化、挂载、销毁、ready/error 状态归 `usePaymentSession`。
+- 最终提交的去重、取消、落地错误归 `useCheckoutSubmit`。
+- `CheckoutPage` 或 `useCheckoutPageModel` 只负责“何时把这些能力连起来”，例如提交前收集 draft、coupon、inventory、payment session 的当前快照。
+
+内部依赖方向建议保持单向：
+- `CheckoutPage.tsx` -> `workflows/*`、`ui/*`
+- `ui/*` -> 接收值和回调；必要时可直接用单一工作流 hook，但不要反向依赖 adapters
+- `workflows/*` -> `model/*`、`adapters/*`
+- `adapters/*` -> 外部 HTTP/SDK/订阅实现
+- `model/*` -> 零副作用、零 React、零 transport 依赖
+
+几条明确不要做的事：
+- 不要建一个 `useCheckout()` 巨型 hook，把草稿、优惠券、库存、支付、提交全部吞进去。
+- 不要建 `utils.ts` 或 `services.ts` 当收纳箱。
+- 不要因为 JSX 块很多，就把每一段都拆成无行为的“纯搬运组件”。
+- 不要把 payment SDK 包一层只有改名作用的 service；只有当它负责初始化策略、错误归一化、销毁语义时才值得独立。
+
+测试放置建议按“谁拥有行为，谁旁边放测试”：
+- `model/pricing.ts`、`checkoutDraft.ts` 放纯单元测试，覆盖优惠叠加、边界金额、无效输入、映射规则。
+- `workflows/useCouponApplication.ts` 测请求竞态和过期响应丢弃。
+- `workflows/useInventoryAvailability.ts` 测订阅清理、stale/refresh。
+- `workflows/usePaymentSession.ts` 测 SDK ready/error/dispose，不测第三方 SDK 内部。
+- `workflows/useCheckoutSubmit.ts` 测重复提交、提交中再次点击、失败恢复。
+- `CheckoutPage` 放少量集成测试，只覆盖关键用户流：填表、应用优惠券、库存变化、支付可用、提交成功/失败。
+
+停止继续拆分的条件，不是“文件还很长”，而是下面这些条件已经满足：
+- 一个普通 checkout 改动能明确落到一个拥有者上。
+- 价格规则、优惠券、库存、支付、提交各自有单一状态与副作用拥有者。
+- 页面层只是协调，不再重新持有全部子能力状态。
+- 新模块的 API 比其内部实现明显更小、更稳定。
+- 再继续拆只会得到 `types/utils/services` 之类的技术容器，或者无语义的 JSX 搬运。
+
+如果你把实际 `features/checkout` 文件贴出来，我可以把这份方案收敛成更贴仓库的目录和 API 清单，指出哪些部分该保留在同一文件里，哪些确实值得抽。

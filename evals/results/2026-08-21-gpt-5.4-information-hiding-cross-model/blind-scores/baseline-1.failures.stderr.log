@@ -1,0 +1,238 @@
+2026-08-21T10:33:16.165236Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.166455Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.168169Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.169250Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.170516Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.171668Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.172889Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.174435Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.175490Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.176588Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.177563Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.178562Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.179688Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.180711Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.181736Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.182669Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.183628Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.184757Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.185783Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.186758Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.187860Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-08-21T10:33:16.189002Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+OpenAI Codex v0.145.0
+--------
+workdir: /var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a023e1-ce81-7b00-9e6e-3f3d97b88dac
+--------
+user
+You are performing the second-stage failure audit for one anonymous evaluation condition.
+Do not score quality, infer the comparison condition, or reward expected wording.
+For each case, inspect only whether the supplied response, diff, or validation evidence clearly triggers one of its listed one-vote failure rules.
+Missing optional detail is not a trigger unless the rule explicitly makes it one.
+Return each triggered rule verbatim with a concise evidence-based reason. Return an empty list when none is clearly triggered.
+
+CASE
+id: feature-internal-decomposition
+request: 一个 React 结算功能已经集中到 features/checkout，但 CheckoutPage.tsx 接近 900 行： 它同时处理表单草稿、价格与优惠计算、优惠券请求、库存订阅、支付 SDK 生命周期、 提交竞态、错误提示和全部 JSX。团队准备机械拆成 components、hooks、services、utils。 请根据实际职责给出细致但不过度的内部模块划分，说明公开 API、状态与副作用所有权、 内部依赖方向、测试放置和停止继续拆分的条件。不要以文件行数作为主要理由。
+artifact: 
+failure_rules: ["只把原文件按 components、hooks、services、utils 分类移动", "用一个万能 hook、store 或 controller 继续拥有全部状态与副作用", "无条件建立每层目录、接口和依赖注入，即使没有替换或边界需求", "将只改名转发调用且继续泄漏相同数据、错误和生命周期的封装宣称为架构边界"]
+
+RESPONSE:
+我检查了工作区和 Git 提交树：当前仓库只有 `.git`，`HEAD` 指向的是一个空树提交，没有可读的 `features/checkout` 或 `CheckoutPage.tsx`。所以我不能声称“基于现有文件结构”做精确拆分；下面的方案只依据你给出的真实职责边界，不补造仓库事实。
+
+**建议拆分**
+不要先按 `components/hooks/services/utils` 机械平铺。先按“谁拥有状态、谁发起副作用、谁只做渲染”拆，再映射到目录。
+
+建议以 `features/checkout` 为一个垂直切片，内部大致这样分：
+
+```text
+features/checkout/
+  page/
+    CheckoutPage.tsx
+    CheckoutPage.shell.tsx
+  model/
+    checkout.types.ts
+    checkoutDraft.ts
+    pricing.ts
+    submission.ts
+  hooks/
+    useCheckoutDraft.ts
+    useCheckoutPricing.ts
+    useCoupon.ts
+    useInventoryReservation.ts
+    usePaymentSession.ts
+    useCheckoutSubmit.ts
+  services/
+    couponService.ts
+    inventoryService.ts
+    paymentGateway.ts
+    checkoutService.ts
+  components/
+    CheckoutForm.tsx
+    OrderSummary.tsx
+    CouponSection.tsx
+    PaymentSection.tsx
+    InventoryNotice.tsx
+    SubmitBar.tsx
+    CheckoutAlerts.tsx
+  utils/
+    money.ts
+    errorMapping.ts
+  __tests__/
+```
+
+**公开 API 与所有权**
+`CheckoutPage.tsx`
+- 只负责装配流程，不再持有业务细节。
+- 公开 API：页面级 props，例如 `cartId`、`initialAddressId`、`onSuccess(orderId)`.
+- 拥有权：跨模块编排状态，比如“当前是否允许提交”“哪些错误显示为 toast/inline”。
+
+`useCheckoutDraft`
+- 负责表单草稿的读取、更新、校验触发、脏态判断、持久化策略。
+- API：
+  - `draft`
+  - `updateField(name, value)`
+  - `validation`
+  - `isDirty`
+  - `commitDraft()` / `resetDraft()`
+- 副作用：本地草稿持久化；不要夹带价格、优惠券、支付逻辑。
+
+`useCheckoutPricing`
+- 负责从 `draft + cart + coupon + inventory status` 推导可展示金额。
+- API：
+  - `priceBreakdown`
+  - `pricingState` (`idle | recalculating | ready | stale`)
+  - `refreshPricing()`
+- 约束：优先做纯计算；如果必须请求服务端重算，网络调用放到 `checkoutService`，hook 只协调。
+
+`useCoupon`
+- 负责优惠券输入、验证、应用、移除、请求取消。
+- API：
+  - `couponCode`
+  - `setCouponCode(code)`
+  - `appliedCoupon`
+  - `applyCoupon()`
+  - `removeCoupon()`
+  - `status`
+  - `error`
+- 副作用：调用 `couponService`。
+- 不拥有最终价格；只产出“优惠上下文”。
+
+`useInventoryReservation`
+- 负责库存订阅/预占/失效感知。
+- API：
+  - `inventoryState` (`available | low | unavailable | expired`)
+  - `reservationToken`
+  - `refreshReservation()`
+- 副作用：订阅、轮询、清理。
+- 不直接弹 UI；只提供状态和事件。
+
+`usePaymentSession`
+- 负责支付 SDK 生命周期。
+- API：
+  - `mountPayment(element)`
+  - `unmountPayment()`
+  - `paymentState`
+  - `confirmPayment(submitPayload)`
+  - `sdkError`
+- 副作用：SDK 初始化、实例缓存、卸载清理、事件绑定。
+- 约束：不要把下单请求也塞进这里；它只处理支付侧会话与确认。
+
+`useCheckoutSubmit`
+- 负责提交编排和竞态控制，是“提交总线”。
+- API：
+  - `submit()`
+  - `status` (`idle | submitting | awaiting_payment | success | failed`)
+  - `submitError`
+  - `canSubmit`
+- 内部依赖：读取 draft/pricing/inventory/payment 的只读快照，调用 `checkoutService` 和 `paymentSession.confirmPayment`。
+- 副作用：幂等键、重复点击防护、过期结果丢弃、提交流程状态机。
+
+`services/*`
+- 只做 IO 协议，不持有 React 状态。
+- `couponService`: `validateCoupon`, `applyCoupon`, `removeCoupon`
+- `inventoryService`: `subscribeAvailability`, `reserveInventory`, `releaseReservation`
+- `paymentGateway`: `createSession`, `loadSdk`, `confirm`
+- `checkoutService`: `repriceCheckout`, `submitOrder`
+- 返回值要是稳定的领域对象，不把接口原始响应直接泄漏给组件。
+
+`components/*`
+- 以“可独立理解的界面块”拆，不以 DOM 小片段拆。
+- `CheckoutForm`: 地址、联系人、配送方式等。
+- `OrderSummary`: 金额明细与价格刷新状态。
+- `CouponSection`: 输入和应用反馈。
+- `PaymentSection`: SDK 容器和支付错误。
+- `SubmitBar`: CTA、提交中态、禁用原因。
+- `CheckoutAlerts`: 页面级错误/警告汇总。
+- 原则：组件尽量接收值和回调，不自己偷偷请求服务。
+
+**依赖方向**
+推荐单向依赖，避免回流：
+
+```text
+page -> hooks -> services
+page -> components
+hooks -> model
+components -> model(types only)
+services -> model(types only)
+utils -> model/types or primitive values
+```
+
+具体限制：
+- `components` 不能直接依赖 `services`。
+- `services` 不能依赖 React hook。
+- `useCheckoutSubmit` 可以依赖其他 hooks 暴露出的只读接口，但不要反过来让其他 hooks 知道“提交流程”。
+- `pricing` 和 `submission` 里的纯领域逻辑可被 hooks 与 services 共同复用；这样测试最稳。
+
+**测试放置**
+测试也按职责放，不按技术层硬分：
+
+- `model/__tests__/`
+  - `pricing.test.ts`: 折扣、税费、运费、边界金额。
+  - `submission.test.ts`: 提交流程状态机、竞态丢弃、重复提交。
+  - `checkoutDraft.test.ts`: 草稿合并、校验、恢复。
+- `hooks/__tests__/`
+  - `useCoupon.test.ts`: 请求成功、失败、取消、重复应用。
+  - `useInventoryReservation.test.ts`: 订阅更新、过期、清理。
+  - `usePaymentSession.test.ts`: SDK 初始化/卸载、事件转发。
+  - `useCheckoutSubmit.test.ts`: 并发点击、支付前后状态、错误映射。
+- `components/__tests__/`
+  - 只测交互契约和关键分支，不重复测业务算法。
+- `page/__tests__/CheckoutPage.test.tsx`
+  - 保留少量集成测试，覆盖“填表 -> 应用券 -> 支付 -> 提交成功/失败”的主流程。
+
+**停止继续拆分的条件**
+满足这些条件就应该停，不要继续把目录切碎：
+
+- 一个模块只有一个清晰原因会变化。
+- 页面装配层能用几屏代码读懂主流程，但不重新实现业务。
+- 价格、优惠券、库存、支付、提交五类副作用已经彼此隔离。
+- 大部分业务规则能在 `model` 或单个 hook 测到，不需要通过整页联调才能验证。
+- 组件拆出来后有独立语义，而不是“把 JSX 搬文件”。
+- 新需求能明确落到一个现有模块，不需要同时改 4 个以上层级。
+
+**不建议的继续拆法**
+以下情况通常已经过拆：
+- 为了“hooks 目录整齐”把一个强一致流程拆成多个互相 callback 的微 hook。
+- 把 `CheckoutForm` 再拆成大量只包一层 `div` 的展示组件。
+- 为每个 service 再额外包一层无业务价值的 repository/client/adapter。
+- 纯本地、只在 checkout 使用的逻辑提前抽到全局 `shared`.
+
+如果你把真实的 `CheckoutPage.tsx` 和 `features/checkout` 目录贴出来，我可以把这份建议收敛成更具体的模块边界和迁移顺序，而不是停留在职责模板层面。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+codex
+{"audits":[{"id":"feature-internal-decomposition","triggered":[]}]}
+tokens used
+17,608

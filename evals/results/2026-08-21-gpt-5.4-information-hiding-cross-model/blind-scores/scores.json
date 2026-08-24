@@ -1,0 +1,333 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "feature-internal-decomposition",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了现有证据边界、结算页当前职责、兼容现有 feature 切片的约束，并避免虚构仓库事实；但因源码缺失，无法确认真实调用方和项目规则。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "以状态所有权、副作用和变化原因作为拆分顺序，并明确反对无价值的 repository/client/adapter、微 hook 和全局 shared 抽象，体现了局部组合优先。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "详细定义了页面、领域逻辑、hooks、IO 服务和语义组件的职责、公开 API、所有权、依赖方向与停止拆分条件；目录仍带有 components/hooks/services/utils 分层外观，但实质边界并非按文件类型机械划分。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖了提交幂等与重复点击、过期结果丢弃、优惠券请求取消、库存订阅过期与清理、支付 SDK 卸载和状态机等关键竞态及生命周期边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "诚实记录了空仓库和无可执行 fixture，且提出了对应职责的测试矩阵；但没有任何实际测试结果，无法验证边界设计与真实实现、宿主 SDK 或端到端流程的一致性。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论清楚，先说明证据限制，再给出职责、API、依赖、测试和停止条件；取舍与过度拆分风险均明确。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "仓库没有可读的 features/checkout、CheckoutPage.tsx 或其他项目源码，无法核实真实状态流、消费者、命名约定和依赖约束。",
+          "未提供 diff 或实现产物，因此只能评价设计建议，不能评价其可编译性或迁移完整性。",
+          "用例没有可执行 fixture，未产生测试、类型检查或运行时验证结果。"
+        ],
+        "normalized_score": 14.67,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "optimistic-profile-update",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "修改明确围绕现有 React/TypeScript、既有文件和公开 updateProfile API 展开，并保持局部最小范围，覆盖乐观显示、失败回滚、重试错误和重复提交竞态。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "仅使用现有 React 状态、ref 和运行时类型守卫完成需求，没有新增依赖或不必要抽象；实现顺序符合局部组合优先。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "API 返回类型、运行时校验、组件状态、错误路径和调用方形成完整一致的变更；没有伪代码或 TODO，且 TypeScript 编译与测试均通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "提交序号明确处理乱序成功与失败响应，只有最新提交可更新或回滚界面；回滚使用最后确认的权威状态，并处理非 2xx、无效响应和网络/解析异常。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "保存后立即显示新名称，失败时恢复输入和可见名称，并通过 role=alert 展示可重试错误；再次编辑会清除旧错误且保存操作仍可用。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "提供了 npm ci、TypeScript 检查和 3 个行为测试的实际成功结果，但新增竞态测试在解析旧请求后等待的条件预先已成立，可能在旧请求 continuation 真正执行前通过，因此对乱序响应边界的证明不够严密。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给出完成结果，再按 API、组件和测试说明范围与关键决策，并准确报告已执行的验证，表达简洁明确。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供“最新提交失败、较旧请求随后成功/失败”等其他重叠请求排列的行为测试证据。",
+          "竞态测试没有显式等待第一个请求的异步处理完成后再断言，因此不能单独充分证明旧响应已被实际消费并忽略。"
+        ],
+        "normalized_score": 14.86,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "vite-feature-flags-plugin",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了原型的字符串替换、类型面和边界控制问题，并覆盖 dev、build、SSR/HMR、发布产物、诊断与安全等目标。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "使用 Vite 原生 resolveId/load、watch file 和模块图能力组成局部实现，没有引入额外运行时依赖或不必要的通用框架。"
+          },
+          {
+            "key": "infrastructure_design",
+            "score": 2,
+            "reason": "提供了窄公共 API、虚拟模块类型入口、包 exports、声明文件、构建产物和真实消费者示例，并验证了打包文件面。"
+          },
+          {
+            "key": "developer_experience",
+            "score": 2,
+            "reason": "具备字面量保留与类型推断、模块增强示例，以及针对空配置、重复项、缺失项、非法 JSON 和非法值的可执行错误信息。"
+          },
+          {
+            "key": "compatibility_evolution",
+            "score": 1,
+            "reason": "声明了 Node/Vite 支持约束和 SemVer 分类，但没有完整说明受影响消费者、弃用周期、迁移步骤、发布矩阵或回滚策略。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "主路径、类型、调用方、错误处理和测试基本一致；但虚拟模块 source map 将原始 JSON 放入 sourcesContent，与秘密隔离目标冲突，且额外 fs watcher 的开发服务器清理边界不明确。"
+          },
+          {
+            "key": "runtime_delivery",
+            "score": 1,
+            "reason": "说明了 dev/build/SSR/HMR 的执行路径、内容缓存和失效以及包 source map；但虚拟模块 map 会携带完整源 JSON，交付边界不安全，迁移和回滚也未落实。"
+          },
+          {
+            "key": "security_trust",
+            "score": 0,
+            "reason": "虽然运行时代码只序列化 allowlist，source map 的 sourcesContent 却直接包含完整 raw JSON，因此未暴露的 SERVER_TOKEN 等服务端秘密仍可能进入客户端构建产物或开发响应。按名称正则拒绝疑似秘密也不能替代数据分类边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "提供了 npm ci 和完整 npm run check 的实际成功结果，覆盖构建、类型、开发、诊断和 pack；但没有证据检查 source map 是否泄密，也未展示测试脚本以确认 HMR、真实浏览器边界及打包断言的强度。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结果优先，清楚概括修改范围、公共入口、测试覆盖和关键文件，表达紧凑且可追踪。"
+          }
+        ],
+        "global_failures": [
+          "将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测：虚拟模块 source map 的 sourcesContent 使用完整原始 JSON，可能包含明确应保持服务端私有的 SERVER_TOKEN。"
+        ],
+        "evidence_limits": [
+          "未提供 check-build.mjs、check-dev.mjs、check-diagnostics.mjs 的内容，无法确认断言细节及是否经过真实浏览器 HMR 边界。",
+          "DIFF 仅展示 package.json 的部分内容，无法独立核对全部脚本和构建配置。",
+          "未展示最终 dist 文件或生成 source map 的检查结果；只能从实现直接判断 sourcesContent 包含原始 JSON。"
+        ],
+        "normalized_score": 11.2,
+        "case_failures": [],
+        "verdict": "fail"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "feature-internal-decomposition",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了现状、目标职责、缺少实际源码这一证据边界，以及未知的状态库、表单库和既有 import 约束；方案没有把行数作为拆分依据。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "拒绝机械技术目录和巨型 hook，并按纯模型、工作流、副作用适配器、UI 与页面组装逐步划界；也说明了何时不值得增加包装或继续拆分。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "给出了特性外窄公开 API、内部模块职责、状态与副作用所有权、单向依赖、信息隐藏、测试归属及停止拆分条件，边界依据是变化与行为而非文件类型。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖了优惠券过期响应、订阅清理与重连、支付 SDK 初始化和销毁、提交去重与取消、重复点击、失败恢复以及派生状态等关键竞态和生命周期边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "诚实说明没有源码和可执行 fixture，并提出了与风险对应的测试矩阵；但没有提供命令输出或任何实际测试结果，无法形成真实验证证据。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先交代证据限制，再给出目录、所有权、依赖方向、反例和停止条件；结论清楚，取舍、风险与适用范围明确。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供实际 features/checkout 源码，因此无法核对现有类型、调用方、状态管理方式、项目规则或依赖关系。",
+          "VALIDATIONS 明确表示没有可执行 fixture；未提供测试、构建或类型检查的实际结果。",
+          "响应提到 git ls-tree 和文件系统检查，但供应证据中没有对应命令输出可供独立确认。"
+        ],
+        "normalized_score": 14.67,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "optimistic-profile-update",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确保留 React、TypeScript 和现有 updateProfile(displayName) API，并覆盖乐观展示、失败回滚、错误提示、竞态与测试要求。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "修改局限于组件状态、API 边界校验和行为测试，没有引入新依赖或多余抽象。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "类型检查和现有测试通过，主路径完整；但重叠请求中较早成功响应被完全丢弃，若最新请求随后失败，会回滚到提交前的旧权威值，而不是期间已经确认的最新权威响应。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "提交序号能阻止旧响应直接覆盖当前乐观结果，也处理了失败和非法 payload；但没有完整处理“旧请求成功、最新请求失败”的交错状态，且仅靠客户端响应序号无法约束服务端写入顺序。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "保存后立即显示新名称，当前请求失败时恢复名称并提供 role=alert 错误，表单仍可编辑和重新提交。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "提供了实际 npm ci、TypeScript 和 Vitest 成功结果；但新增竞态测试在响应 resolve 后查询的是已经显示的 Lin，未可靠等待对应异步状态更新完成，因此可能在迟到响应真正处理前结束，证明力度不足。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结果优先，清楚说明修改范围、状态模型、错误处理、竞态策略、测试位置和实际验证结果。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有覆盖“较早请求成功后，最新请求失败”这一关键交错场景。",
+          "没有单独展示非 2xx 响应行为测试。",
+          "竞态测试未可靠同步到两个请求响应均被 React 处理完成，存在假阳性风险。"
+        ],
+        "normalized_score": 12.57,
+        "case_failures": [],
+        "verdict": "basic"
+      },
+      {
+        "id": "vite-feature-flags-plugin",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确覆盖了可发布包、类型化虚拟模块、dev/build/HMR 一致性、诊断、秘密隔离、包导出、source map、缓存、测试和版本演进等目标。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 1,
+            "reason": "虚拟模块和 Vite 标准钩子是合理选择，但额外使用 fs.watchFile、手动触发 watcher 事件并改写 server.close，未充分比较其必要性、重复事件和生命周期复杂度。"
+          },
+          {
+            "key": "infrastructure_design",
+            "score": 2,
+            "reason": "提供了窄插件 API、虚拟模块契约、公共类型、受限 exports、发布产物检查和真实消费示例，基建消费者与产物边界基本完整。"
+          },
+          {
+            "key": "developer_experience",
+            "score": 2,
+            "reason": "类型增强示例、类型负例、带路径和修复建议的统一诊断、README 及包入口说明，使常见使用和排错路径较清楚。"
+          },
+          {
+            "key": "compatibility_evolution",
+            "score": 1,
+            "reason": "说明了 major/minor/patch 分类和未来扩展原则，但没有明确支持矩阵、原型调用契约的迁移/弃用方案、发布验证范围及回滚办法。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "构建、类型、dev、诊断和打包主路径均通过验证，但 source map 将完整原始 JSON 写入 sourcesContent，与白名单安全契约冲突；mtime 单键缓存和自定义 watcher 生命周期也留下边界风险。"
+          },
+          {
+            "key": "runtime_delivery",
+            "score": 1,
+            "reason": "区分了 dev/build/HMR、模块图失效、内存缓存和发布包边界，但 source map 会绕过序列化白名单携带完整源数据，缓存失效也只依赖 mtimeMs。"
+          },
+          {
+            "key": "security_trust",
+            "score": 0,
+            "reason": "createModuleMap 把未经白名单裁剪的 sourceText 整体放入 sourcesContent；启用或提供客户端 source map 时，SERVER_TOKEN 等未暴露秘密仍可能进入浏览器可获取的构建/开发产物。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "给出了 npm ci 和覆盖构建、类型、dev、诊断、打包的实际成功结果，但没有验证启用 source map 后的产物保密性，也未声明这一关键边界未验证。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 1,
+            "reason": "结果和文件范围表达清楚，但“只把 expose 白名单值带进客户端”的结论与完整 JSON 被写入 source map 的实现直接矛盾，遗漏了最关键风险。"
+          }
+        ],
+        "global_failures": [
+          "将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测：虚拟模块 source map 的 sourcesContent 包含完整 flags JSON，而非白名单裁剪后的内容。"
+        ],
+        "evidence_limits": [
+          "未提供 check-dev.mjs、check-build.mjs、check-package.mjs 完整断言内容，无法确认 HMR、source map 和发布产物分别验证到何种真实边界。",
+          "packages/plugin/package.json 的 exports 后半部分未展示，包导出细节主要由成功构建和描述间接支持。",
+          "没有启用生产 source map 后检查产物是否包含未暴露秘密的验证结果。"
+        ],
+        "normalized_score": 9.6,
+        "case_failures": [
+          {
+            "rule": "将完整 process.env 或未筛选配置序列化到客户端",
+            "reason": "`createModuleMap` 将未经白名单过滤的完整 JSON 原文 `snapshot.sourceText` 写入 `sourcesContent`；生成并发布 source map 时，未暴露的服务端秘密仍可能进入客户端构建产物。"
+          }
+        ],
+        "verdict": "fail"
+      }
+    ]
+  }
+}
