@@ -170,6 +170,13 @@ def build_prompt(case: dict[str, Any], mode: str) -> str:
     return "\n".join(sections)
 
 
+def routing_capture_valid(routing: dict[str, Any]) -> bool:
+    """New breadth exceptions need scoring; legacy captures keep their old gate."""
+    if routing.get("routing_policy_version", 1) < 2:
+        return routing.get("breadth_ok", True)
+    return routing.get("rendering_common_ok", True)
+
+
 def analyze_reference_reads(events_text: str, workspace: Path) -> dict[str, Any]:
     files: set[str] = set()
     contaminated_files: set[str] = set()
@@ -234,7 +241,11 @@ def analyze_reference_reads(events_text: str, workspace: Path) -> dict[str, Any]
     return {
         "files": sorted(files),
         "topic_count": topic_count,
+        # Legacy fields retain the original default-route meaning, not approval.
         "breadth_ok": topic_count <= 2 and rendering_ok,
+        "routing_policy_version": 2,
+        "breadth_review_required": topic_count > 2 or len(selected_rendering_extensions) > 1,
+        "rendering_common_ok": not selected_rendering_extensions or has_rendering_common,
         "rendering_route_ok": rendering_ok,
         "skill_paths": sorted(skill_paths),
         "local_skill_read": any(
@@ -422,7 +433,7 @@ def main() -> int:
         and record.get("reference_routing", {}).get("local_skill_read", False)
         and record.get("reference_routing", {}).get("skill_isolation_ok", True)
         and record.get("reference_routing", {}).get("isolation_ok", True)
-        and record.get("reference_routing", {}).get("breadth_ok", True)
+        and routing_capture_valid(record.get("reference_routing", {}))
         for record in manifest["cases"]
         if record["mode"] == "candidate"
     )

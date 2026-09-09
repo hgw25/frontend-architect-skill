@@ -108,6 +108,7 @@ cases:
       - 保留与单一所有者共同变化的小 helper、类型、样式和测试，不为对称性建空层
       - 使用语义、变化原因、生命周期和契约决定组件或 hook 拆分，而不是行数或 JSX 区块
       - 说明新增边界隐藏了什么易变决策或复杂度，避免只改名转发调用的浅层模块
+      - 用题目已有的优惠券、库存或 SDK 变化说明修改如何局限于对应所有者，不为演练新增扩展框架
     fail_if:
       - 只把原文件按 components、hooks、services、utils 分类移动
       - 用一个万能 hook、store 或 controller 继续拥有全部状态与副作用
@@ -283,6 +284,7 @@ cases:
       - 失败时恢复可解释状态并提供可访问的错误和重试路径
       - 给出代码、类型、调用点和行为测试的一致修改
       - 测试成功、失败回滚和快速重复提交而不是内部 state 名称
+      - 将不变量、状态所有者、响应生效条件与乱序验证连成一致实现，而不只在说明中承诺正确性
     fail_if:
       - 只展示核心 hook 或 reducer 片段而没有完整调用关系
       - 吞掉错误或让失败后的乐观值继续伪装成已保存
@@ -567,3 +569,204 @@ cases:
       - 把某一宿主或历史版本的 setData 数值限制当作所有小程序的固定规则
       - 只做节流而不分析跨层传输、节点更新和隐藏页生命周期
       - 用开发者工具表现或更小 payload 单独证明用户卡顿已经解决
+
+  - id: profile-domain-contract
+    title: 个人主页身份与接口契约
+    prompt: >-
+      为已有 Vue 用户端设计个人主页的最小实施方案，视觉参考 GitHub。
+      用户与开发者是两个身份体系。GET /users/{userId} 返回 profile 和 applications，
+      服务端按查看者身份决定是否包含私有应用；旧生成注释仍写着 applications 仅公开。
+      产品负责人已确认当前接口会向本人返回公开和私有应用。作者署名只有 developerLogin，
+      没有 userId 映射。请说明路由、数据流、作者入口、实现顺序和验收方式。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 使用用户身份设计主页，不把 developerLogin 当 userId
+      - 按当前契约使用单一主页请求，不额外拼接私有应用
+      - 明确作者跳转缺少映射，完成独立主页工作并报告未完成入口
+      - 验证本人和他人访问、直达与错误状态
+    fail_if:
+      - 猜测身份映射或以开发者 login 构造用户主页
+      - 用旧注释覆盖明确产品契约并额外请求私有数据
+      - 将不可用作者入口描述为完整交付
+
+  - id: covered-hover-diagnosis
+    title: Hover 失败与测试假通过
+    prompt: >-
+      折叠侧栏最后一个按钮在实际应用中 hover 没反应。组件测试直接对按钮 dispatchEvent
+      却通过。按钮由 Tooltip 和 Dropdown 组合；同版本上游 demo 正常。
+      本地另有透明分组标题和负 margin。团队建议替换底层 Tooltip。请评估证据，给出下一步
+      调查、最小修复的决策条件和验收方法。你目前不能运行应用。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 区分未确认假设和事实，不从组合结构直接断言库冲突
+      - 检查真实命中元素、几何覆盖和本地上游差异
+      - 真实指针路径验证 hover 与点击，保留键盘行为
+      - 明确没有运行应用，不宣称修复或根因已确认
+    fail_if:
+      - 在没有区分性证据时要求替换 Tooltip 或断言透明标题就是已确认根因
+      - 以直接派发事件测试通过证明真实 hover 正常
+
+  - id: remove-obsolete-interaction
+    title: 删除交互后收敛内部结构
+    prompt: >-
+      一个会话面板取消 60% 停靠，现在只需全高展开、头部下拉收起、短拖回弹。
+      当前实现隐藏了停靠按钮，但仍维护 sheetHeight、heightListener、WebView 中间高度绘制
+      补偿，以及为这些行为透传的五个参数；这些代码仍会运行。项目已有全高收起动画。
+      公共可调高度抽屉仍被其他页面使用。请给出最小重构方案和验证计划。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - correctness_boundary
+      - verification_evidence
+    must_observe:
+      - 按剩余行为重新评估可变高度机制，复用现有收起动画
+      - 追踪并删除仅服务已取消行为的状态监听补偿与透传
+      - 保留其他消费者依赖的公共抽屉能力
+      - 验证短拖回弹、完整收起、重复手势和 WebView 展示及生命周期
+    fail_if:
+      - 以代码仍被调用为由保留全部旧机制
+      - 只新增禁用停靠开关或者删除其他消费者仍需的公共能力
+
+  - id: field-eligibility-consistency
+    title: 表单字段规则的跨路径一致性
+    prompt: >-
+      评审下面的表单处理逻辑。契约规定 disabled 字段不参与校验和提交。
+      不需要设计通用规则引擎，请指出实际缺陷，给出小范围修复和有意义的测试。
+    artifact: |
+      async function processForm(fields, values, send) {
+        const errors = {};
+        for (const field of fields.filter(field => !field.disabled)) {
+          if (field.required && !values[field.name]) errors[field.name] = 'Required';
+        }
+        for (const field of fields.filter(field => field.validate)) {
+          const error = await field.validate(values[field.name], values);
+          if (error) errors[field.name] = error;
+        }
+        if (Object.keys(errors).length) return { errors };
+        const payload = Object.fromEntries(fields
+          .filter(field => !field.disabled)
+          .map(field => [field.name, values[field.name]]));
+        return send(payload);
+      }
+    applicable_dimensions:
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 识别禁用字段仍运行自定义校验并可能阻塞提交
+      - 统一相关处理路径的有效字段集合或等效策略
+      - 区分 required 的空值规则和合法的零或 false，说明需依据字段契约
+      - 通过禁用字段校验失败但仍可提交且不含该字段的行为验证
+    fail_if:
+      - 仅修改命名或拆函数而遗漏有效字段不一致
+      - 为局部一致性问题引入通用规则引擎
+
+  - id: proportional-design-documentation
+    title: 按决策需要区分文档深度
+    prompt: >-
+      判断以下任务在编码前是否需要持久化设计文档，并说明最小准备和后续行动：
+      A，公共按钮已有 spacing token，将间距从 8px 调成 6px，不改变交互和 API；
+      B，已有列表页增加遵循现有 URL 筛选约定的状态筛选；
+      C，三个应用迁移到统一登录状态，旧新会话接口并存两周，两个团队分阶段接手，
+      用户身份、刷新与退出传播的所有权尚未确定。用户已授权实现，仓库没有额外审批要求。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - A 直接实施和适度验证，不因公共组件而要求设计文档
+      - B 可简短说明数据流和验证后实施，不强制持久化文档
+      - C 因跨团队所有权和迁移决策需要可追溯方案，复用项目现有文档位置
+      - 区分需要澄清的业务决策与不必要的文档审批
+    fail_if:
+      - 所有任务都强制先建文档或等待用户批准
+      - 因共享文件或功能关键词机械决定文档深度
+      - C 不处理所有权歧义就直接实施迁移
+  - id: field-eligibility-executable
+    title: 实现有效字段统一契约
+    prompt: >-
+      请直接修复 fixture 的表单处理实现，遵守 README.md 的现有公共 API 与字段契约。
+      禁用字段不校验、不提交且不能阻塞；required 区分空值与 0/false；异步校验保留具体错误。
+      保持实现小而清楚，运行 npm run check，说明实际通过的检查与未验证的范围。
+      不修改受保护测试或 package.json，不增加依赖。
+    artifact: ''
+    fixture: evals/fixtures/field-eligibility
+    protected_paths:
+      - README.md
+      - package-lock.json
+      - package.json
+      - test/process-form.test.js
+    validation_commands:
+      - npm ci
+      - npm run check
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - implementation_integrity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 用一致的有效字段策略贯穿 required、自定义校验与提交
+      - 准确表达空值而不使用简单真假值校验
+      - 等待异步校验、保留错误信息和已有异常传播契约
+      - 通过公共 API 验证禁用字段不调用 validator 且不进入 payload
+      - 运行验收且不修改受保护文件
+    fail_if:
+      - 测试仍失败或改弱受保护测试
+      - 为局部表单流程引入通用规则引擎或依赖注入框架
+      - 只拆函数或改名而没有消除跨路径契约不一致
+
+  - id: search-request-lifecycle-executable
+    title: 实现搜索请求所有权和稳定数据边界
+    prompt: >-
+      请直接修复 fixture 中 createSearch 的实现，按照 README.md 的公共契约维护草稿、
+      提交查询和结果。只有最新启动请求能发布结果、错误和结束状态；transport 不支持取消。
+      retry 必须使用已提交查询；dispose 后不再修改状态；API DTO 不进入公开 UI 数据。
+      运行 npm run check，不改受保护测试或 package.json，不增加框架或依赖。
+    artifact: ''
+    fixture: evals/fixtures/search-request-lifecycle
+    protected_paths:
+      - README.md
+      - package-lock.json
+      - package.json
+      - test/search.test.js
+    validation_commands:
+      - npm ci
+      - npm run check
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - correctness_boundary
+      - implementation_integrity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 同一请求所有权约束覆盖成功失败和清理路径，重复 query 也按请求区分
+      - 草稿修改不修改提交查询，重试捕获已提交查询
+      - DTO 在进入公开状态前映射为既定 UI 类型
+      - dispose 使在途结果失效并阻止后续调用产生请求
+      - 基于公共行为验证乱序完成而不是验证私有 token 或函数名
+    fail_if:
+      - 只保护成功结果而遗漏错误或结束状态
+      - 用取消保证替代请求所有权，或只比较 query 导致同查询竞态
+      - 测试失败或改弱受保护测试
+      - 新增不需要的通用请求框架缓存或订阅体系

@@ -4,7 +4,7 @@
 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
-当前发布版本：[v0.2.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.2.0)。
+当前发布版本：[v0.3.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.3.0)。
 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 它解决什么问题
@@ -45,6 +45,7 @@ frontend-architect-skill/
 │   └── openai.yaml
 ├── references/
 │   ├── architecture-and-code.md
+│   ├── async-and-lifecycles.md
 │   ├── module-boundaries.md
 │   ├── programming-paradigms.md
 │   ├── frontend-infrastructure.md
@@ -110,7 +111,7 @@ frontend-architect Skill。
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo hgw25/frontend-architect-skill \
   --path . \
-  --ref v0.2.0 \
+  --ref v0.3.0 \
   --name frontend-architect
 ```
 
@@ -130,7 +131,7 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 ```bash
 set -euo pipefail
 
-skill_release="v0.2.0"
+skill_release="v0.3.0"
 skill_stage_dir="$(mktemp -d)"
 skill_backup_root="$HOME/.codex/skill-backups"
 skill_backup_dir="$skill_backup_root/frontend-architect-$(date +%Y%m%d-%H%M%S)"
@@ -174,6 +175,19 @@ printf 'Backup: %s\n' "$skill_backup_dir"
 
 ## 核心观点
 
+### 统一的判断体系
+
+Skill 按四个部分组织：入口中的核心判断体系和任务执行方式、按需读取的专题参考、
+以及维护阶段使用的行为评测。评测规则不作为每次业务开发必须读取的清单。
+
+核心主线是：**行为 → 事实 → 模型 → 边界 → 实现 → 证据**。重要规则需要能对应到
+状态或资源的所有者、实际执行位置和可发现错误的验证；新边界用有现实依据的变化
+检验，而不靠目录数量证明架构质量。证据变化时可以回到前面的决定重新调整。
+
+执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。明确的小改动
+直接实现，边界清楚的方案在对话中简述；只有需要跨阶段或协作保留的重要决定才落成
+简短文档。文档不是默认审批门槛。
+
 ### 模块化
 
 对于具有明确业务能力的中大型产品应用，通常以功能或领域作为上层边界，再在功能
@@ -193,6 +207,13 @@ printf 'Backup: %s\n' "$skill_backup_dir"
 
 先证明问题，再支付抽象成本。相似语法不代表相同语义；少量重复通常比错误抽象更
 容易纠正。
+
+代码构造指导覆盖主流程与辅助函数、数据归一化与草稿/权威值的区别，以及真实调用方
+需要理解的契约。异步专题区分过期结果、取消、排队、去重、幂等和乐观回滚，优先复用
+已有数据层。平台 API 不自动优于已承担兼容性和生命周期策略的项目封装。
+
+专题默认读取一至两个；出现明确的新决策缺口时可以继续按需读取并说明理由。
+评测将额外读取交给独立审查，不以数量直接判错，也不无条件认可大范围加载。
 
 ### 前端基建
 
@@ -255,8 +276,8 @@ python3 scripts/run_behavior_evals.py \
 ```
 
 该脚本关闭插件发现，并审计实际 reference 读取：baseline 必须保持零 Skill 引用，
-candidate 只能加载隔离工作区中的 `SKILL.md` 与按需 reference；读取全局副本、超出路由
-宽度或修改用例声明的受保护验收脚本都会让运行失败。它不会替代盲评；运行后仍需按照
+candidate 只能加载隔离工作区中的 `SKILL.md` 与按需 reference；读取全局副本或修改
+受保护验收脚本会使运行失败。超出默认路由宽度则必须通过独立的必要性审查。它不会替代盲评；运行后仍需按照
 rubric 在看不到另一组结果的上下文中评分。
 
 生成完成后，可在与生成会话分离的上下文中执行两阶段评测。脚本先在隐藏

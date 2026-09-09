@@ -5,9 +5,14 @@ from __future__ import annotations
 
 import copy
 import unittest
+import tempfile
+import json
+from pathlib import Path
 
 from score_behavior_evals import (
     finalize_evaluations,
+    build_prompt,
+    build_failure_prompt,
     validate_and_normalize,
     validate_failure_audits,
     validate_score_configuration,
@@ -39,6 +44,27 @@ def raw_score(*, global_failures: list[str] | None = None) -> dict:
             }
         ]
     }
+
+
+class RoutingEvidenceTests(unittest.TestCase):
+    def test_only_second_stage_gets_commands_and_stated_reasons(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            case_dir = root / CASE_ID / "candidate"
+            case_dir.mkdir(parents=True)
+            events = [
+                {"type": "item.completed", "item": {"type": "agent_message", "text": "New gap: native keyboard ownership"}},
+                {"type": "item.completed", "item": {"type": "command_execution", "command": "cat rendering-app.md", "aggregated_output": "excluded-output"}},
+            ]
+            (case_dir / "events.jsonl").write_text("\n".join(json.dumps(event) for event in events))
+            batch = [{"id": CASE_ID, "validations": [], "reference_routing": {"breadth_review_required": True}}]
+            cases = {CASE_ID: {**CASES[CASE_ID], "id": CASE_ID, "prompt": "Support web and native clients"}}
+            quality = build_prompt("candidate", batch, cases, root)
+            audit = build_failure_prompt("candidate", batch, cases, root)
+        self.assertNotIn("New gap: native keyboard ownership", quality)
+        self.assertIn("New gap: native keyboard ownership", audit)
+        self.assertIn("cat rendering-app.md", audit)
+        self.assertNotIn("excluded-output", audit)
 
 
 class VerdictTests(unittest.TestCase):
@@ -93,6 +119,24 @@ class VerdictTests(unittest.TestCase):
             validate_failure_audits(raw, BATCH, CASES),
             {CASE_ID: []},
         )
+
+    def test_pending_breadth_cannot_reuse_unaudited_cached_score(self) -> None:
+        batch = [{"id": CASE_ID, "reference_routing": {"breadth_review_required": True}}]
+        with self.assertRaisesRegex(ValueError, "Routing review required"):
+            validate_failure_audits({"audits": [{"id": CASE_ID, "triggered": []}]}, batch, CASES)
+
+    def test_breadth_audit_requires_justification_to_pass(self) -> None:
+        batch = [{"id": CASE_ID, "reference_routing": {"breadth_review_required": True}}]
+        for verdict in ("justified", "unjustified", "insufficient_evidence"):
+            with self.subTest(verdict=verdict):
+                audits = validate_failure_audits({"audits": [{
+                    "id": CASE_ID,
+                    "triggered": [],
+                    "routing_review": {"verdict": verdict, "reason": "Specific evidence assessment"},
+                }]}, batch, CASES)
+                evaluations = validate_and_normalize(raw_score(), batch, CASES)
+                result = finalize_evaluations(evaluations, audits)[0]
+                self.assertEqual(result["verdict"], "target" if verdict == "justified" else "fail")
 
     def test_score_configuration_rejects_mixed_reasoning_effort(self) -> None:
         scores = {"model": "gpt-5.4", "reasoning_effort": "medium"}

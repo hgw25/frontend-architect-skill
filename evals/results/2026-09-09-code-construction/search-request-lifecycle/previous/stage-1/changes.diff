@@ -1,0 +1,62 @@
+diff --git a/src/search.js b/src/search.js
+index 97267aa..663bf31 100644
+--- a/src/search.js
++++ b/src/search.js
+@@ -1,22 +1,44 @@
+ export function createSearch(fetchUsers) {
+-  let state = { draft: '', submitted: '', status: 'idle', items: [], error: null };
+-  async function submit() {
+-    state.submitted = state.draft.trim();
+-    state.status = 'loading'; state.error = null;
++  const state = { draft: '', submitted: '', status: 'idle', items: [], error: null };
++  let latestRequest = 0;
++  let disposed = false;
++
++  async function request(query) {
++    if (disposed || !query) return;
++
++    const requestId = ++latestRequest;
++    state.submitted = query;
++    state.status = 'loading';
++    state.error = null;
++
+     try {
+-      state.items = await fetchUsers(state.submitted);
++      const users = await fetchUsers(query);
++      if (disposed || requestId !== latestRequest) return;
++      state.items = users.map(user => ({ id: user.user_id, label: user.display_name }));
+       state.status = 'success';
+     } catch (error) {
+-      state.error = error.message; state.status = 'error';
+-    } finally {
+-      if (state.status === 'loading') state.status = 'idle';
++      if (disposed || requestId !== latestRequest) return;
++      state.error = error instanceof Error ? error.message : String(error);
++      state.status = 'error';
+     }
+   }
++
+   return {
+-    setDraft(value) { state.draft = value; },
+-    submit,
+-    retry: submit,
+-    getState() { return structuredClone(state); },
+-    dispose() {},
++    setDraft(value) {
++      if (!disposed) state.draft = value;
++    },
++    async submit() {
++      if (disposed) return;
++      await request(state.draft.trim());
++    },
++    async retry() {
++      await request(state.submitted);
++    },
++    getState() {
++      return structuredClone(state);
++    },
++    dispose() {
++      disposed = true;
++    },
+   };
+ }
