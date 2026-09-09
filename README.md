@@ -4,7 +4,7 @@
 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
-当前发布版本：[v0.3.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.3.0)。
+当前发布版本：[v0.3.1](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.3.1)。
 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 它解决什么问题
@@ -111,7 +111,7 @@ frontend-architect Skill。
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo hgw25/frontend-architect-skill \
   --path . \
-  --ref v0.3.0 \
+  --ref v0.3.1 \
   --name frontend-architect
 ```
 
@@ -131,7 +131,7 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 ```bash
 set -euo pipefail
 
-skill_release="v0.3.0"
+skill_release="v0.3.1"
 skill_stage_dir="$(mktemp -d)"
 skill_backup_root="$HOME/.codex/skill-backups"
 skill_backup_dir="$skill_backup_root/frontend-architect-$(date +%Y%m%d-%H%M%S)"
@@ -309,3 +309,23 @@ python3 scripts/test_score_behavior_evals.py
 `hgw25/frontend-architect-skill`。当前版本由 [VERSION](VERSION) 和对应的不可变 Git
 tag 标识，发布变化记录在 [CHANGELOG.md](CHANGELOG.md)。仓库当前尚未选择许可证；在
 明确许可证之前应保持 private。
+
+
+### 更新维护子技能
+
+`skills/frontend-architect-update` 是独立的维护子技能，可检查版本、从稳定 tag
+更新本机安装、识别本地修改并备份回滚。它复用系统 skill-installer，尚未提供独立 CLI。
+可显式调用 `$frontend-architect-update`，例如“更新本机 frontend-architect”。
+维护子技能独立安装，避免更新主技能时覆盖正在执行的维护流程。
+
+安装更新子技能（与主技能共用发布标签，但使用独立安装目录）：
+
+```bash
+python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+  --repo hgw25/frontend-architect-skill \
+  --path skills/frontend-architect-update \
+  --ref v0.3.1 --name frontend-architect-update
+```
+
+已存在的安装需先暂存新版、校验并备份旧版，再替换；安装器不会直接覆盖。
+当前更新子技能提供代理执行流程，尚无独立 CLI，尚未完成更新/回滚故障注入验证。

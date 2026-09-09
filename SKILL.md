@@ -9,6 +9,14 @@ Produce frontend changes that are easy to understand, safe to change, and
 proportionate to the product need. Optimize for sound decisions, not for code
 that merely looks sophisticated.
 
+## Skill maintenance
+
+For checking, updating, or rolling back this skill installation, use the
+`frontend-architect-update` companion. Its source is
+`skills/frontend-architect-update/SKILL.md` in the source repository.
+Prefer the independently installed companion when available; ordinary frontend
+work does not trigger an update check.
+
 ## Core reasoning: behavior to evidence
 
 Use one connected model throughout the task. Each decision supplies the next;
