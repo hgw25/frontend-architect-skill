@@ -34,6 +34,7 @@ REQUIRED_FILES = (
     "requirements-dev.txt",
     "agents/openai.yaml",
     "references/architecture-and-code.md",
+    "references/async-and-lifecycles.md",
     "references/module-boundaries.md",
     "references/programming-paradigms.md",
     "references/frontend-infrastructure.md",

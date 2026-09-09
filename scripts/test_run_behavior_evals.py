@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_behavior_evals import analyze_reference_reads, build_prompt, validate_protected_paths
+from run_behavior_evals import analyze_reference_reads, build_prompt, validate_protected_paths, routing_capture_valid
 
 
 def command_event(command: str) -> str:
@@ -163,7 +163,7 @@ class ReferenceReadTests(unittest.TestCase):
         self.assertEqual(result["topic_count"], 2)
         self.assertTrue(result["breadth_ok"])
 
-    def test_rejects_more_than_two_routed_topics(self) -> None:
+    def test_flags_more_than_two_routed_topics_for_review(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory)
             events = "\n".join(
@@ -179,8 +179,10 @@ class ReferenceReadTests(unittest.TestCase):
 
         self.assertEqual(result["topic_count"], 3)
         self.assertFalse(result["breadth_ok"])
+        self.assertTrue(result["breadth_review_required"])
+        self.assertTrue(routing_capture_valid(result))
 
-    def test_rejects_more_than_one_rendering_platform_extension(self) -> None:
+    def test_flags_more_than_one_rendering_platform_extension_for_review(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory)
             events = "\n".join(
@@ -197,6 +199,8 @@ class ReferenceReadTests(unittest.TestCase):
 
         self.assertFalse(result["rendering_route_ok"])
         self.assertFalse(result["breadth_ok"])
+        self.assertTrue(result["breadth_review_required"])
+        self.assertTrue(routing_capture_valid(result))
 
     def test_rejects_platform_extension_without_common_rendering_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -209,6 +213,11 @@ class ReferenceReadTests(unittest.TestCase):
 
         self.assertFalse(result["rendering_route_ok"])
         self.assertFalse(result["breadth_ok"])
+
+        self.assertFalse(routing_capture_valid(result))
+
+    def test_preserves_legacy_breadth_failure(self) -> None:
+        self.assertFalse(routing_capture_valid({"breadth_ok": False}))
 
 
 if __name__ == "__main__":
