@@ -3,7 +3,7 @@
 本文件记录 Frontend Architect Skill 的可安装发布版本。Git tag 是发布内容的不可变标识，
 `VERSION` 是仓库中的当前版本单一来源。
 
-## [Unreleased]
+## [0.4.0] - 2026-09-15
 
 ### Changed
 
@@ -16,7 +16,7 @@
 
 - 仓库与官方技能校验通过，27 项脚本测试通过。
 - 旧新技能各一次接手实验均通过 7 项首轮和 11 项接手检查，匿名复查认为实质等价。
-- 本轮未证明显著提升；完整对照和人工接手评估仍待执行，暂不发布新的稳定标签。
+- 本轮未证明显著提升；完整对照和人工接手评估仍待执行。本次经维护者确认，以校验及接手回归通过为依据发布，不宣称已满足显著改善的证据标准。
 
 ## [0.3.1] - 2026-09-09
 
@@ -84,3 +84,5 @@
 [0.3.0]: https://github.com/hgw25/frontend-architect-skill/compare/v0.2.0...v0.3.0
 
 [0.3.1]: https://github.com/hgw25/frontend-architect-skill/compare/v0.3.0...v0.3.1
+
+[0.4.0]: https://github.com/hgw25/frontend-architect-skill/compare/v0.3.1...v0.4.0
