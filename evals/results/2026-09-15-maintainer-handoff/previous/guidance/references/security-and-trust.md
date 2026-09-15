@@ -6,14 +6,6 @@ telemetry, or other security-sensitive browser capabilities.
 
 ## Trace data from source to sink
 
-Scale defenses to the actual source, sink and protected capability. Reuse the
-project's established boundary checks; internal consumers of validated data can
-rely on that contract until a new trust boundary or mutation invalidates it.
-Do not add repeated validation, generic sanitizers or catch-and-default wrappers
-merely because a value could hypothetically be wrong. Preserve necessary boundary
-checks and context-specific output safety; fix the responsible boundary when its
-contract is insufficient rather than distributing compensating checks everywhere.
-
 Identify:
 
 - untrusted sources such as network responses, URLs, storage, messages, files,

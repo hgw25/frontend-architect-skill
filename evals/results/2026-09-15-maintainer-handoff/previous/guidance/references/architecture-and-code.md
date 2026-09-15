@@ -257,8 +257,7 @@ Good APIs:
 - keep parameter meanings stable;
 - expose capabilities rather than internal mechanics;
 - document mutation, ownership, identity, and error behavior when non-obvious;
-- provide narrow escape hatches for concrete constraints or credible expected
-  variation, without exposing internals for arbitrary hypothetical uses.
+- preserve escape hatches only for demonstrated needs.
 
 ## Abstract at the right time
 
@@ -279,14 +278,6 @@ Extract when stable commonality has become visible, not when future reuse is
 merely imaginable. Conversely, do not use AHA to preserve obvious duplicated
 business rules that must change together.
 
-Do not wait for duplication to notice a volatile boundary. Before implementing,
-consider common domain changes and likely caller needs; a small seam or a more
-convenient API can be justified before a second consumer exists. Compare a
-realistic call site or follow-up change with and without it. Keep that benefit
-proportionate to the added concepts, and defer generalized registries, options or
-compatibility branches that the expected change does not require. Revisit this
-judgment before delivery rather than assuming a minimal first draft is sufficient.
-
 When simplifying a workflow, reassess the mechanisms rather than just removing
 an option from the UI. Trace the removed behavior's state, subscriptions,
 compensations, adapters, and forwarded parameters. Remove those with no remaining
@@ -294,7 +285,7 @@ requirement, preserve shared mechanisms with real consumers, and validate the
 surviving interaction. Reachable code can still be unnecessary. Do not create
 another configuration flag merely to keep an abandoned design alive.
 
-## Design utilities around explicit contracts
+## Design utilities defensively
 
 Before creating a general utility:
 
@@ -317,9 +308,8 @@ environment can use `Object.groupBy()` or `Map.groupBy()`.
   `constructor`, `toString`, and `__proto__`; use a null-prototype object and an
   own-property-safe strategy.
 - Do not reassign a selector parameter from a string to a function. Prefer a
-  single callback API unless realistic call sites show that property-name
-  shorthand improves usability enough to justify its typing and runtime cost;
-  repeated usage or a benchmark is not a prerequisite for that judgment.
+  single callback API unless property-name shorthand has repeated, measured
+  value.
 - In TypeScript, reflect partial group presence and key constraints accurately.
 
 These are return-contract decisions, not a mandate to replace an existing

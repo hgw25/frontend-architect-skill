@@ -9,44 +9,6 @@ Produce frontend changes that are easy to understand, safe to change, and
 proportionate to the product need. Optimize for sound decisions, not for code
 that merely looks sophisticated.
 
-## Maintainable engineering defaults
-
-These defaults are self-contained; no personal configuration or companion skill
-is required. Apply them to code, configuration, scripts and engineering operations
-within the task's scope:
-
-- Inspect existing contracts and workflows; reuse project capabilities, standard
-  tools and suitable maintained solutions before creating custom mechanisms.
-- Optimize for the next maintainer's understanding and ability to change the
-  system. Keep the execution path visible; fewer lines or more layers alone do
-  not establish simplicity.
-- Anticipate likely changes before implementation, including common domain
-  changes without a committed roadmap. Use clear ownership, modest extension
-  points and convenient APIs where they lower change or caller cost; implement
-  full general-purpose machinery only with stronger evidence of need. If the
-  predicted change never happens, the design should still earn its cost through
-  today's clarity or usability; otherwise keep the change easy to add later.
-- Before delivery, revisit a realistic likely change: can it be made locally,
-  or is a small design improvement warranted now? These are internal checkpoints,
-  not mandatory reports or approval gates.
-- Match defenses to actual trust boundaries, credible failures and explicit
-  requirements. Reuse existing guarantees; let internal code rely on validated
-  contracts. Avoid repeated checks, catch-and-default wrappers and security
-  frameworks justified only by hypothetical possibilities. Preserve necessary
-  authorization, external-input checks and secret protection.
-- Handle necessary safeguards within the authorized scope directly. Surface a
-  consequential tradeoff when extra protection would materially change product
-  experience, architecture or maintenance cost; do not create routine approval
-  steps. Verify relevant behavior and leave a reproducible maintenance path.
-
-## Skill maintenance
-
-For checking, updating, or rolling back this skill installation, use the
-`frontend-architect-update` companion. Its source is
-`skills/frontend-architect-update/SKILL.md` in the source repository.
-Prefer the independently installed companion when available; ordinary frontend
-work does not trigger an update check.
-
 ## Core reasoning: behavior to evidence
 
 Use one connected model throughout the task. Each decision supplies the next;
@@ -76,7 +38,7 @@ in the request, consumers, or history. Identify what would change and what would
 remain stable. If a transport change spreads into unrelated UI, or removing one
 interaction leaves its state and compensations behind, reconsider the boundary.
 Stop when responsibilities, contracts, and verification are clear enough to
-implement; apply the maintainable engineering defaults to extension decisions.
+implement; do not build extension points for speculative futures.
 
 ## Respect the local system
 
@@ -146,20 +108,16 @@ documentation requirements. Writing a plan is not an approval gate: continue
 authorized work, asking only about consequential ambiguity that evidence cannot
 resolve.
 
-## Apply the solution order locally
+## Prefer this solution order
 
-Prefer the project abstraction that owns relevant compatibility, errors,
-accessibility or lifecycle policy; a native API is not automatically simpler.
-For a missing capability, compare suitable standard or maintained solutions with
-local composition by total integration and maintenance cost. Verify consequential
-version, API and license assumptions when choosing a new dependency; skip external
-research for already-settled edits and trivial local operations. Explain concrete
-limitations before replacing an established solution.
-
-Use the project's package manager, generation sources and applicable migrations
-or codemods, then verify the resulting behavior. Preserve necessary rationale and
-reproduction steps in existing repository locations so maintenance does not depend
-on chat history or temporary scripts.
+Inspect the project's existing contract and supported platform capabilities
+first. Prefer an established project abstraction when it already owns relevant
+compatibility, errors, accessibility, or lifecycle; bypassing it with a native
+API can duplicate policy. For a capability the project does not provide, prefer
+the supported platform, then a small local composition, then a focused abstraction
+or dependency justified by actual needs. Compare the complete call site,
+integration, migration and maintenance cost, not implementation line count.
+Replace an unsuitable existing abstraction with evidence and an explicit scope.
 
 ## Diagnose before restructuring
 

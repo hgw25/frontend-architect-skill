@@ -1,5 +1,169 @@
 version: 1
 cases:
+  - id: anticipate-without-current-duplication
+    title: 当前没有重复仍检查后续变化
+    prompt: >-
+      一个新订单页面只展示一个订单，运费目前固定为 10 元；直接在页面计算总价也能
+      正确工作，没有重复代码、已有缺陷、第二个消费者或已承诺的运费路线图。
+      请给出你会采用的简单实现结构及理由，不需要完整应用代码。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - module_boundaries
+      - compatibility_evolution
+    must_observe:
+      - 主动检查运费政策作为常见业务变化的可能性，不虚构已确定需求
+      - 说明该政策改变时的修改位置，允许命名常量或局部函数等很小的边界
+      - 当前实现可以保持简单，不强制额外文件或共享抽象
+    fail_if:
+      - 仅因没有路线图或重复就明确拒绝考虑任何后续变化
+      - 没有辨认可能变化的业务政策或说明其修改位置
+      - 提前实现多地区运费引擎或可配置规则系统
+
+  - id: anticipate-small-boundary
+    title: 无明确路线图也主动预留合理边界
+    prompt: >-
+      一个前端订单页首次接入接口，目前只有一个调用方，没有第二个数据源的路线图。
+      页面直接使用接口字段 total_in_cents，格式转换与请求错误处理散在多个事件函数中。
+      请提出便于使用和后续修改的实现边界，不需要完整应用代码。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - module_boundaries
+      - developer_experience
+    must_observe:
+      - 主动识别接口字段和错误处理是可能变化且已有分散成本的边界
+      - 允许在单一调用方阶段集中适配和转换，使页面使用业务语义
+      - 用现实调用或接口变化说明设计收益，不要求重复或路线图作为前提
+    fail_if:
+      - 仅因尚无第二个消费者就拒绝集中明确职责
+      - 为可能的数据源变化预建插件注册和动态配置框架
+
+  - id: convenience-without-framework
+    title: 为常用调用提供适度便利
+    prompt: >-
+      项目的提示组件接收 tone、role、duration 三个参数。保存成功的调用都应采用
+      positive、status、3000，而其他提示有不同语义。现在已有两个保存按钮要接入，
+      请设计方便调用且仍能表达不同提示的接口，不需要完整组件实现。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - developer_experience
+      - module_boundaries
+    must_observe:
+      - 允许用语义化便捷入口或合理默认值集中成功提示策略
+      - 保留其他真实提示语义的明确表达方式
+      - 以调用便利和策略一致性判断封装价值
+    fail_if:
+      - 以所有封装都是冗余为由要求调用方重复整组策略
+      - 建设没有需求的提示插件框架或复杂重载系统
+
+  - id: trust-validated-internal-data
+    title: 已验证领域对象避免重复防御
+    prompt: >-
+      接口适配层已运行时验证订单金额为有限数值并返回类型明确的对象。内部汇总函数
+      只消费这些对象，不修改输入，没有其他入口。请给出汇总实现与错误处理原则，
+      并说明将来增加外部输入入口时的调整位置。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - security_trust
+      - correctness_boundary
+    must_observe:
+      - 内部按已验证契约直接计算，复用适配层保障
+      - 新外部入口需要明确输入验证的职责
+      - 不用返回零或过滤异常项掩盖程序错误
+    fail_if:
+      - 给每个内部调用添加重复解析或防御包装器
+      - 静默将无效金额转为零
+      - 为简化而移除外部输入边界的运行时验证
+
+  - id: retain-real-authorization
+    title: 减少防御仍保留实际授权边界
+    prompt: >-
+      前端通过服务端接口删除文档，用户已登录，前端隐藏了其他人的删除按钮。
+      现有服务端数据访问只验证文档存在，没有验证调用者是否能删除。请评审最小必要
+      修复与前端职责，不实施部署，不扩建安全框架。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - security_trust
+      - correctness_boundary
+    must_observe:
+      - 明确服务端必须执行文档删除权限判断并复用已有鉴权能力
+      - 前端呈现权限与失败信息，不能替代权威授权
+      - 处理实际边界缺口，不在无关内部函数重复设防
+    fail_if:
+      - 以避免过度防御为由接受登录或隐藏按钮作为删除授权
+      - 虚构数据访问已保证文档权限
+      - 为局部授权缺口要求重建通用安全系统
+
+  - id: reuse-existing-table-capability
+    title: 优先复用现有成熟表格能力
+    prompt: >-
+      为现有前端表格增加多列排序和键盘导航，给出实现与验证方案。
+      项目已安装 TableKit 4（本评测虚构库），现有页面使用其 Table 组件。
+      下面是已核实与安装版本匹配的项目资料，无需联网。
+    artifact: |
+      TableKit 4 supports controlled multi-column sorting via sortModel/onSortModelChange.
+      The existing project wrapper forwards both props and owns locale and keyboard navigation.
+      Existing consumer tests cover focus after sorting and localized sort announcements.
+      The requested behavior matches that documented contract; no extra dependency is needed.
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - verification_evidence
+    must_observe:
+      - 通过现有封装与已核实接口实现功能，复用其键盘与本地化策略
+      - 验证多列排序结果、状态更新与排序后的焦点行为
+      - 让维护者能从现有组件与测试定位行为，无需新增平行表格系统
+    fail_if:
+      - 在已满足需求的前提下自建排序引擎或键盘导航系统
+      - 绕过现有封装而遗漏其本地化或焦点策略
+
+  - id: trivial-formatting-without-dependency
+    title: 简单局部逻辑无需新增依赖
+    prompt: >-
+      一个内部页面要把可能为 null 的展示名称去掉首尾空白，为空时显示“未命名”。
+      只在一个地方使用，项目没有相关工具函数，输入类型为 string | null。
+      请给出最小实现和验证建议。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+    must_observe:
+      - 使用语言已有能力完成局部逻辑
+      - 覆盖 null、空白字符串与普通名称的行为
+      - 验证深度与低风险范围相称
+    fail_if:
+      - 为此添加第三方依赖或共享格式化框架
+      - 把复用优先解释为所有简单操作都必须先做外部库调研
+
+  - id: preserve-upstream-maintenance-flow
+    title: 前端模板持续同步保留维护路径
+    prompt: >-
+      我们的前端项目从公司模板 fork 而来，以后每月都要更新模板。现在请给出同步方案，
+      不能丢掉业务修改。已知 origin 指向团队 fork，尚未配置 upstream；模板仓库 URL
+      已由团队确认可用，双方有共同 Git 历史，团队分支有已推送的业务提交，工作区
+      还有未提交表单修改。项目已有构建和表单回归测试。无需实际执行命令。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - compatibility_evolution
+      - operability
+      - verification_evidence
+    must_observe:
+      - 先核对工作区、分支和远程关系，明确保留未提交修改的方法
+      - 使用 Git 上游跟踪与历史集成机制支持后续重复同步
+      - 处理业务冲突并运行已有构建和相关回归验证
+      - 说明中止或恢复路径并记录后续可重复的同步方式
+    fail_if:
+      - 默认下载模板逐文件覆盖业务仓库或编写文件对比同步器
+      - 默认丢弃未提交修改或强推重写团队已共享历史
+      - 将双远程当作足以自动解决语义冲突和验证问题
+
   - id: group-by-api
     title: 通用 groupBy 封装
     prompt: >-

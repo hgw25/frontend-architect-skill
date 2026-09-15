@@ -224,9 +224,11 @@ def validate_frontmatter(errors: list[str]) -> None:
 
 def validate_markdown(errors: list[str]) -> None:
     for markdown_path in ROOT.rglob("*.md"):
-        if markdown_path.is_relative_to(ROOT / "evals/results") or is_generated_path(
-            markdown_path
-        ):
+        if markdown_path.is_relative_to(ROOT / "evals/results"):
+            if markdown_path.name == "SKILL.md":
+                add_error(errors, f"Discoverable eval skill snapshot: {markdown_path.relative_to(ROOT)}; use SKILL.snapshot.md")
+            continue
+        if is_generated_path(markdown_path):
             continue
         content = markdown_path.read_text(encoding="utf-8")
         relative_path = markdown_path.relative_to(ROOT)

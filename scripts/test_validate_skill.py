@@ -10,6 +10,23 @@ from unittest.mock import patch
 import validate_skill
 
 
+class SnapshotDiscoveryTests(unittest.TestCase):
+    def test_eval_snapshot_cannot_be_discovered_as_a_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshot = root / "evals/results/example/guidance/SKILL.md"
+            snapshot.parent.mkdir(parents=True)
+            snapshot.write_text("---\nname: frontend-architect\n---\n")
+            with patch.object(validate_skill, "ROOT", root):
+                errors = []
+                validate_skill.validate_markdown(errors)
+                self.assertTrue(any("Discoverable eval skill snapshot" in e for e in errors))
+                snapshot.rename(snapshot.with_name("SKILL.snapshot.md"))
+                errors = []
+                validate_skill.validate_markdown(errors)
+                self.assertEqual(errors, [])
+
+
 class ReleaseMetadataTests(unittest.TestCase):
     def write_release_files(
         self,
