@@ -7,6 +7,44 @@ reviewing dependency direction.
 Use [runtime-and-delivery.md](runtime-and-delivery.md) instead when the dominant
 decision is workspace packaging, build graphs, or server/client placement.
 
+## Establish ecosystem conventions first
+
+Inspect the framework, router, supported version, generated starter and existing
+project organization. Use project conventions when suitable, then the framework's
+official routing/layout/file conventions and established ecosystem practice.
+Consult current official guidance for consequential unsettled assumptions; a
+routine edit does not require a fresh architecture survey. A starter provides
+bootstrapping, not a finished business architecture.
+
+Common names are not interchangeable requirements: `pages` or `views` often own
+route screens, `layouts` owns application shells, and `features` often owns user
+capabilities that may span screens. Follow the actual framework: Next.js uses
+route-local `page` and `layout` conventions; Nuxt has prescribed page and layout
+directories. Neither establishes a universal React or Vue directory template.
+Do not prohibit `modules`, force `features`, or add synonymous layers merely to
+complete a tree. Explain a departure through concrete maintenance benefit.
+
+Separate responsibilities before choosing their homes:
+
+- Application entry composes routing, providers and the application shell.
+- Layout owns navigation and shared page framing, without domain commands.
+- Page coordinates its use case and components; it should not accumulate every
+  form draft, list filter, item action and recovery interaction.
+- Components own coherent presentation and interaction contracts, including
+  their local state, focus and feedback. Shared state stays with its closest
+  meaningful common owner; avoid both prop forwarding chains and duplicated state.
+- Domain rules and data access have identifiable owners independent of rendering.
+
+Give independently meaningful components and modules discoverable files by
+default. Small private helpers may remain with their owner. Classify internals
+when it helps navigation; avoid both a flat business dumping ground and empty
+one-file directory hierarchies. Extract layouts when they own real shell behavior,
+not solely to create another forwarding component.
+
+Revisit these boundaries when adding substantial interactions. Neither a small
+application nor lack of reuse justifies indefinite accumulation in `App` or a
+page. Moving all handlers into one giant hook is the same ownership problem.
+
 ## Start with change and ownership
 
 Do not begin with folder names. A module is a boundary around code that has a
@@ -63,9 +101,10 @@ cross-feature imports become cyclic.
 
 ## Use a hybrid default for product applications
 
-For a non-trivial product application, prefer feature/domain boundaries at the
-upper level and technical roles only inside a boundary when the module is large
-enough to benefit from them.
+Within the framework and project conventions, group related product behavior
+by ownership, with technical roles inside a boundary when they improve navigation.
+A page-owned feature may stay under its page; a capability used across pages may
+have a separate home. The following is one option, not the starting assumption.
 
 ```text
 src/
@@ -242,6 +281,8 @@ imports explicit.
 
 After proposing a structure, verify:
 
+- a maintainer familiar with the stack can locate entry, layout, page, component,
+  business rule and data access responsibilities without chat history;
 - an ordinary change has one obvious starting location;
 - state, effects, domain rules, and external adapters each have an identifiable
   owner;
@@ -266,7 +307,8 @@ Use these questions:
 | Repeated product interaction with stable semantics | Shared feature/capability |
 | Business entity representation reused across capabilities | Domain/entity module when it creates a useful boundary |
 | Generic UI primitive with no product policy | Shared UI or design system |
-| HTTP, dates, storage, logging, or environment integration | Focused shared infrastructure module |
+| Feature-specific transport mapping or storage schema | Owning feature or page data boundary |
+| Product-independent HTTP, dates, storage or logging policy serving broader consumers | Focused shared infrastructure module |
 | Multi-feature user journey | Route, page, application service, or higher-level orchestrator |
 | One-off helper | Near its caller until real reuse appears |
 
@@ -340,3 +382,9 @@ not by conformity to a diagram.
   [Slices and segments](https://feature-sliced.design/docs/reference/slices-segments):
   distinguish business slices, technical segments, public APIs, and dependency
   direction. Use it as a reference model, not a mandatory folder template.
+
+- Next.js, [Project structure](https://nextjs.org/docs/app/getting-started/project-structure):
+  distinguish routing file conventions from optional colocation strategies.
+- Nuxt, [Pages](https://nuxt.com/docs/3.x/directory-structure/pages/) and
+  [Layouts](https://nuxt.com/docs/3.x/directory-structure/layouts/): follow the
+  selected version's routing and shell conventions rather than transplanting a tree.

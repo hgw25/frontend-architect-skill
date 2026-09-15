@@ -4,7 +4,7 @@
 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
-当前发布版本：[v0.4.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.4.0)。
+当前发布版本：[v0.4.1](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.4.1)。
 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 它解决什么问题
@@ -134,7 +134,7 @@ frontend-architect Skill。
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo hgw25/frontend-architect-skill \
   --path . \
-  --ref v0.4.0 \
+  --ref v0.4.1 \
   --name frontend-architect
 ```
 
@@ -154,7 +154,7 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 ```bash
 set -euo pipefail
 
-skill_release="v0.4.0"
+skill_release="v0.4.1"
 skill_stage_dir="$(mktemp -d)"
 skill_backup_root="$HOME/.codex/skill-backups"
 skill_backup_dir="$skill_backup_root/frontend-architect-$(date +%Y%m%d-%H%M%S)"
@@ -351,7 +351,7 @@ tag 标识，发布变化记录在 [CHANGELOG.md](CHANGELOG.md)。仓库当前�
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo hgw25/frontend-architect-skill \
   --path skills/frontend-architect-update \
-  --ref v0.4.0 --name frontend-architect-update
+  --ref v0.4.1 --name frontend-architect-update
 ```
 
 已存在的安装需先暂存新版、校验并备份旧版，再替换；安装器不会直接覆盖。

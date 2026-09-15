@@ -103,6 +103,15 @@ Treat code clarity as the time required for a future maintainer to predict the
 effect of a change. Shorter code is not automatically clearer; more layers are
 not automatically more architectural.
 
+For architecture claims, inspect the actual tree, imports and state owners,
+not just a proposed diagram or passing functional tests. Trace a realistic UI
+interaction change and, where applicable, an independent data-format change:
+identify expected edit locations, then check whether unrelated responsibilities
+must change, rules are copied, or consumers need internal details. File counts
+alone are not a verdict. Fix concrete boundary problems before claiming the
+structure is maintainable. Independent handoff can strengthen the evidence;
+functional success alone does not prove architecture quality or skill improvement.
+
 ## Review interfaces
 
 For user-facing changes, inspect:

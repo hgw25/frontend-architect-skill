@@ -19,7 +19,8 @@ within the task's scope:
   tools and suitable maintained solutions before creating custom mechanisms.
 - Optimize for the next maintainer's understanding and ability to change the
   system. Keep the execution path visible; fewer lines or more layers alone do
-  not establish simplicity.
+  not establish simplicity. Avoiding overengineering does not excuse omitting
+  necessary architecture or leaving business interactions in a scaffold entry.
 - Anticipate likely changes before implementation, including common domain
   changes without a committed roadmap. Use clear ownership, modest extension
   points and convenient APIs where they lower change or caller cost; implement
@@ -87,8 +88,10 @@ implement; apply the maintainable engineering defaults to extension decisions.
 - Treat the current request and repository instructions as the concrete source
   of scope, conventions, architecture, compatibility, and validation commands.
 - Preserve the selected framework and established project patterns when they
-  remain suitable. Do not redesign the application merely to demonstrate a
-  preferred style.
+  remain suitable. For new applications or structural changes, identify framework
+  and router conventions before choosing directories; consult relevant official
+  guidance where unsettled. Familiar navigation is part of maintainability, not
+  just a naming preference. Do not redesign to demonstrate a preferred style.
 - When the task names a sibling product or upstream implementation, inspect its
   relevant contracts before inventing a different structure or maintenance flow.
   Reuse semantics deliberately; visual references do not define domain models.
@@ -204,7 +207,9 @@ decision reversible.
 - Keep side effects and external I/O at explicit boundaries with owned cleanup,
   cancellation, race, and error policies.
 - Apply module boundaries at every useful scale: package, feature, workflow,
-  component, hook/composable, and helper. Keep code together while it shares one
+  component, hook/composable, and helper. Express meaningful component and module
+  responsibilities in discoverable files, normally separate for independently
+  owned interactions. Keep code together while it shares one
   owner and reason to change; split only when the smaller unit gains a coherent
   contract. Do not use file length or one JSX region as the deciding rule.
 - Distinguish coordination from ownership. A page, feature hook, store, or
@@ -259,7 +264,8 @@ cost; it is not a substitute for deciding whether guidance is necessary.
 - For races, request policy, retries, optimistic reconciliation, operation
   ordering or resource cleanup decisions, read
   [references/async-and-lifecycles.md](references/async-and-lifecycles.md).
-- For project, feature, workflow, or internal module organization; public
+- For a new application, structural feature growth, or project, feature, workflow,
+  or internal module organization; public
   boundaries; or dependency direction, read
   [references/module-boundaries.md](references/module-boundaries.md).
 - For functional-versus-object-oriented design, classes, closures, reducers,
