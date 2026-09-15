@@ -50,6 +50,20 @@ return transition and interruption when stale measurements are plausible.
 Keep these checks targeted; a small spacing edit does not require a new test
 framework or a full application suite unless the project requires it.
 
+## Keep test organization predictable
+
+Honor the user's preferred test layout and existing project/runner conventions.
+Both colocated tests and a dedicated `tests/` tree can work; choose consistently
+for comparable tests. Different placement for unit and end-to-end suites is
+reasonable when their runner or scope explains it. Do not scatter new tests by
+convenience or force colocation against an explicit centralization preference.
+
+Within a centralized tree, group by the protected feature or contract so tests
+remain easy to map back to source. Keep setup and fixtures at their actual reuse
+scope, not in a generic dumping ground. When relocating tests, update imports,
+runner discovery and setup paths, and verify the intended cases still execute;
+passing an accidentally empty or reduced suite is not migration evidence.
+
 ## Test observable contracts
 
 Test through the interface used by the code's real consumers:

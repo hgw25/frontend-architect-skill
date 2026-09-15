@@ -166,7 +166,7 @@ These are possible responsibilities, not required directories:
 | Data/adapters | HTTP mapping, storage, browser APIs, SDKs, subscriptions, and runtime validation | An external contract, side effect, or lifecycle must be isolated |
 | UI | Semantic rendering, local interaction, accessibility, and presentation state | A visible unit has a coherent interaction or accessibility contract |
 | Local support | Single-use helpers, fixtures, styles, and types | They support one owner and have no broader semantic contract |
-| Tests | Behavior and contract checks colocated with the owner | The test should move and change with the behavior it protects |
+| Tests | Behavior and contract checks mapped to their owner, using the project test layout | The protected behavior is easy to locate from either implementation or tests |
 
 For example, a checkout feature might expose only its route element and a small
 command surface. Internally, pricing rules can remain pure, the checkout
@@ -290,7 +290,8 @@ After proposing a structure, verify:
   lower-level state and lifecycle;
 - the public surface is smaller than the implementation surface;
 - dependencies do not point from lower-level code back into orchestration;
-- tests remain close to the behavior or contract they protect;
+- tests have a predictable location and clear correspondence to the behavior
+  they protect, whether colocated or in a dedicated test tree;
 - each new directory contains a real concept rather than satisfying symmetry;
 - removing a boundary would make ownership or change locality worse.
 
@@ -316,6 +317,28 @@ Shared code is not code used twice. It is code whose meaning and ownership are
 genuinely broader than one feature. Name shared modules by capability such as
 `date`, `currency`, or `http`, not by vague containers such as `misc`, `common`,
 or a single global `utils` file.
+
+## Make names describe the boundary
+
+Choose names from the actual responsibility and the project's vocabulary, not
+from an architecture diagram. A maintainer should predict what belongs inside,
+where a change starts, and what the caller can expect without opening every file.
+For example, browser persistence may be clearer as `orderStorage` than a generic
+`data` bucket. This is a context-sensitive choice, not a required filename.
+
+Check the name against contents and call sites. A types-only file should contain
+type declarations, not accumulate runtime labels, validation and persistence.
+A cohesive domain file can intentionally contain types and related behavior;
+name it for that domain rather than falsely describing it as types-only. Split
+when the responsibilities differ, not simply because declarations differ in syntax.
+
+If a unit can only be called `utils`, `manager`, or `common`, inspect whether it
+mixes unrelated responsibilities or adds no meaningful boundary. Rename a coherent
+unit precisely; split an incoherent unit; remove a forwarding abstraction with
+no useful contract. Renaming alone does not repair ownership. `model`, `service`,
+and other established architectural names remain valid when the project defines
+their meaning and the implementation follows it. Do not create a banned-word list
+or mechanically split every type, constant and helper into separate files.
 
 ## Define module contracts
 

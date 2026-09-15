@@ -222,6 +222,9 @@ decision reversible.
 - Preserve semantics, keyboard and focus behavior, user preferences, and locale
   behavior. Treat loading, empty, error, retry, permission, stale,
   cancellation, and race states as product behavior when relevant.
+- Name abstractions for the responsibility they actually own; names, file
+  contents and call sites should tell the same story. If a precise name is hard
+  to find, revisit mixed responsibilities before adding a generic container.
 - Prefer explicit, narrow, accurately typed APIs over clever overloads, boolean
   combinations, assertions, or `any` that hide uncertainty.
 - Make the main operation readable in execution order. Extract helpers that
