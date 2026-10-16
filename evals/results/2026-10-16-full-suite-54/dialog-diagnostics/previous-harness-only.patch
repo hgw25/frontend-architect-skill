@@ -1,0 +1,30 @@
+--- vite.browser-test.config.ts
++++ vite.browser-test.config.ts
+@@ -3,6 +3,7 @@
+ 
+ export default defineConfig({
+   plugins: [react()],
++  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+   build: {
+     emptyOutDir: false,
+     lib: {
+--- tests/dialog.spec.ts
++++ tests/dialog.spec.ts
+@@ -3,7 +3,7 @@
+ import { createElement } from 'react'
+ import { renderToString } from 'react-dom/server'
+ 
+-import { HydrationApp } from '../src/HydrationApp'
++import { readFileSync } from 'node:fs'
+ 
+ const fixtureScript = path.join(process.cwd(), 'dist/browser-test/fixture.iife.js')
+ const fixtureStyles = path.join(process.cwd(), 'dist/browser-test/fixture.css')
+@@ -15,7 +15,7 @@
+ }
+ 
+ async function openHydrationFixture(page: import('@playwright/test').Page) {
+-  const serverMarkup = renderToString(createElement(HydrationApp))
++  const serverMarkup = readFileSync('dist/diagnostic-server.html', 'utf8')
+   await page.setContent(`<!doctype html>
+     <html data-fixture="hydration"><body>
+       <div id="root">${serverMarkup}</div>

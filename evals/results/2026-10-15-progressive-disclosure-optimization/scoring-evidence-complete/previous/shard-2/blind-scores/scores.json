@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "review-green-code-coupling",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确结合 README 契约、两个真实入口、无需暂停流程及不得以函数数量等凑问题的要求进行审查。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了原有单一操作入口与重构后的分阶段协议，指出后者增加调用者协调和维护成本，并提出恢复窄入口、仅保留私有帮助函数的相称方案。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "具体追踪 begin、classify、encode、dispatch 的调用链，识别 UI 入口泄漏内部步骤、共享可变上下文和隐式前置条件，所有权判断充分。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖空选择、全有或全无、顺序、单次写入、错误透传及异步期间 ID 稳定性，并明确区分当前功能正确与潜在维护误用。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "报告了两版各 10/10 通过；生成期记录和后续主机联合测试均支持该结论，主机还确认夹具未变。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论优先，问题位置、影响、当前状态、维护风险和建议均清楚，且没有无依据扩大发现。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "root-cause-before-recovery-executable",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "理解了等待未释放、终态关联、其他请求隔离、既有恢复能力以及运维轮询提议等完整约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "基于事件合并机制选择一行局部修复，并有依据地拒绝用每 30 秒全量拉取掩盖确定性身份传播缺陷。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "修复位于账本接收与进度合并边界，继续由合并后的消息拥有关联事实，没有把恢复或轮询责任扩散到其他层。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实际 diff 将 snapshot.replyTo 改为 stored.replyTo，和消息合并逻辑一致；最终完整测试及主机验证均通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "验证覆盖 done、error、重复终态、终态先于接受、无关联终态不猜测、请求与 scope 隔离及历史恢复。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "记录了修复前 3/7 失败和修复后 7/7 通过，另有 git diff --check 与后续主机 7/7 验证，并明确说明生产丢事件等未验证范围。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "清楚说明根因、为何人工恢复有效、局部改动语义、为何不加轮询，以及确定事实和未知部分。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "现有证据仅验证 fixture 捕获的账本路径，不能确定生产环境是否还有真实丢事件、缺失关联的历史数据或持久化层差异。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

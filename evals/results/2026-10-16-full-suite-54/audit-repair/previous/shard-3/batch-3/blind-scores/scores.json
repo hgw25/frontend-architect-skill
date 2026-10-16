@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "anticipate-small-boundary",
+        "dimensions": [
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了项目既有 query/loader、Intl 和特性内 helper，与 Repository、多数据源适配器、通用 Service/SDK 等方案的维护成本，选择了与单一调用方相称的小边界。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "外部 DTO 映射、金额格式化和页面状态协调的职责及所有权清楚；接口字段、请求细节和格式化步骤不会泄漏给页面，未来字段或币种变化也有集中修改位置。"
+          },
+          {
+            "key": "developer_experience",
+            "score": 1,
+            "reason": "常见加载、刷新、重试路径和非显然的币种契约说明清楚，但 fetchOrder 的 Promise<Order> 签名未表达失败语义，OrderLoadError 也未定义；“转换为失败结果”究竟是抛出、Result 还是其他协议仍需调用者猜测。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "这是边界设计任务，没有应用源码、代码变更或可执行测试夹具；只能评价方案本身，不能确认其与具体项目类型、请求库和错误约定的实际集成。"
+        ],
+        "normalized_score": 13.33,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "retain-real-authorization",
+        "dimensions": [
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "修复限定为既有服务端删除边界中的原子授权条件，并明确不扩建 RBAC、通用权限框架或额外前端鉴权层，成本与当前漏洞相称。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "正确识别服务端认证身份为可信来源，明确前端隐藏按钮和客户端 ownerId/canDelete 不能承担授权，并用服务端对象级条件阻止越权删除及存在性泄露。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖本人、他人、不存在、未登录、零行删除、权限变化竞态以及乐观 UI 恢复等关键状态，并要求拒绝后确认文档仍存在。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有服务端源码或测试夹具，无法确认现有认证中间件、删除语义、403/404 契约及权限模型；集成测试仅为合理验证设计，未实际执行。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "preserve-upstream-maintenance-flow",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确纳入 origin/upstream 角色、共同历史、已推送业务提交、未提交表单修改、月度更新、既有构建与回归测试以及不实际执行命令等约束，并说明夹具与题述环境不一致。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "基于共同历史和持续同步需求选择 upstream 加月度同步分支及 merge commit，比较并排除了会改写共享历史或丢失祖先关系的 rebase、squash，同时复用现有包管理、生成和 CI 流程。"
+          },
+          {
+            "key": "compatibility_evolution",
+            "score": 2,
+            "reason": "识别业务代码、依赖清单、锁文件、生成物和表单区域的冲突面，规定逐月迁移流程、历史保留规则、验证记录及已合入后的恢复方式。"
+          },
+          {
+            "key": "operability",
+            "score": 2,
+            "reason": "给出了合并前、PR 阶段和合入后的分级回退路径，禁止共享分支 force-push，并准确说明 revert merge 对祖先关系及未来重新引入变更的影响。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "作为无需执行的计划，验证设计覆盖同步前基线、构建、表单回归、diff 检查、双向祖先关系和 CI，并要求结果绑定明确 SHA；同时明确没有声称实际执行成功。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有真实仓库远端、分支名、模板 URL、项目命令或可执行夹具，因而无法验证命令在目标仓库的实际输出；响应已明确将这些内容保留为占位符。",
+          "响应提到对空夹具做过只读检查，但没有提供生成阶段命令审计，仅能将其视为未佐证的环境说明。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "small-project-structure",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "以两个页面、十几个源文件和浅目录为规模依据，并明确缺少框架、路由和源码证据，因此没有假定具体目录约定。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了完整 feature/domain 分层带来的单文件目录、转发入口和空抽象成本，选择页面共置加少量真实共享能力，并为后续增长保留渐进迁移路径。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "页面、页面私有能力、应用壳和 shared 的职责与依赖方向明确；还通过筛选条件变化示例说明所有权，并给出能力跨页、规则重复、循环依赖等现实迁移信号。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给出“不立即分层”的结论，再说明当前结构、判断原则、迁移信号和渐进方式，范围、理由与取舍清楚。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有实际项目源码、路由配置或包清单，无法核实建议目录名是否符合目标框架；该限制已被响应明确披露。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

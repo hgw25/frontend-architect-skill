@@ -1,0 +1,267 @@
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 6ef4411..8fd3764 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -31,12 +31,14 @@ test('shows the new name while a successful save is pending', async () => {
+     'Grace',
+   )
+ 
+-  resolveRequest?.(
+-    new Response(
+-      JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }),
+-      { status: 200, headers: { 'content-type': 'application/json' } },
+-    ),
+-  )
++  await act(async () => {
++    resolveRequest?.(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  })
+ })
+ 
+ test('restores the authoritative name when a successful response has an invalid shape', async () => {
+@@ -115,3 +117,83 @@ test('rolls back to an older confirmed response when the latest overlapping save
+     'Grace',
+   )
+ })
++
++test('does not let an older response overwrite a newer successful save', async () => {
++  const requests: Array<(response: Response) => void> = []
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(
++      () =>
++        new Promise<Response>((resolve) => {
++          requests.push(resolve)
++        }),
++    ),
++  )
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Lin')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  await act(async () => {
++    requests[1]?.(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Lin', version: 3 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  })
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++
++  await act(async () => {
++    requests[0]?.(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  })
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++})
++
++test('can retry a failed save', async () => {
++  const fetchMock = vi
++    .fn()
++    .mockResolvedValueOnce(new Response(null, { status: 503 }))
++    .mockResolvedValueOnce(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  vi.stubGlobal('fetch', fetchMock)
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  expect(await screen.findByRole('alert')).toHaveTextContent(
++    'Save failed. Please retry.',
++  )
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
++
++  await user.click(screen.getByRole('button', { name: 'Retry' }))
++
++  expect(await screen.findByLabelText('Current profile name')).toHaveTextContent(
++    'Grace',
++  )
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++  expect(fetchMock).toHaveBeenCalledTimes(2)
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..1459e8f 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,15 +1,89 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useReducer, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
++type SaveState = {
++  confirmedProfile: Profile
++  confirmedRequestId: number
++  pending?: { requestId: number; displayName: string }
++  failed?: { requestId: number; displayName: string }
++}
++
++type SaveAction =
++  | { type: 'submitted'; requestId: number; displayName: string }
++  | { type: 'succeeded'; requestId: number; profile: Profile }
++  | { type: 'failed'; requestId: number; displayName: string }
++
++function saveReducer(state: SaveState, action: SaveAction): SaveState {
++  switch (action.type) {
++    case 'submitted':
++      return {
++        ...state,
++        pending: {
++          requestId: action.requestId,
++          displayName: action.displayName,
++        },
++        failed: undefined,
++      }
++    case 'succeeded': {
++      const isNewConfirmation = action.requestId > state.confirmedRequestId
++      const isCurrentRequest = state.pending?.requestId === action.requestId
++
++      if (!isNewConfirmation && !isCurrentRequest) return state
++
++      return {
++        ...state,
++        confirmedProfile: isNewConfirmation
++          ? action.profile
++          : state.confirmedProfile,
++        confirmedRequestId: isNewConfirmation
++          ? action.requestId
++          : state.confirmedRequestId,
++        pending: isCurrentRequest ? undefined : state.pending,
++        failed: isCurrentRequest ? undefined : state.failed,
++      }
++    }
++    case 'failed':
++      if (state.pending?.requestId !== action.requestId) return state
++
++      return {
++        ...state,
++        pending: undefined,
++        failed: {
++          requestId: action.requestId,
++          displayName: action.displayName,
++        },
++      }
++  }
++}
++
+ export function ProfileForm({ profile }: { profile: Profile }) {
+   const [displayName, setDisplayName] = useState(profile.displayName)
+-  const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [saveState, dispatch] = useReducer(saveReducer, {
++    confirmedProfile: profile,
++    confirmedRequestId: 0,
++  })
++  const nextRequestId = useRef(0)
++
++  const visibleName =
++    saveState.pending?.displayName ?? saveState.confirmedProfile.displayName
++  const failedSubmission = saveState.failed
++
++  async function saveProfile(submittedName: string) {
++    const requestId = ++nextRequestId.current
++    dispatch({ type: 'submitted', requestId, displayName: submittedName })
++
++    try {
++      const updatedProfile = await updateProfile(submittedName)
++      dispatch({ type: 'succeeded', requestId, profile: updatedProfile })
++    } catch {
++      dispatch({ type: 'failed', requestId, displayName: submittedName })
++    }
++  }
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++    await saveProfile(displayName)
+   }
+ 
+   return (
+@@ -23,6 +97,17 @@ export function ProfileForm({ profile }: { profile: Profile }) {
+         />
+       </label>
+       <button>Save</button>
++      {failedSubmission && (
++        <p role="alert">
++          Save failed. Please retry.{' '}
++          <button
++            type="button"
++            onClick={() => void saveProfile(failedSubmission.displayName)}
++          >
++            Retry
++          </button>
++        </p>
++      )}
+     </form>
+   )
+ }
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..e5da85f 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,12 +4,35 @@ export type Profile = {
+   version: number
+ }
+ 
++export type UpdateProfileRequest = Pick<Profile, 'displayName'>
++
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) return false
++
++  const profile = value as Record<string, unknown>
++  return (
++    typeof profile.id === 'string' &&
++    typeof profile.displayName === 'string' &&
++    typeof profile.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
++  const request: UpdateProfileRequest = { displayName }
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+     headers: { 'content-type': 'application/json' },
+-    body: JSON.stringify({ displayName }),
++    body: JSON.stringify(request),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error(`Profile update failed with status ${response.status}`)
++  }
++
++  const profile: unknown = await response.json()
++  if (!isProfile(profile)) {
++    throw new Error('Profile update returned an invalid response')
++  }
++
++  return profile
+ }

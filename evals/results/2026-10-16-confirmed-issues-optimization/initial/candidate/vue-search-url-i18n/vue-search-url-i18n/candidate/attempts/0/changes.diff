@@ -1,0 +1,419 @@
+diff --git a/src/SearchPage.vue b/src/SearchPage.vue
+index 8ced088..4eca01f 100644
+--- a/src/SearchPage.vue
++++ b/src/SearchPage.vue
+@@ -1,5 +1,19 @@
+ <script setup lang="ts">
+-import { onMounted, ref } from 'vue'
++import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
++
++import {
++  formatPage,
++  formatPrice,
++  formatResultCount,
++  getSearchMessages,
++} from './searchI18n'
++import {
++  readSearchState,
++  supportedLocales,
++  writeSearchState,
++  type SearchLocale,
++  type SearchState,
++} from './searchState'
+ 
+ type SearchResult = {
+   id: string
+@@ -7,50 +21,160 @@ type SearchResult = {
+   price: number
+ }
+ 
+-const query = ref('')
++const draftQuery = ref('')
++const committedQuery = ref('')
+ const page = ref(1)
+-const locale = ref('en-US')
++const locale = ref<SearchLocale>('en-US')
+ const results = ref<SearchResult[]>([])
+ const total = ref(0)
+-const error = ref('')
++const hasError = ref(false)
++const isLoading = ref(false)
++
++const copy = computed(() => getSearchMessages(locale.value))
++const resultCount = computed(() => formatResultCount(locale.value, total.value))
++const pageLabel = computed(() => formatPage(locale.value, page.value))
++
++let activeRequest = 0
++let activeController: AbortController | undefined
++
++function currentState(): SearchState {
++  return {
++    query: committedQuery.value,
++    page: page.value,
++    locale: locale.value,
++  }
++}
++
++function publishState(state: SearchState) {
++  committedQuery.value = state.query
++  page.value = state.page
++  locale.value = state.locale
++}
++
++function pushState(state: SearchState) {
++  const url = writeSearchState(new URL(window.location.href), state)
++  window.history.pushState(window.history.state, '', url)
++  publishState(state)
++}
+ 
+ async function search() {
+-  error.value = ''
++  const request = ++activeRequest
++  const state = currentState()
++
++  activeController?.abort()
++  const controller = new AbortController()
++  activeController = controller
++  hasError.value = false
++  isLoading.value = true
++
+   try {
+     const response = await fetch(
+-      `/api/search?q=${encodeURIComponent(query.value)}&page=${page.value}`,
++      `/api/search?q=${encodeURIComponent(state.query)}&page=${state.page}`,
++      { signal: controller.signal },
+     )
++    if (!response.ok) throw new Error(`Search request failed with ${response.status}`)
++
+     const payload = (await response.json()) as {
+       items: SearchResult[]
+       total: number
+     }
++
++    if (request !== activeRequest) return
+     results.value = payload.items
+     total.value = payload.total
+   } catch {
+-    error.value = 'Search failed'
++    if (request !== activeRequest || controller.signal.aborted) return
++    hasError.value = true
++  } finally {
++    if (request === activeRequest) {
++      isLoading.value = false
++      activeController = undefined
++    }
++  }
++}
++
++function submitSearch() {
++  const state = {
++    query: draftQuery.value,
++    page: 1,
++    locale: locale.value,
+   }
++  pushState(state)
++  void search()
+ }
+ 
+-onMounted(search)
++function changeLocale(event: Event) {
++  const nextLocale = (event.target as HTMLSelectElement).value as SearchLocale
++  pushState({ ...currentState(), locale: nextLocale })
++  void search()
++}
++
++function changePage(nextPage: number) {
++  pushState({ ...currentState(), page: nextPage })
++  void search()
++}
++
++function restoreFromUrl() {
++  const state = readSearchState(new URL(window.location.href))
++  publishState(state)
++  draftQuery.value = state.query
++  void search()
++}
++
++onMounted(() => {
++  window.addEventListener('popstate', restoreFromUrl)
++  restoreFromUrl()
++})
++
++onBeforeUnmount(() => {
++  window.removeEventListener('popstate', restoreFromUrl)
++  activeRequest += 1
++  activeController?.abort()
++})
+ </script>
+ 
+ <template>
+-  <main>
+-    <h1>Product search</h1>
+-    <form @submit.prevent="search">
++  <main :lang="locale">
++    <h1>{{ copy.title }}</h1>
++    <form @submit.prevent="submitSearch">
+       <label>
+-        Search
+-        <input v-model="query" name="query" />
++        {{ copy.searchLabel }}
++        <input v-model="draftQuery" name="query" type="search" />
+       </label>
+-      <button type="submit">Search</button>
++      <button type="submit">{{ copy.searchAction }}</button>
+     </form>
+ 
+-    <p v-if="error" role="alert">{{ error }}</p>
+-    <p aria-live="polite">{{ total }} results</p>
+-    <ul>
++    <label>
++      {{ copy.languageLabel }}
++      <select :value="locale" name="locale" @change="changeLocale">
++        <option
++          v-for="supportedLocale in supportedLocales"
++          :key="supportedLocale"
++          :value="supportedLocale"
++        >
++          {{ copy.languageNames[supportedLocale] }}
++        </option>
++      </select>
++    </label>
++
++    <p v-if="hasError" role="alert">{{ copy.searchFailed }}</p>
++    <p role="status" aria-live="polite">
++      {{ isLoading ? copy.searching : resultCount }}
++    </p>
++    <ul :aria-busy="isLoading">
+       <li v-for="result in results" :key="result.id">
+-        {{ result.name }} — ${{ result.price }}
++        {{ result.name }} — {{ formatPrice(locale, result.price) }}
+       </li>
+     </ul>
++
++    <nav :aria-label="copy.paginationLabel">
++      <button type="button" :disabled="page === 1" @click="changePage(page - 1)">
++        {{ copy.previousPage }}
++      </button>
++      <span aria-current="page">{{ pageLabel }}</span>
++      <button type="button" @click="changePage(page + 1)">
++        {{ copy.nextPage }}
++      </button>
++    </nav>
+   </main>
+ </template>
+diff --git a/src/search-edge-cases.test.ts b/src/search-edge-cases.test.ts
+new file mode 100644
+index 0000000..382315e
+--- /dev/null
++++ b/src/search-edge-cases.test.ts
+@@ -0,0 +1,62 @@
++import { flushPromises, mount } from '@vue/test-utils'
++import { afterEach, expect, test, vi } from 'vitest'
++
++import SearchPage from './SearchPage.vue'
++
++function response(name: string, price = 1234.5) {
++  return new Response(
++    JSON.stringify({ items: [{ id: name, name, price }], total: 1 }),
++    { status: 200, headers: { 'content-type': 'application/json' } },
++  )
++}
++
++afterEach(() => {
++  vi.unstubAllGlobals()
++  vi.restoreAllMocks()
++})
++
++test('formats an English singular result and currency with a matching language attribute', async () => {
++  history.replaceState(null, '', '/search?q=coffee&page=1&locale=en-US')
++  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response('Coffee')))
++
++  const wrapper = mount(SearchPage)
++  await flushPromises()
++
++  expect(wrapper.get('main').attributes('lang')).toBe('en-US')
++  expect(wrapper.text()).toContain('1 result')
++  expect(wrapper.text()).toContain('$1,234.50')
++
++  wrapper.unmount()
++})
++
++test('an obsolete failure cannot publish an error or clear the current pending state', async () => {
++  history.replaceState(null, '', '/search?q=old&page=1&locale=en-US')
++  let rejectOld!: (reason?: unknown) => void
++  let resolveCurrent!: (value: Response) => void
++  const oldRequest = new Promise<Response>((_resolve, reject) => {
++    rejectOld = reject
++  })
++  const currentRequest = new Promise<Response>((resolve) => {
++    resolveCurrent = resolve
++  })
++  vi.stubGlobal(
++    'fetch',
++    vi.fn().mockReturnValueOnce(oldRequest).mockReturnValueOnce(currentRequest),
++  )
++
++  const wrapper = mount(SearchPage)
++  await wrapper.get('input[name="query"]').setValue('new')
++  await wrapper.get('form').trigger('submit')
++
++  rejectOld(new Error('obsolete failure'))
++  await flushPromises()
++
++  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
++  expect(wrapper.get('[role="status"]').text()).toBe('Searching…')
++
++  resolveCurrent(response('Current result'))
++  await flushPromises()
++  expect(wrapper.text()).toContain('Current result')
++
++  wrapper.unmount()
++})
+diff --git a/src/searchI18n.ts b/src/searchI18n.ts
+new file mode 100644
+index 0000000..b620f64
+--- /dev/null
++++ b/src/searchI18n.ts
+@@ -0,0 +1,92 @@
++import type { SearchLocale } from './searchState'
++
++type PluralMessage = Partial<Record<Intl.LDMLPluralRule, string>> & {
++  other: string
++}
++
++type SearchMessages = {
++  title: string
++  searchLabel: string
++  searchAction: string
++  searching: string
++  searchFailed: string
++  resultCount: PluralMessage
++  languageLabel: string
++  languageNames: Record<SearchLocale, string>
++  paginationLabel: string
++  previousPage: string
++  nextPage: string
++  currentPage: string
++  currency: string
++}
++
++const messages: Record<SearchLocale, SearchMessages> = {
++  'en-US': {
++    title: 'Product search',
++    searchLabel: 'Search',
++    searchAction: 'Search',
++    searching: 'Searching…',
++    searchFailed: 'Search failed. Please try again.',
++    resultCount: {
++      one: '{count} result',
++      other: '{count} results',
++    },
++    languageLabel: 'Language',
++    languageNames: {
++      'en-US': 'English (United States)',
++      'fr-FR': 'French (France)',
++    },
++    paginationLabel: 'Search result pages',
++    previousPage: 'Previous',
++    nextPage: 'Next',
++    currentPage: 'Page {page}',
++    currency: 'USD',
++  },
++  'fr-FR': {
++    title: 'Recherche de produits',
++    searchLabel: 'Rechercher',
++    searchAction: 'Rechercher',
++    searching: 'Recherche en cours…',
++    searchFailed: 'La recherche a échoué. Veuillez réessayer.',
++    resultCount: {
++      one: '{count} résultat',
++      other: '{count} résultats',
++    },
++    languageLabel: 'Langue',
++    languageNames: {
++      'en-US': 'Anglais (États-Unis)',
++      'fr-FR': 'Français (France)',
++    },
++    paginationLabel: 'Pages de résultats',
++    previousPage: 'Précédent',
++    nextPage: 'Suivant',
++    currentPage: 'Page {page}',
++    currency: 'EUR',
++  },
++}
++
++export function getSearchMessages(locale: SearchLocale): SearchMessages {
++  return messages[locale]
++}
++
++export function formatResultCount(locale: SearchLocale, count: number): string {
++  const pluralCategory = new Intl.PluralRules(locale).select(count)
++  const variants = messages[locale].resultCount
++  const template = variants[pluralCategory] ?? variants.other
++  const formattedCount = new Intl.NumberFormat(locale).format(count)
++  return template.replace('{count}', formattedCount)
++}
++
++export function formatPage(locale: SearchLocale, page: number): string {
++  return messages[locale].currentPage.replace(
++    '{page}',
++    new Intl.NumberFormat(locale).format(page),
++  )
++}
++
++export function formatPrice(locale: SearchLocale, price: number): string {
++  return new Intl.NumberFormat(locale, {
++    style: 'currency',
++    currency: messages[locale].currency,
++  }).format(price)
++}
+diff --git a/src/searchState.ts b/src/searchState.ts
+new file mode 100644
+index 0000000..589ca74
+--- /dev/null
++++ b/src/searchState.ts
+@@ -0,0 +1,44 @@
++export const supportedLocales = ['en-US', 'fr-FR'] as const
++
++export type SearchLocale = (typeof supportedLocales)[number]
++
++export type SearchState = {
++  query: string
++  page: number
++  locale: SearchLocale
++}
++
++const defaultSearchState: SearchState = {
++  query: '',
++  page: 1,
++  locale: 'en-US',
++}
++
++function isSearchLocale(value: string | null): value is SearchLocale {
++  return supportedLocales.some((locale) => locale === value)
++}
++
++function parsePage(value: string | null): number {
++  if (value === null || !/^\d+$/.test(value)) return defaultSearchState.page
++
++  const page = Number(value)
++  return Number.isSafeInteger(page) && page >= 1 ? page : defaultSearchState.page
++}
++
++export function readSearchState(url: URL): SearchState {
++  const locale = url.searchParams.get('locale')
++
++  return {
++    query: url.searchParams.get('q') ?? defaultSearchState.query,
++    page: parsePage(url.searchParams.get('page')),
++    locale: isSearchLocale(locale) ? locale : defaultSearchState.locale,
++  }
++}
++
++export function writeSearchState(url: URL, state: SearchState): URL {
++  const nextUrl = new URL(url)
++  nextUrl.searchParams.set('q', state.query)
++  nextUrl.searchParams.set('page', String(state.page))
++  nextUrl.searchParams.set('locale', state.locale)
++  return nextUrl
++}

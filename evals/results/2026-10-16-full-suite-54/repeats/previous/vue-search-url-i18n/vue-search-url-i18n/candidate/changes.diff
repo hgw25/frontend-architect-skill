@@ -1,0 +1,415 @@
+diff --git a/src/SearchPage.test.ts b/src/SearchPage.test.ts
+index f66874b..48cba2b 100644
+--- a/src/SearchPage.test.ts
++++ b/src/SearchPage.test.ts
+@@ -1,8 +1,10 @@
+-import { flushPromises, mount } from '@vue/test-utils'
++import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+ 
+ import SearchPage from './SearchPage.vue'
+ 
++enableAutoUnmount(afterEach)
++
+ type DeferredResponse = {
+   promise: Promise<Response>
+   resolve: (value: Response) => void
+@@ -41,6 +43,7 @@ test('hydrates its canonical search state from the URL and formats in that local
+ 
+   expect(wrapper.get('input[name="query"]').element).toHaveProperty('value', 'tea')
+   expect(fetchMock).toHaveBeenCalledWith('/api/search?q=tea&page=2', expect.anything())
++  expect(document.documentElement.lang).toBe('fr-FR')
+   expect(wrapper.text()).toContain('2 résultats')
+   expect(wrapper.text()).toContain('1 234,50 €')
+ })
+@@ -65,6 +68,30 @@ test('writes submissions to history and restores state on back or forward naviga
+ 
+   expect(wrapper.get('input[name="query"]').element).toHaveProperty('value', 'cocoa')
+   expect(fetch).toHaveBeenLastCalledWith('/api/search?q=cocoa&page=3', expect.anything())
++  expect(document.documentElement.lang).toBe('en-US')
++  expect(wrapper.text()).toContain('1 result')
++  expect(wrapper.text()).toContain('$1,234.50')
++})
++
++test('keeps locale and page changes shareable without submitting an edited draft', async () => {
++  const fetchMock = vi.fn(() => Promise.resolve(response('Result')))
++  vi.stubGlobal('fetch', fetchMock)
++  const wrapper = mount(SearchPage)
++  await flushPromises()
++
++  await wrapper.get('input[name="query"]').setValue('unsaved')
++  await wrapper.get('select[name="locale"]').setValue('en-US')
++
++  expect(location.search).toBe('?q=tea&page=2&locale=en-US')
++  expect(document.documentElement.lang).toBe('en-US')
++  expect(fetchMock).toHaveBeenCalledTimes(1)
++
++  await wrapper.get('nav button:last-child').trigger('click')
++  await flushPromises()
++
++  expect(location.search).toBe('?q=tea&page=3&locale=en-US')
++  expect(wrapper.get('input[name="query"]').element).toHaveProperty('value', 'unsaved')
++  expect(fetchMock).toHaveBeenLastCalledWith('/api/search?q=tea&page=3', expect.anything())
+ })
+ 
+ test('prevents an older request from replacing a newer search result', async () => {
+diff --git a/src/SearchPage.vue b/src/SearchPage.vue
+index 8ced088..17850a1 100644
+--- a/src/SearchPage.vue
++++ b/src/SearchPage.vue
+@@ -1,5 +1,14 @@
+ <script setup lang="ts">
+-import { onMounted, ref } from 'vue'
++import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
++
++import {
++  createSearchPageFormatter,
++  isSupportedLocale,
++  languageOptions,
++  type MessageKey,
++  type SupportedLocale,
++} from './searchPageI18n'
++import { readSearchState, searchStateUrl, type SearchState } from './searchUrlState'
+ 
+ type SearchResult = {
+   id: string
+@@ -7,50 +16,166 @@ type SearchResult = {
+   price: number
+ }
+ 
+-const query = ref('')
+-const page = ref(1)
+-const locale = ref('en-US')
++const initialState = readSearchState()
++const draftQuery = ref(initialState.query)
++const searchState = ref<SearchState>(initialState)
+ const results = ref<SearchResult[]>([])
+ const total = ref(0)
+-const error = ref('')
++const error = ref<MessageKey | null>(null)
++const loading = ref(false)
++
++const i18n = computed(() => createSearchPageFormatter(searchState.value.locale))
++
++let activeRequest = 0
++let activeController: AbortController | null = null
++
++function applyDocumentLanguage(locale: SupportedLocale) {
++  document.documentElement.lang = locale
++}
++
++async function search(state: SearchState) {
++  const requestId = ++activeRequest
++  activeController?.abort()
++  const controller = new AbortController()
++  activeController = controller
++
++  error.value = null
++  loading.value = true
++  results.value = []
++  total.value = 0
+ 
+-async function search() {
+-  error.value = ''
+   try {
+-    const response = await fetch(
+-      `/api/search?q=${encodeURIComponent(query.value)}&page=${page.value}`,
+-    )
++    const params = new URLSearchParams({ q: state.query, page: String(state.page) })
++    const response = await fetch(`/api/search?${params.toString()}`, {
++      signal: controller.signal,
++    })
++
++    if (!response.ok) throw new Error(`Search request failed with status ${response.status}`)
++
+     const payload = (await response.json()) as {
+       items: SearchResult[]
+       total: number
+     }
++
++    if (requestId !== activeRequest) return
++
+     results.value = payload.items
+     total.value = payload.total
+   } catch {
+-    error.value = 'Search failed'
++    if (requestId !== activeRequest || controller.signal.aborted) return
++
++    error.value = 'searchError'
++  } finally {
++    if (requestId === activeRequest) {
++      loading.value = false
++      activeController = null
++    }
++  }
++}
++
++function setSearchState(nextState: SearchState, addHistoryEntry: boolean) {
++  const previousState = searchState.value
++  searchState.value = nextState
++  applyDocumentLanguage(nextState.locale)
++
++  if (addHistoryEntry) {
++    window.history.pushState(null, '', searchStateUrl(nextState))
++  }
++
++  if (previousState.query !== nextState.query || previousState.page !== nextState.page) {
++    void search(nextState)
+   }
+ }
+ 
+-onMounted(search)
++function submitSearch() {
++  const nextState: SearchState = {
++    query: draftQuery.value,
++    page: 1,
++    locale: searchState.value.locale,
++  }
++
++  window.history.pushState(null, '', searchStateUrl(nextState))
++  searchState.value = nextState
++  applyDocumentLanguage(nextState.locale)
++  void search(nextState)
++}
++
++function changeLocale(event: Event) {
++  const locale = (event.currentTarget as HTMLSelectElement).value
++  if (!isSupportedLocale(locale) || locale === searchState.value.locale) return
++
++  setSearchState({ ...searchState.value, locale }, true)
++}
++
++function changePage(page: number) {
++  if (page < 1 || page === searchState.value.page) return
++
++  setSearchState({ ...searchState.value, page }, true)
++}
++
++function restoreSearchState() {
++  const nextState = readSearchState()
++  draftQuery.value = nextState.query
++  setSearchState(nextState, false)
++}
++
++onMounted(() => {
++  applyDocumentLanguage(searchState.value.locale)
++  window.addEventListener('popstate', restoreSearchState)
++  void search(searchState.value)
++})
++
++onBeforeUnmount(() => {
++  window.removeEventListener('popstate', restoreSearchState)
++  activeRequest += 1
++  activeController?.abort()
++})
+ </script>
+ 
+ <template>
+   <main>
+-    <h1>Product search</h1>
+-    <form @submit.prevent="search">
++    <h1>{{ i18n.message('title') }}</h1>
++
++    <label>
++      {{ i18n.message('localeLabel') }}
++      <select name="locale" :value="searchState.locale" @change="changeLocale">
++        <option v-for="option in languageOptions" :key="option.value" :value="option.value">
++          {{ option.label }}
++        </option>
++      </select>
++    </label>
++
++    <form @submit.prevent="submitSearch">
+       <label>
+-        Search
+-        <input v-model="query" name="query" />
++        {{ i18n.message('searchLabel') }}
++        <input v-model="draftQuery" name="query" type="search" />
+       </label>
+-      <button type="submit">Search</button>
++      <button type="submit">{{ i18n.message('searchButton') }}</button>
+     </form>
+ 
+-    <p v-if="error" role="alert">{{ error }}</p>
+-    <p aria-live="polite">{{ total }} results</p>
++    <p v-if="error" role="alert">{{ i18n.message(error) }}</p>
++    <p v-if="loading" role="status">{{ i18n.message('loading') }}</p>
++    <p v-else aria-live="polite">{{ i18n.resultCount(total) }}</p>
++
+     <ul>
+       <li v-for="result in results" :key="result.id">
+-        {{ result.name }} — ${{ result.price }}
++        <span>{{ result.name }}</span>
++        <span> — {{ i18n.price(result.price) }}</span>
+       </li>
+     </ul>
++
++    <nav :aria-label="i18n.pageNumber(searchState.page)">
++      <button
++        type="button"
++        :disabled="searchState.page === 1"
++        @click="changePage(searchState.page - 1)"
++      >
++        {{ i18n.message('previousPage') }}
++      </button>
++      <span>{{ i18n.pageNumber(searchState.page) }}</span>
++      <button type="button" @click="changePage(searchState.page + 1)">
++        {{ i18n.message('nextPage') }}
++      </button>
++    </nav>
+   </main>
+ </template>
+diff --git a/src/searchPageI18n.ts b/src/searchPageI18n.ts
+new file mode 100644
+index 0000000..4099535
+--- /dev/null
++++ b/src/searchPageI18n.ts
+@@ -0,0 +1,107 @@
++export const supportedLocales = ['en-US', 'fr-FR'] as const
++export type SupportedLocale = (typeof supportedLocales)[number]
++
++export type MessageKey =
++  | 'title'
++  | 'searchLabel'
++  | 'searchButton'
++  | 'localeLabel'
++  | 'previousPage'
++  | 'nextPage'
++  | 'loading'
++  | 'searchError'
++
++type Messages = Record<MessageKey, string> & {
++  resultCount: { one: string; other: string }
++  pageNumber: string
++}
++
++type LocaleConfig = {
++  displayName: string
++  currency: string
++  messages: Messages
++}
++
++const localeConfig = {
++  'en-US': {
++    displayName: 'English (United States)',
++    currency: 'USD',
++    messages: {
++      title: 'Product search',
++      searchLabel: 'Search',
++      searchButton: 'Search',
++      localeLabel: 'Language',
++      previousPage: 'Previous page',
++      nextPage: 'Next page',
++      loading: 'Searching…',
++      searchError: 'Search failed',
++      resultCount: {
++        one: '{count} result',
++        other: '{count} results',
++      },
++      pageNumber: 'Page {page}',
++    },
++  },
++  'fr-FR': {
++    displayName: 'Français (France)',
++    currency: 'EUR',
++    messages: {
++      title: 'Recherche de produits',
++      searchLabel: 'Rechercher',
++      searchButton: 'Rechercher',
++      localeLabel: 'Langue',
++      previousPage: 'Page précédente',
++      nextPage: 'Page suivante',
++      loading: 'Recherche en cours…',
++      searchError: 'La recherche a échoué',
++      resultCount: {
++        one: '{count} résultat',
++        other: '{count} résultats',
++      },
++      pageNumber: 'Page {page}',
++    },
++  },
++} satisfies Record<SupportedLocale, LocaleConfig>
++
++export const languageOptions = supportedLocales.map((value) => ({
++  value,
++  label: localeConfig[value].displayName,
++}))
++
++export function isSupportedLocale(value: string | null): value is SupportedLocale {
++  return supportedLocales.some((locale) => locale === value)
++}
++
++function interpolate(template: string, values: Record<string, string>): string {
++  return template.replace(/\{(\w+)\}/g, (placeholder, key: string) => values[key] ?? placeholder)
++}
++
++export function createSearchPageFormatter(locale: SupportedLocale) {
++  const config = localeConfig[locale]
++  const numberFormatter = new Intl.NumberFormat(locale)
++  const pluralRules = new Intl.PluralRules(locale)
++  const currencyFormatter = new Intl.NumberFormat(locale, {
++    style: 'currency',
++    currency: config.currency,
++  })
++
++  return {
++    message(key: MessageKey) {
++      return config.messages[key]
++    },
++    resultCount(count: number) {
++      const category = pluralRules.select(count)
++      const template = category === 'one'
++        ? config.messages.resultCount.one
++        : config.messages.resultCount.other
++
++      return interpolate(template, { count: numberFormatter.format(count) })
++    },
++    pageNumber(page: number) {
++      return interpolate(config.messages.pageNumber, { page: numberFormatter.format(page) })
++    },
++    price(value: number) {
++      return currencyFormatter.format(value)
++    },
++  }
++}
+diff --git a/src/searchUrlState.ts b/src/searchUrlState.ts
+new file mode 100644
+index 0000000..230fb54
+--- /dev/null
++++ b/src/searchUrlState.ts
+@@ -0,0 +1,35 @@
++import { isSupportedLocale, type SupportedLocale } from './searchPageI18n'
++
++export type SearchState = {
++  query: string
++  page: number
++  locale: SupportedLocale
++}
++
++function parsePage(value: string | null): number {
++  if (value === null || !/^\d+$/.test(value)) return 1
++
++  const parsed = Number(value)
++  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1
++}
++
++export function readSearchState(): SearchState {
++  const params = new URLSearchParams(window.location.search)
++  const locale = params.get('locale')
++
++  return {
++    query: params.get('q') ?? '',
++    page: parsePage(params.get('page')),
++    locale: isSupportedLocale(locale) ? locale : 'en-US',
++  }
++}
++
++export function searchStateUrl(state: SearchState): string {
++  const params = new URLSearchParams({
++    q: state.query,
++    page: String(state.page),
++    locale: state.locale,
++  })
++
++  return `${window.location.pathname}?${params.toString()}${window.location.hash}`
++}

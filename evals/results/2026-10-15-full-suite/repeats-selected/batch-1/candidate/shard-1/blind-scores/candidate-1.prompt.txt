@@ -1,0 +1,323 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+评分时沿同一条证据链检查：用户行为 → 事实与契约 → 不变量和所有权 → 模块边界 →
+实际实现 → 验证结果。只评价任务中可观察的环节；局部修改不要求展示完整设计过程。
+不能因为回答提到了类型、状态机、分层和测试等术语，就认定这些环节已经相互一致。
+命名评价以职责、内容及调用是否一致为依据，不以术语是否高级评分；测试布局评价遵循项目约定、可定位性及执行完整性，不固定要求集中或就近放置。
+对结构设计，用任务支持的现实变化检查修改位置是否符合所有权；允许为领域常见变化预留适度边界，不要求重复已经发生；不奖励无依据的通用机制。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 比较现有契约、平台能力及集成维护成本，选择维护成本相称的完整方案，允许便利接口与适度前瞻，不绕过已有策略再造一套 |
+| `module_boundaries` | 机械套目录或把业务堆在入口 | 有目录分类但状态归属或组件职责含糊 | 遵循框架与项目约定，用可导航的文件表达页面、布局、组件及数据职责；真实变化的修改范围符合所有权，避免不足与过度拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `rendering_performance` | 套用与目标平台无关的优化技巧，或把减少 render 次数直接等同于用户性能 | 能识别重渲染、线程、布局或帧问题中的一部分，但缺少完整成本链或目标运行时证据 | 根据目标平台映射状态更新、调度、跨层传输、宿主更新、布局、绘制/栅格化与呈现边界，并用对应运行时的真实测量定位和验证 |
+| `security_trust` | 遗漏真实边界或因假想风险堆叠防御机制 | 识别风险但重复设防或泛泛提醒 | 追踪实际信任边界、复用已有保障，保留必要授权与秘密保护，内部按契约工作且防护成本与威胁相称 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 实际代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更，调用者能看清操作语义与执行顺序 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证、泛泛而谈或用模拟层冒充真实边界 | 建议运行工具但没有结果、环境或阈值 | 验证对应真实风险，记录实际结果与环境，并说明未验证部分；浏览器、宿主、产物或字段结论使用其真实边界证据 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+- 用 DOM 模拟器证明真实浏览器焦点、水合、布局或视觉行为，或用单次实验室分数证明真实用户性能。
+- 把浏览器渲染管线、旧版跨端 Bridge、固定 16ms 帧预算或某个小程序宿主限制当作所有平台和版本的通用事实。
+
+
+CASE
+id: maintenance-reuse-existing-check
+request: 前端包已经两次发布了缺失类型入口的产物。有人建议在 frontend-architect 的每轮 指导里加入“必须再检查一次 types”。请审查下面的执行链，给出最小修复与验证方案， 判断还需要怎样维护技能指导。现有 check-package 能暴露缺失 types，输出非零退出码； 不需要实际发布、安装依赖或引入新检查框架。
+artifact: package.json
+{
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check-package": "node scripts/check-package.mjs",
+    "check": "npm run build"
+  }
+}
+
+.github/workflows/validate.yml
+steps:
+  - run: npm ci
+  - run: npm run check
+
+CONTRIBUTING.md
+发布前运行 npm run check；包验收脚本为 scripts/check-package.mjs。
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "infrastructure_design", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+结论：问题不在于缺少“再检查一次 types”的提示，而在于现有验收器没有接入统一检查入口。
+
+最小修复只需修改 `package.json`：
+
+```diff
+ "scripts": {
+   "build": "tsc -p tsconfig.build.json",
+   "check-package": "node scripts/check-package.mjs",
+-  "check": "npm run build"
++  "check": "npm run build && npm run check-package"
+ }
+```
+
+这样执行链变为：
+
+```text
+开发者发布前 ─┐
+              ├─ npm run check → build → check-package
+CI validate ──┘
+```
+
+决策：
+
+- `.github/workflows/validate.yml` 不必修改，它已经调用统一入口 `npm run check`。
+- `CONTRIBUTING.md` 已要求发布前运行该入口，不是正确性修复的必改项。可以把说明改成“`npm run check` 会构建并执行包验收”，但仅属于澄清。
+- 不增加新的 types 检查脚本、测试框架或重复 CI step。
+- 使用 `&&` 保证构建失败时不继续，或者 `check-package` 发现缺失 types 时将整个检查置为失败。
+
+验证方案：
+
+1. 正常产物运行 `npm run check`，确认构建和 `check-package` 均执行且退出码为 0。
+2. 在临时副本中安全移除 types 入口或对应声明产物。
+3. 再从统一入口运行 `npm run check`，而不是单独调用验收器。
+4. 确认输出包含 `check-package` 的缺失类型诊断且整体退出码非零。
+5. 恢复产物后复跑，确认通过。无需实际发布或安装新依赖。
+
+Skill 维护判断：目前不应加入“每轮必须再检查一次 types”。
+
+现有指导已经要求复用项目检查、完成导出类型和构建产物契约，并明确规定“检查已有但没运行”应修复命令入口或 CI 接线。此次是项目执行链没有接通，不是通用判断指导缺失。全局追加提醒既会覆盖无包发布的任务，也容易把“源码类型检查”和“发布产物类型入口检查”混为一谈。
+
+只有后续独立案例证明代理在读到现有规则后仍持续选择重复检查、而不接通统一入口时，才值得在 `frontend-infrastructure` 参考中补一条有边界的规则，例如：
+
+> 已有包产物验证器能够暴露契约缺失时，应将其接入项目规定的 CI/发布检查入口；不要以重复提示或第二套同义检查替代接线。
+
+当前工作区 Git 基线为空，题目中的三个 artifact 并不存在为可编辑文件，因此我没有伪造文件修改，也无法实际执行 `npm run check`。`.frontend-architect` 保持未改动。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: centralized-tests-follow-project-contract
+request: 用户明确希望测试集中放在 tests 下。现有 Vitest 配置仅发现 src 下的测试， setup 在 src/test-setup.ts，工单测试散在 src 根目录和组件旁。 请说明迁移方案和验收方式，不新增业务功能。
+artifact: 
+applicable_dimensions: ["module_boundaries", "verification_evidence", "requirements_context"]
+
+RESPONSE:
+当前工作区没有项目文件：Git 树为空，仅存在评估用的 `.frontend-architect`，因此无法核实具体配置文件、测试清单、包管理器或实际执行测试。基于工单给出的现状，建议按以下方案迁移，不修改业务代码。
+
+迁移方案：
+
+1. 在根目录建立唯一的集中测试树 `tests/`。
+2. 将 `src/test-setup.ts` 移至 `tests/test-setup.ts`。
+3. 按源码相对路径映射测试，避免集中后变成无结构的测试堆：
+   - `src/Foo.test.tsx` → `tests/Foo.test.tsx`
+   - `src/components/Button.test.tsx` → `tests/components/Button.test.tsx`
+4. 更新迁移测试的源码导入：
+   - 已有项目路径别名时沿用；
+   - 没有别名时使用指向 `src/` 的相对路径，不为本次迁移额外引入解析机制。
+5. 在现有 Vitest 配置的 `test` 块中：
+   - 将 `include` 从 `src/**` 改为仅匹配 `tests/**`；
+   - 保留项目当前支持的测试文件后缀；
+   - 将 `setupFiles` 更新为 `tests/test-setup.ts`；
+   - 其他环境、覆盖率、超时和 reporter 配置保持不变。
+6. 全量搜索并清理 `src/**/*.{test,spec}.*` 及对 `src/test-setup.ts` 的旧引用。迁移完成后不保留双路径发现，避免同一测试重复运行或后续继续散落。
+7. 不新增业务测试、不修改断言语义；本次只改变测试的归属位置、导入路径和 runner 发现配置。
+
+验收方式：
+
+- 迁移前后分别通过项目既有测试脚本运行 Vitest，记录测试文件数、测试用例数和通过/跳过状态；两份清单应一致。
+- 使用当前 Vitest 版本支持的详细 reporter、JSON reporter 或测试列表能力核对实际执行文件，不能仅以退出码为准。
+- 确认所有执行文件均位于 `tests/`，且原来分布在 `src` 根目录和组件旁的每个测试都有对应迁移项。
+- 选择至少一个依赖全局 matcher、polyfill、cleanup 或其他 setup 行为的既有测试单独运行，证明新 `setupFiles` 路径确实生效。
+- 执行项目已有的类型检查、lint 和构建，捕获迁移造成的错误导入或配置解析问题。
+- 最终搜索应满足：
+  - `src/` 下没有测试文件；
+  - 没有代码或配置引用 `src/test-setup.ts`；
+  - Vitest 的发现范围不再包含 `src/`。
+- 做一次反向验证：临时检查 runner 对旧位置测试不会发现、对 `tests/` 中测试会发现；验证后撤销临时文件或改动。
+
+由于当前工作区缺少项目内容，上述检查尚未实际执行，也不能可靠给出具体命令、文件清单或测试数量。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: group-by-api
+request: 请评审下面的 JavaScript groupBy 封装。判断它是否值得作为通用工具进入前端基础库， 指出实际正确性和 API 设计问题，并给出符合现代前端工程约束的建议。不要只改写循环语法。
+artifact: function groupBy(items, generateKey) {
+  if (typeof generateKey === 'string') {
+    const propertyName = generateKey
+    generateKey = (item) => item[propertyName]
+  }
+
+  const result = {}
+  let index = 0
+
+  for (const item of items) {
+    const key = generateKey(item, index++, items)
+    if (result[key]) result[key].push(item)
+    else result[key] = [item]
+  }
+
+  return result
+}
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+结论：当前实现不应进入前端基础库。更进一步，在没有明确消费者和兼容性需求前，不建议自建 `groupBy`；现代运行环境优先直接使用 `Object.groupBy` 或 `Map.groupBy`。
+
+工作区没有项目源码、包配置或调用方，因此无法证明存在共享基础设施需求，也无法确认具体浏览器、Node 与 TypeScript 支持范围。
+
+## 阻断入库的正确性问题
+
+1. 原型链键会直接导致运行时错误
+
+`result` 是普通对象，`result[key]` 会读取继承属性。以下合法业务键都会命中 `Object.prototype`：
+
+```js
+groupBy(['constructor'], value => value)
+groupBy(['toString'], value => value)
+groupBy(['__proto__'], value => value)
+```
+
+实测均抛出：
+
+```text
+TypeError: result[key].push is not a function
+```
+
+即使是空结果，`result.constructor` 也不是 `undefined`，这已经破坏“缺失分组返回空值”的直觉契约。这里不能仅用 `hasOwnProperty` 修补；对象累加器至少应使用 null prototype，并采用安全的自有属性策略。
+
+2. 键的身份语义没有定义
+
+对象属性会执行属性键转换：
+
+```js
+groupBy(['number', 'string'], (_, index) => index === 0 ? 1 : '1')
+// 两项落入同一个 "1" 分组
+```
+
+普通对象也会把不同对象键转换成类似 `"[object Object]"` 的字符串。若调用方期待对象身份、数字和字符串严格区分，这个 API 会静默产生错误结果，应使用 `Map`。
+
+3. 非法 selector 的行为取决于输入是否为空
+
+```js
+groupBy([], null) // 返回 {}
+groupBy([1], null) // 抛错
+```
+
+公共 JavaScript API 应在迭代前验证 selector，使错误稳定、可诊断，而不是由数据量决定。
+
+## API 设计问题
+
+- `generateKey` 同时接收函数或属性名，并在函数内部被重新赋值。一个一行 lambda 已能表达属性访问，这个重载增加了类型推导、文档和测试成本。
+- 属性名简写只接受字符串，不自然地排除了 symbol 属性名；若补齐 `keyof T` 和返回键约束，类型会继续复杂化。
+- callback 的第三个参数 `items` 不是现代原生 `groupBy` 的契约。对于 generator 等一次性 iterable，callback 再次访问它甚至可能消费剩余数据。
+- 返回对象的类型不能写成普通的 `Record<K, T[]>`，因为分组可能不存在；至少应是 `Partial<Record<K, T[]>>`。
+- 结果中的数组可变，元素仍是原对象引用；如果成为公共 API，需要明确这一点。
+- 分组内项目保持输入顺序，但对象的整数型属性枚举顺序不是首次出现顺序。若调用方依赖分组创建顺序，应使用 `Map`。
+- symbol 分组不会出现在 `Object.keys()` 或 JSON 序列化结果中，也必须作为契约说明。
+
+## 建议的决策
+
+根据目标环境分三种处理：
+
+1. 支持现代原生 API：不要封装。
+
+```js
+const byStatus = Object.groupBy(items, item => item.status)
+const byOwner = Map.groupBy(items, item => item.owner)
+```
+
+- `Object.groupBy`：适合属性键；接受对象键转换语义，返回 null-prototype 对象。
+- `Map.groupBy`：适合对象身份、任意类型键及稳定的首次分组顺序。
+
+2. 目标环境不支持：优先采用项目现有 polyfill 策略。注意构建转译通常不会自动补齐运行时 API。
+
+3. 确实需要本地兼容实现：做成与标准语义对齐、名字明确的窄实现，不保留字符串重载和第三个 callback 参数。例如：
+
+```js
+export function groupByObject(items, keyOf) {
+  if (typeof keyOf !== 'function') {
+    throw new TypeError('keyOf must be a function')
+  }
+
+  const groups = Object.create(null)
+  let index = 0
+
+  for (const item of items) {
+    const rawKey = keyOf(item, index++)
+    const key = typeof rawKey === 'symbol' ? rawKey : String(rawKey)
+    const group = groups[key]
+
+    if (group === undefined) groups[key] = [item]
+    else group.push(item)
+  }
+
+  return groups
+}
+```
+
+但这只应作为目标环境兼容层，而不是因为代码短就升级成通用工具。
+
+入库前最低验证应覆盖 `constructor`、`toString`、`__proto__`、symbol、数字/字符串碰撞、一次性 iterable、callback 索引、非法 selector，以及 TypeScript 的缺失分组类型；若作为独立包发布，还要通过公共入口验证声明文件和实际构建产物。
+
+本次按本地 Skill 的公共基础设施契约进行评审，而不是只比较循环写法。已通过 Node 用例验证上述原型键崩溃、键转换碰撞和空输入验证不一致；未修改任何文件。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

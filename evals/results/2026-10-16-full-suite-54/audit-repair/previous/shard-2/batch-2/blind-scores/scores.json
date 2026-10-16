@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "domain-knowledge-owned-record",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确识别改名目标、三种身份、现有 DTO/API 兼容约束、无服务端用户映射及不新增技术栈等项目规则。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "清楚区分领域身份定义、页面展示投影、详情导航与本地收藏；导航调用者只需传 supplierId，无需理解或推断其他身份。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用 SupplierDto 和现有导航能力，明确同形视图模型并非必需，避免客户端映射表、新接口及无依据抽象。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖 supplierId、organizationId、userId 不可互换，不允许回退或双 ID，并提出使用不同 ID 样例验证导航，正确处理身份边界。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结果、修改范围、决策理由、后续变化边界及未验证项均表达清楚，维护者可脱离对话继续实施。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有页面源码、路由实现或测试框架，无法验证真实导航接线与运行时行为。",
+          "实际自检仅有 git diff --check；术语检查未提供完整命令记录。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "community-review-mixed-diff",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "正确以 revision 2 和已接受决策 017、018 为验收依据，排除草案 019 与仅描述意图的 release notes，并遵守只审查不修改的范围。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "发现均落实到具体状态和触发条件，包括失败载荷身份、前台恢复资源、缺失 activityId 的展示/执行不一致及 URL 状态接线缺口。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "记录了 10/10 测试结果，并以三个最小运行用例直接复现关键问题；同时明确截图、浏览器、宿主接线和 TSX 检查未被本快照验证。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "发现按严重度呈现，逐项给出位置、影响条件、需求依据、现有测试缺口和完整审查覆盖范围。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供 React 宿主、浏览器 harness、截图原件及 UI 构建/typecheck 配置，无法核验真实键盘、焦点、布局和 history 集成。",
+          "URL 筛选问题对当前快照成立，但若接线由未提供的宿主负责，仍需宿主源码确认。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [
+          {
+            "rule": "漏掉无 ID 获取禁用、目录前台恢复、重试提交快照或失败查询复用旧游标中的任一契约缺陷",
+            "reason": "响应发现了无 ID 获取禁用、目录前台恢复和重试载荷三个缺陷，但漏掉了失败的新查询仍保留旧 cursor：替换加载失败后 snapshot.cursor 未清空，随后 loadMore 会把新查询与旧游标组合。"
+          }
+        ],
+        "verdict": "fail"
+      },
+      {
+        "id": "review-local-scope-and-evidence-limits",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "严格限定为按钮文案改动，明确排除上传队列，并核对事件行为保持不变。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "对单一静态文案替换给出直接审查结论，没有引入抽象、依赖或超范围建议。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "提供的补丁足以静态确认文本变化以及 disabled、onClick 未变；按用户要求未运行测试，并明确结论仅基于补丁。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论简短、结果优先，清楚说明通过依据、范围排除和证据限制。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "工作区不存在对应源码，无法确认补丁之外的文件上下文。",
+          "未运行测试或运行时检查，这是用户明确要求，结论仅覆盖所给差异。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "ecosystem-before-folder-template",
+        "dimensions": [
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "按 App Router 职责分配路由入口、服务端数据准备、客户端表单状态、Server Action 与纯校验规则，并避免把草稿提升到 layout 或全局 store。"
+          },
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确区分仓库事实与假设，考虑 App Router、既有工具复用、无需完整代码及未来编辑工单这一现实变化，同时未把建议目录冒充强制模板。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "工作区没有实际 Next.js 源码，无法确认现有命名、Next.js 版本、表单库、数据访问约定或检查命令。",
+          "文件树和状态归属是基于题述 App Router 契约的建议，未经过真实项目集成验证。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

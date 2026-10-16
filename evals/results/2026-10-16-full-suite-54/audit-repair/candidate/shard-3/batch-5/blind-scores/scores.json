@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "field-eligibility-consistency",
+        "dimensions": [
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用现有过滤与对象构造能力，统一 enabledFields/enabledValues 边界；修复局部且未引入规则引擎、依赖或多余抽象。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "同时识别禁用字段自身校验器仍会运行，以及禁用值会泄漏给启用字段的跨字段校验；修复使必填、自定义校验和提交遵循同一资格边界，并明确保留 required 对 0/false 的契约疑点。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "这是无可执行 fixture 的评审任务；所给测试分别覆盖禁用校验器不调用、禁用值不进入跨字段校验与 payload、启用字段错误阻止提交，并如实说明未执行。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给出实际缺陷，再提供小范围完整补丁、回归测试和未处理的契约歧义，范围与取舍清楚。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有可执行 fixture，测试仅构成验证设计，未实际运行。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "search-request-lifecycle-executable",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "变更覆盖草稿与已提交查询、latest-wins、不可取消 transport、retry、dispose、DTO 边界、空操作和独立快照，并遵守不改依赖及受保护文件的约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "使用一个私有 startRequest、递增请求序号和 disposed 标志完成生命周期控制，没有新增框架、依赖或通用状态机制，复杂度与问题相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "公开命令负责草稿、提交、重试、读取与销毁，私有请求函数集中异步发布规则；DTO 在写入公开状态前映射，调用者无需了解竞态处理步骤。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "请求身份按启动顺序判定，陈旧成功和失败均不能发布；retry 固定使用 submitted，dispose 阻止未来命令及在途完成更新，重复查询、空提交和错误值也有对应行为。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "最终 diff 中状态、调用顺序、错误处理、DTO 映射和公开 API 一致。生成期首次检查失败后已修正并复跑通过，随后宿主环境也完整通过 8/8，未留下失败路径。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "实际运行 npm run check 并得到最终 8/8，通过的宿主复验覆盖受保护 harness；git diff --check 也通过。首次失败有明确记录，后续同命令与独立宿主复验确认最终状态。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付说明结果优先，准确概括关键语义、验证结果和修改范围；所述 8/8 通过与最终生成期及宿主证据一致。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "生成期记录仅提供命令输出尾部而非完整审计，且未附 README.md 原文；最终行为仍由公开测试与宿主复验直接覆盖。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

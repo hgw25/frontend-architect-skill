@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "review-green-code-coupling",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确结合 README 契约、两个真实入口、内部实现与测试规模审查，并遵守只审查、不改代码及区分功能错误和可维护性问题的要求。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了原有完整操作边界与重构后的阶段协议，指出在没有暂停或阶段复用需求时，新增可变上下文和公开编排顺序带来的维护成本不相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "具体定位编排责任从 exportSelected 泄漏并复制到 toolbar/keyboard，且说明未来协议变化会扩大修改范围；问题基于实际调用关系而非文件数或函数长度。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖空选择、全有或全无、顺序与不变性、传输失败、等待期间身份稳定等边界，并准确区分当前调用顺序正确与潜在时序维护风险。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "报告 before/after 各 10/10 通过，生成期输出支持该结论，宿主又以联合测试 20/20 复验，并确认 fixture 未被修改。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论优先，两个发现均给出位置、机制、影响和性质，明确判定重构保持功能但降低内聚与可维护性。归一化得分为 16.00。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "生成期记录仅提供输出尾部而非完整命令审计；不过宿主联合测试和未修改检查独立支持关键结论。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "root-cause-before-recovery-executable",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "识别了等待状态、终态增量缺失关联、手动历史恢复有效、必须保留其他请求与恢复能力等核心约束，并限定为已授权的局部修复。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "利用消息层已有的合并事实修复 ledger，而没有因恢复现象新增每 30 秒全量轮询；方案直接复用现有契约且维护成本与缺口相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "修复落在消费合并消息事实的 ledger 边界，仅将进度更新由原始 snapshot 改为 stored，未把恢复或轮询责任扩散到其他模块。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实际 diff 一致地切换 scope、replyTo、id 和 status 的事实来源；语法检查、完整测试及宿主复验均通过，恢复接口保持不变。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "验证覆盖 done/error、正常流与重复终态、无关联终态、其他请求和作用域、终态先于接受以及显式历史恢复，直接对应关联、顺序、幂等与隔离风险。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "明确记录修复前 7 项中 4 项失败、修复后 7/7 通过，并给出语法和 diff 检查；生成期结果及宿主 7/7 复验共同支持实现结论。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "清楚交代确定的根因、为何手动恢复不能证明需要轮询、完成的修改、验证结果以及生产事件丢失仍未知的范围。归一化得分为 16.00。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供完整 ledger 与测试源码，只提供局部 diff、测试名称和执行结果；生产侧事件记录也不在证据中，因此无法排除独立的事件丢失或持久化故障。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

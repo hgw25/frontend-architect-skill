@@ -1,0 +1,389 @@
+diff --git a/src/SearchPage.test.ts b/src/SearchPage.test.ts
+index f66874b..1d818b4 100644
+--- a/src/SearchPage.test.ts
++++ b/src/SearchPage.test.ts
+@@ -1,8 +1,10 @@
+-import { flushPromises, mount } from '@vue/test-utils'
++import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+ 
+ import SearchPage from './SearchPage.vue'
+ 
++enableAutoUnmount(afterEach)
++
+ type DeferredResponse = {
+   promise: Promise<Response>
+   resolve: (value: Response) => void
+@@ -84,3 +86,42 @@ test('prevents an older request from replacing a newer search result', async ()
+   expect(wrapper.text()).toContain('Newest')
+   expect(wrapper.text()).not.toContain('Stale')
+ })
++
++test('keeps stale failures and cleanup from replacing the current request state', async () => {
++  const first = deferredResponse()
++  const second = deferredResponse()
++  vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise))
++
++  const wrapper = mount(SearchPage)
++  await wrapper.get('input[name="query"]').setValue('new')
++  await wrapper.get('form').trigger('submit')
++
++  second.resolve(response('Newest'))
++  await flushPromises()
++  first.resolve(new Response(null, { status: 500 }))
++  await flushPromises()
++
++  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
++  expect(wrapper.get('section').attributes('aria-busy')).toBe('false')
++  expect(wrapper.text()).toContain('Newest')
++})
++
++test('localizes singular messages and writes locale changes to the URL', async () => {
++  history.replaceState(null, '', '/search?q=tea&page=1&locale=en-US')
++  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response('Tea', 1, 1.5))))
++  const wrapper = mount(SearchPage)
++  await flushPromises()
++
++  expect(wrapper.get('main').attributes('lang')).toBe('en-US')
++  expect(document.documentElement.lang).toBe('en-US')
++  expect(wrapper.text()).toContain('1 result')
++  expect(wrapper.text()).toContain('$1.50')
++
++  await wrapper.get('select[name="locale"]').setValue('fr-FR')
++
++  expect(location.search).toContain('locale=fr-FR')
++  expect(wrapper.get('main').attributes('lang')).toBe('fr-FR')
++  expect(document.documentElement.lang).toBe('fr-FR')
++  expect(wrapper.text()).toContain('1 résultat')
++  expect(wrapper.text()).toContain('1,50 €')
++})
+diff --git a/src/SearchPage.vue b/src/SearchPage.vue
+index 8ced088..476d5e2 100644
+--- a/src/SearchPage.vue
++++ b/src/SearchPage.vue
+@@ -1,5 +1,12 @@
+ <script setup lang="ts">
+-import { onMounted, ref } from 'vue'
++import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
++
++import {
++  createI18n,
++  isSupportedLocale,
++  supportedLocales,
++  type SupportedLocale,
++} from './searchI18n'
+ 
+ type SearchResult = {
+   id: string
+@@ -7,50 +14,193 @@ type SearchResult = {
+   price: number
+ }
+ 
+-const query = ref('')
+-const page = ref(1)
+-const locale = ref('en-US')
++type SearchState = {
++  query: string
++  page: number
++  locale: SupportedLocale
++}
++
++function readSearchState(): SearchState {
++  const params = new URLSearchParams(window.location.search)
++  const parsedPage = Number(params.get('page'))
++  const locale = params.get('locale')
++
++  return {
++    query: params.get('q') ?? '',
++    page: Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1,
++    locale: isSupportedLocale(locale) ? locale : 'en-US',
++  }
++}
++
++function searchUrl(state: SearchState): URL {
++  const url = new URL(window.location.href)
++  url.searchParams.set('q', state.query)
++  url.searchParams.set('page', String(state.page))
++  url.searchParams.set('locale', state.locale)
++  return url
++}
++
++const initialState = readSearchState()
++const searchState = reactive<SearchState>(initialState)
++const draftQuery = ref(initialState.query)
+ const results = ref<SearchResult[]>([])
+ const total = ref(0)
+-const error = ref('')
++const hasError = ref(false)
++const loading = ref(false)
++const i18n = computed(() => createI18n(searchState.locale))
++
++let requestId = 0
++let activeRequest: AbortController | undefined
++const originalDocumentLanguage = document.documentElement.lang
++
++function snapshot(): SearchState {
++  return { ...searchState }
++}
++
++function writeSearchState(state: SearchState) {
++  window.history.pushState(window.history.state, '', searchUrl(state))
++}
++
++function replaceWithCanonicalUrl(state: SearchState) {
++  const canonicalUrl = searchUrl(state)
++  if (canonicalUrl.href !== window.location.href) {
++    window.history.replaceState(window.history.state, '', canonicalUrl)
++  }
++}
++
++async function search(state: SearchState) {
++  const currentRequestId = ++requestId
++  activeRequest?.abort()
++  const controller = new AbortController()
++  activeRequest = controller
++  hasError.value = false
++  loading.value = true
+ 
+-async function search() {
+-  error.value = ''
+   try {
+     const response = await fetch(
+-      `/api/search?q=${encodeURIComponent(query.value)}&page=${page.value}`,
++      `/api/search?q=${encodeURIComponent(state.query)}&page=${state.page}`,
++      { signal: controller.signal },
+     )
++
++    if (!response.ok) {
++      throw new Error(`Search request failed with status ${response.status}`)
++    }
++
+     const payload = (await response.json()) as {
+       items: SearchResult[]
+       total: number
+     }
++
++    if (currentRequestId !== requestId) return
++
+     results.value = payload.items
+     total.value = payload.total
+-  } catch {
+-    error.value = 'Search failed'
++  } catch (error) {
++    if (currentRequestId !== requestId) return
++    if (error instanceof DOMException && error.name === 'AbortError') return
++
++    hasError.value = true
++  } finally {
++    if (currentRequestId === requestId) {
++      loading.value = false
++      activeRequest = undefined
++    }
+   }
+ }
+ 
+-onMounted(search)
++function submitSearch() {
++  searchState.query = draftQuery.value
++  searchState.page = 1
++  writeSearchState(snapshot())
++  void search(snapshot())
++}
++
++function changeLocale() {
++  writeSearchState(snapshot())
++}
++
++function goToPage(page: number) {
++  if (!Number.isInteger(page) || page < 1 || page === searchState.page) return
++
++  searchState.page = page
++  writeSearchState(snapshot())
++  void search(snapshot())
++}
++
++function restoreFromHistory() {
++  const restoredState = readSearchState()
++  Object.assign(searchState, restoredState)
++  draftQuery.value = restoredState.query
++  replaceWithCanonicalUrl(restoredState)
++  void search(restoredState)
++}
++
++watch(
++  () => searchState.locale,
++  (locale) => {
++    document.documentElement.lang = locale
++  },
++  { immediate: true },
++)
++
++replaceWithCanonicalUrl(initialState)
++
++onMounted(() => {
++  window.addEventListener('popstate', restoreFromHistory)
++  void search(snapshot())
++})
++
++onBeforeUnmount(() => {
++  window.removeEventListener('popstate', restoreFromHistory)
++  requestId += 1
++  activeRequest?.abort()
++  document.documentElement.lang = originalDocumentLanguage
++})
+ </script>
+ 
+ <template>
+-  <main>
+-    <h1>Product search</h1>
+-    <form @submit.prevent="search">
++  <main :lang="searchState.locale">
++    <h1>{{ i18n.messages.title }}</h1>
++    <form @submit.prevent="submitSearch">
+       <label>
+-        Search
+-        <input v-model="query" name="query" />
++        {{ i18n.messages.searchLabel }}
++        <input v-model="draftQuery" name="query" />
+       </label>
+-      <button type="submit">Search</button>
++      <button type="submit">{{ i18n.messages.searchAction }}</button>
+     </form>
+ 
+-    <p v-if="error" role="alert">{{ error }}</p>
+-    <p aria-live="polite">{{ total }} results</p>
+-    <ul>
+-      <li v-for="result in results" :key="result.id">
+-        {{ result.name }} — ${{ result.price }}
+-      </li>
+-    </ul>
++    <label>
++      {{ i18n.messages.localeLabel }}
++      <select v-model="searchState.locale" name="locale" @change="changeLocale">
++        <option v-for="option in supportedLocales" :key="option" :value="option">
++          {{ option }}
++        </option>
++      </select>
++    </label>
++
++    <p v-if="hasError" role="alert">{{ i18n.messages.searchFailed }}</p>
++    <section :aria-busy="loading">
++      <p v-if="loading">{{ i18n.messages.loading }}</p>
++      <p aria-live="polite">{{ i18n.formatResultCount(total) }}</p>
++      <ul>
++        <li v-for="result in results" :key="result.id">
++          {{ result.name }} — {{ i18n.formatPrice(result.price) }}
++        </li>
++      </ul>
++    </section>
++
++    <nav :aria-label="i18n.messages.pagination">
++      <button
++        type="button"
++        :disabled="searchState.page === 1"
++        @click="goToPage(searchState.page - 1)"
++      >
++        {{ i18n.messages.previousPage }}
++      </button>
++      <span>{{ i18n.formatPage(searchState.page) }}</span>
++      <button type="button" @click="goToPage(searchState.page + 1)">
++        {{ i18n.messages.nextPage }}
++      </button>
++    </nav>
+   </main>
+ </template>
+diff --git a/src/searchI18n.ts b/src/searchI18n.ts
+new file mode 100644
+index 0000000..c7fb112
+--- /dev/null
++++ b/src/searchI18n.ts
+@@ -0,0 +1,89 @@
++export const supportedLocales = ['en-US', 'fr-FR'] as const
++
++export type SupportedLocale = (typeof supportedLocales)[number]
++
++type MessageCatalog = {
++  title: string
++  searchLabel: string
++  searchAction: string
++  localeLabel: string
++  searchFailed: string
++  loading: string
++  pagination: string
++  previousPage: string
++  nextPage: string
++  page: string
++  resultCount: {
++    one: string
++    other: string
++  }
++  currency: string
++}
++
++const catalogs: Record<SupportedLocale, MessageCatalog> = {
++  'en-US': {
++    title: 'Product search',
++    searchLabel: 'Search',
++    searchAction: 'Search',
++    localeLabel: 'Language',
++    searchFailed: 'Search failed',
++    loading: 'Loading results',
++    pagination: 'Search result pages',
++    previousPage: 'Previous',
++    nextPage: 'Next',
++    page: 'Page {page}',
++    resultCount: {
++      one: '{count} result',
++      other: '{count} results',
++    },
++    currency: 'USD',
++  },
++  'fr-FR': {
++    title: 'Recherche de produits',
++    searchLabel: 'Rechercher',
++    searchAction: 'Rechercher',
++    localeLabel: 'Langue',
++    searchFailed: 'La recherche a échoué',
++    loading: 'Chargement des résultats',
++    pagination: 'Pages de résultats de recherche',
++    previousPage: 'Précédent',
++    nextPage: 'Suivant',
++    page: 'Page {page}',
++    resultCount: {
++      one: '{count} résultat',
++      other: '{count} résultats',
++    },
++    currency: 'EUR',
++  },
++}
++
++export function isSupportedLocale(value: string | null): value is SupportedLocale {
++  return value !== null && supportedLocales.some((locale) => locale === value)
++}
++
++export function createI18n(locale: SupportedLocale) {
++  const messages = catalogs[locale]
++  const pluralRules = new Intl.PluralRules(locale)
++  const numberFormatter = new Intl.NumberFormat(locale)
++  const currencyFormatter = new Intl.NumberFormat(locale, {
++    style: 'currency',
++    currency: messages.currency,
++  })
++
++  return {
++    messages,
++    formatResultCount(count: number) {
++      const plural = pluralRules.select(count) === 'one' ? 'one' : 'other'
++      return messages.resultCount[plural].replace(
++        '{count}',
++        numberFormatter.format(count),
++      )
++    },
++    formatPage(page: number) {
++      return messages.page.replace('{page}', numberFormatter.format(page))
++    },
++    formatPrice(price: number) {
++      return currencyFormatter.format(price)
++    },
++  }
++}

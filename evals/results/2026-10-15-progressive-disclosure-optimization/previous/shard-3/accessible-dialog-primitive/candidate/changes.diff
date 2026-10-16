@@ -1,0 +1,1655 @@
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..fd36c6e
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,62 @@
++# Headless Dialog primitive
++
++这个包把三个产品重复实现的模态行为收敛为一个无样式 React primitive。它只拥有打开状态协调、portal、ARIA 关联、模态层栈、背景隔离和焦点生命周期；标题、说明、业务操作、文案、布局、颜色和动画均由消费者拥有。
++
++## 公开 API
++
++```tsx
++import { Dialog } from 'frontend-architect-dialog-browser-eval'
++
++<Dialog.Root defaultOpen={false} onOpenChange={setOpen}>
++  <Dialog.Trigger className="trigger">Edit profile</Dialog.Trigger>
++  <Dialog.Portal>
++    <Dialog.Overlay className="overlay">
++      <Dialog.Content className="panel">
++        <Dialog.Title>Edit profile</Dialog.Title>
++        <Dialog.Description>Update your public information.</Dialog.Description>
++        {/* product fields and actions */}
++        <Dialog.Close>Cancel</Dialog.Close>
++      </Dialog.Content>
++    </Dialog.Overlay>
++  </Dialog.Portal>
++</Dialog.Root>
++```
++
++- `Root`: `open` + `onOpenChange` 为受控模式，`defaultOpen` 为非受控模式；二者都使用同一行为路径。
++- `Trigger` / `Close`: 原生 button props 与 ref；消费者事件先运行，`preventDefault()` 可取消默认状态变更。
++- `Portal`: 默认挂到 `document.body`，`container` 可指定宿主。服务端及水合首帧不创建 portal，挂载后才显示默认打开的内容。
++- `Overlay`: 原生 div props 与 ref；只在指针直接命中最上层遮罩时关闭。
++- `Content`: 原生 div props 与 ref，固定提供 `role="dialog"`、`aria-modal="true"` 和焦点约束；`initialFocusRef` 可指定初始焦点，`onEscapeKeyDown` 可通过 `preventDefault()` 阻止 Escape 关闭。
++- `Title` / `Description`: 生成稳定 ID 并自动关联到 `Content`。没有可见标题时，消费者必须给 `Content` 提供 `aria-label` 或 `aria-labelledby`。
++
++每个部件也有对应 named export（如 `DialogRoot`、`DialogContent`）及 props 类型。包只发布 ESM 和声明文件；React 与 React DOM 是 peer dependencies。`data-state` 是状态样式钩子，`className`、`style` 和普通 DOM 属性由消费者自由提供。`data-dialog-portal` 仅是内部层边界，不应作为样式 API。
++
++## 核心边界与不变量
++
++- `DialogRoot` 是单个实例打开状态和稳定 ARIA ID 的唯一 owner，不读取浏览器全局。
++- `DialogPortal` 是 SSR 与浏览器能力边界；服务端输出和水合首帧一致。
++- `dialog-layer` 是所有实例共享的模态资源 owner。它只让栈顶响应 Escape/Tab，嵌套关闭后恢复到本层 trigger，最后一层关闭后恢复原有 `inert`、`aria-hidden` 和 body overflow。
++- `Content` 注册和释放模态层；卸载、受控关闭和 React Strict Mode 重跑都走同一清理路径。
++- primitive 不提供默认文案、业务按钮、视觉 CSS 或动画。产品可以改变 DOM 内容和样式，但不能绕过 `Content` 的 dialog role、焦点与模态语义。
++
++## 验证矩阵
++
++| 风险 | 场景 | 证据/发布门禁 |
++| --- | --- | --- |
++| 焦点 | 初始焦点、正反向 Tab 环绕、程序化背景聚焦、关闭恢复 | Playwright 真实 Chromium |
++| 键盘/嵌套 | 只有栈顶处理 Escape；子层关闭回到子 trigger，父层继续可用 | Playwright 真实 Chromium |
++| 语义 | accessible name/description、`aria-modal`、背景 `inert`/`aria-hidden` | Playwright accessibility locators + DOM assertions |
++| 状态 | 非受控打开；受控 `open/onOpenChange` 打开和产品 Close | Playwright |
++| 指针 | 直接点遮罩关闭；内容交互不误关；消费者可 prevent default | 合入前浏览器回归；新增策略时补用例 |
++| SSR/水合 | closed 与 `defaultOpen` 服务端不访问 DOM，首帧结构稳定，挂载后建 portal | Vitest server render；框架接入时跑该产品的 hydration suite |
++| 包契约 | ESM runtime、声明文件、peer dependency、公开 export、包内容 | `npm run build:package` + `npm pack --dry-run` |
++| 浏览器兼容 | 当前 evergreen Chromium；产品正式发布前覆盖其声明支持的 Firefox/WebKit/移动端 AT 组合 | 产品 release gate，不由源码单测替代 |
++
++## 三个产品的迁移
++
++1. 先发布 prerelease，并在一个低风险弹窗中用 adapter 保持旧 props；把原有标题、说明、Close 文案和业务 actions 移到 compound children，原 CSS 改挂公开 `className`。
++2. 对每个产品记录其现有关闭策略、初始焦点和受控状态 owner，逐个迁移并运行该产品键盘、读屏语义、SSR/水合与视觉回归。行为差异通过明确的 `initialFocusRef` 或取消默认事件表达，不 fork primitive。
++3. 第二个产品验证嵌套和 portal 宿主，第三个产品验证主题/长文案；prerelease 稳定后发布 `0.x`，保留旧 adapter 一个约定周期并给出弃用提示。
++4. 全部调用点迁移且生产回归稳定后删除三个本地 focus/Escape/portal 实现及 adapter。回滚只需恢复单个产品的 adapter 版本，不与 primitive 删除在同一次发布完成。
++
++维护命令：`npm run check` 运行类型、SSR、真实浏览器、应用构建和包构建；随后以 `npm pack --dry-run` 检查实际发布文件。新增部件前先确认它是否属于跨产品一致的模态行为，产品政策仍应留在调用侧。
+diff --git a/consumer-tests/usage.tsx b/consumer-tests/usage.tsx
+new file mode 100644
+index 0000000..162ff39
+--- /dev/null
++++ b/consumer-tests/usage.tsx
+@@ -0,0 +1,27 @@
++import {
++  Dialog,
++  DialogContent,
++  type DialogContentProps,
++  type DialogRootProps,
++} from 'frontend-architect-dialog-browser-eval'
++
++const controlledRoot: DialogRootProps = {
++  children: null,
++  onOpenChange: (_open) => undefined,
++  open: true,
++}
++
++const contentProps: DialogContentProps = {
++  'aria-label': 'Consumer dialog',
++  className: 'consumer-panel',
++}
++
++export function PackageConsumer() {
++  return (
++    <Dialog.Root {...controlledRoot}>
++      <Dialog.Portal>
++        <DialogContent {...contentProps} />
++      </Dialog.Portal>
++    </Dialog.Root>
++  )
++}
+diff --git a/hydration.html b/hydration.html
+new file mode 100644
+index 0000000..8f685bb
+--- /dev/null
++++ b/hydration.html
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>Dialog hydration fixture</title>
++  </head>
++  <body>
++    <div id="hydration-root"><button aria-controls="dialog-«R0»" aria-expanded="true" aria-haspopup="dialog" data-state="open" type="button">Open by default</button></div>
++    <script type="module" src="/src/hydration-main.tsx"></script>
++  </body>
++</html>
+diff --git a/package-dist/Dialog.d.ts b/package-dist/Dialog.d.ts
+new file mode 100644
+index 0000000..6d37816
+--- /dev/null
++++ b/package-dist/Dialog.d.ts
+@@ -0,0 +1,44 @@
++import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type RefObject } from 'react';
++export type DialogRootProps = {
++    children: ReactNode;
++    defaultOpen?: boolean;
++    onOpenChange?: (open: boolean) => void;
++    open?: boolean;
++};
++export declare function DialogRoot({ children, defaultOpen, onOpenChange, open }: DialogRootProps): import("react/jsx-runtime").JSX.Element;
++export type DialogTriggerProps = ButtonHTMLAttributes<HTMLButtonElement>;
++export declare const DialogTrigger: import("react").ForwardRefExoticComponent<DialogTriggerProps & import("react").RefAttributes<HTMLButtonElement>>;
++export type DialogPortalProps = {
++    children: ReactNode;
++    container?: Element | DocumentFragment | null;
++};
++export declare function DialogPortal({ children, container }: DialogPortalProps): import("react").ReactPortal | null;
++export type DialogOverlayProps = HTMLAttributes<HTMLDivElement>;
++export declare const DialogOverlay: import("react").ForwardRefExoticComponent<DialogOverlayProps & import("react").RefAttributes<HTMLDivElement>>;
++export type DialogContentProps = Omit<HTMLAttributes<HTMLDivElement>, 'role'> & {
++    initialFocusRef?: RefObject<HTMLElement | null>;
++    onEscapeKeyDown?: (event: KeyboardEvent) => void;
++};
++export declare const DialogContent: import("react").ForwardRefExoticComponent<Omit<HTMLAttributes<HTMLDivElement>, "role"> & {
++    initialFocusRef?: RefObject<HTMLElement | null>;
++    onEscapeKeyDown?: (event: KeyboardEvent) => void;
++} & import("react").RefAttributes<HTMLDivElement>>;
++export type DialogTitleProps = Omit<HTMLAttributes<HTMLHeadingElement>, 'id'>;
++export declare const DialogTitle: import("react").ForwardRefExoticComponent<DialogTitleProps & import("react").RefAttributes<HTMLHeadingElement>>;
++export type DialogDescriptionProps = Omit<HTMLAttributes<HTMLParagraphElement>, 'id'>;
++export declare const DialogDescription: import("react").ForwardRefExoticComponent<DialogDescriptionProps & import("react").RefAttributes<HTMLParagraphElement>>;
++export type DialogCloseProps = ButtonHTMLAttributes<HTMLButtonElement>;
++export declare const DialogClose: import("react").ForwardRefExoticComponent<DialogCloseProps & import("react").RefAttributes<HTMLButtonElement>>;
++export declare const Dialog: {
++    Close: import("react").ForwardRefExoticComponent<DialogCloseProps & import("react").RefAttributes<HTMLButtonElement>>;
++    Content: import("react").ForwardRefExoticComponent<Omit<HTMLAttributes<HTMLDivElement>, "role"> & {
++        initialFocusRef?: RefObject<HTMLElement | null>;
++        onEscapeKeyDown?: (event: KeyboardEvent) => void;
++    } & import("react").RefAttributes<HTMLDivElement>>;
++    Description: import("react").ForwardRefExoticComponent<DialogDescriptionProps & import("react").RefAttributes<HTMLParagraphElement>>;
++    Overlay: import("react").ForwardRefExoticComponent<DialogOverlayProps & import("react").RefAttributes<HTMLDivElement>>;
++    Portal: typeof DialogPortal;
++    Root: typeof DialogRoot;
++    Title: import("react").ForwardRefExoticComponent<DialogTitleProps & import("react").RefAttributes<HTMLHeadingElement>>;
++    Trigger: import("react").ForwardRefExoticComponent<DialogTriggerProps & import("react").RefAttributes<HTMLButtonElement>>;
++};
+diff --git a/package-dist/dialog-layer.d.ts b/package-dist/dialog-layer.d.ts
+new file mode 100644
+index 0000000..bb75271
+--- /dev/null
++++ b/package-dist/dialog-layer.d.ts
+@@ -0,0 +1,9 @@
++export type DialogLayer = {
++    content: HTMLElement;
++    dismiss: () => void;
++    initialFocus: () => HTMLElement | null;
++    onEscapeKeyDown?: (event: KeyboardEvent) => void;
++    restoreFocus: HTMLElement | null;
++};
++export declare function registerDialogLayer(layer: DialogLayer): () => void;
++export declare function isTopDialogLayer(content: HTMLElement | null): boolean;
+diff --git a/package-dist/index.d.ts b/package-dist/index.d.ts
+new file mode 100644
+index 0000000..7a89f61
+--- /dev/null
++++ b/package-dist/index.d.ts
+@@ -0,0 +1 @@
++export { Dialog, DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, DialogTrigger, type DialogCloseProps, type DialogContentProps, type DialogDescriptionProps, type DialogOverlayProps, type DialogPortalProps, type DialogRootProps, type DialogTitleProps, type DialogTriggerProps, } from './Dialog.js';
+diff --git a/package-dist/index.js b/package-dist/index.js
+new file mode 100644
+index 0000000..db74843
+--- /dev/null
++++ b/package-dist/index.js
+@@ -0,0 +1,266 @@
++import { jsx as d } from "react/jsx-runtime";
++import { createContext as K, useState as v, useId as N, useRef as T, useCallback as O, useMemo as $, forwardRef as y, useEffect as R, useContext as j, useLayoutEffect as G } from "react";
++import { createPortal as U } from "react-dom";
++const X = [
++  "a[href]",
++  "area[href]",
++  "button:not([disabled])",
++  'input:not([disabled]):not([type="hidden"])',
++  "select:not([disabled])",
++  "textarea:not([disabled])",
++  "iframe",
++  "object",
++  "embed",
++  '[contenteditable="true"]',
++  '[tabindex]:not([tabindex="-1"])'
++].join(","), b = [], C = /* @__PURE__ */ new Map();
++let S = "";
++function V(e) {
++  const t = window.getComputedStyle(e);
++  return t.visibility !== "hidden" && t.display !== "none" && e.getClientRects().length > 0;
++}
++function H(e) {
++  return Array.from(e.querySelectorAll(X)).filter(
++    (n) => !n.closest("[inert]") && V(n)
++  ).sort((n, o) => {
++    const r = n.tabIndex > 0 ? n.tabIndex : Number.MAX_SAFE_INTEGER, s = o.tabIndex > 0 ? o.tabIndex : Number.MAX_SAFE_INTEGER;
++    return r - s;
++  });
++}
++function D(e) {
++  e?.focus({ preventScroll: !0 });
++}
++function P(e) {
++  const t = e.initialFocus();
++  if (t && e.content.contains(t)) {
++    D(t);
++    return;
++  }
++  D(H(e.content)[0] ?? e.content);
++}
++function p() {
++  return b.at(-1);
++}
++function k(e) {
++  const t = p();
++  if (!t) return;
++  if (e.key === "Escape") {
++    t.onEscapeKeyDown?.(e), e.defaultPrevented || (e.preventDefault(), t.dismiss()), e.stopPropagation();
++    return;
++  }
++  if (e.key !== "Tab") return;
++  const n = H(t.content);
++  if (n.length === 0) {
++    e.preventDefault(), D(t.content);
++    return;
++  }
++  const o = document.activeElement, r = n[0], s = n[n.length - 1];
++  e.shiftKey && (o === r || !t.content.contains(o)) ? (e.preventDefault(), D(s)) : !e.shiftKey && (o === s || !t.content.contains(o)) && (e.preventDefault(), D(r));
++}
++function M(e) {
++  const t = p();
++  !t || t.content.contains(e.target) || P(t);
++}
++function q(e, t) {
++  e.inert = t.inert, t.ariaHidden === null ? e.removeAttribute("aria-hidden") : e.setAttribute("aria-hidden", t.ariaHidden);
++}
++function F() {
++  const e = p();
++  if (!e) {
++    for (const [n, o] of C) q(n, o);
++    C.clear(), document.body.style.overflow = S;
++    return;
++  }
++  for (const [n, o] of C) q(n, o);
++  let t = e.content.closest("[data-dialog-portal]") ?? e.content;
++  for (; t.parentElement; ) {
++    const n = t.parentElement;
++    for (const o of Array.from(n.children))
++      !(o instanceof HTMLElement) || o === t || (C.has(o) || C.set(o, {
++        ariaHidden: o.getAttribute("aria-hidden"),
++        inert: o.inert
++      }), o.inert = !0, o.setAttribute("aria-hidden", "true"));
++    if (n === document.body) break;
++    t = n;
++  }
++}
++function z(e) {
++  return b.length === 0 && (S = document.body.style.overflow, document.body.style.overflow = "hidden", document.addEventListener("keydown", k, !0), document.addEventListener("focusin", M, !0)), b.push(e), F(), queueMicrotask(() => {
++    p() === e && P(e);
++  }), () => {
++    const t = p() === e, n = b.indexOf(e);
++    n !== -1 && b.splice(n, 1), F(), b.length === 0 && (document.removeEventListener("keydown", k, !0), document.removeEventListener("focusin", M, !0)), t && queueMicrotask(() => {
++      if (e.restoreFocus?.isConnected) D(e.restoreFocus);
++      else {
++        const o = p();
++        o && !o.content.contains(document.activeElement) && P(o);
++      }
++    });
++  };
++}
++function J(e) {
++  return e !== null && p()?.content === e;
++}
++const Q = typeof window > "u" ? R : G, _ = K(null);
++function g(e) {
++  const t = j(_);
++  if (!t) throw new Error(`${e} must be rendered inside Dialog.Root`);
++  return t;
++}
++function W(...e) {
++  return O(
++    (t) => {
++      for (const n of e)
++        typeof n == "function" ? n(t) : n && (n.current = t);
++    },
++    e
++  );
++}
++function Y({ children: e, defaultOpen: t = !1, onOpenChange: n, open: o }) {
++  const [r, s] = v(t), [l, c] = v(0), [m, i] = v(0), u = N(), L = T(null), E = o !== void 0, f = E ? o : r, h = T(f), I = T(n);
++  h.current = f, I.current = n;
++  const w = O(
++    (a) => {
++      h.current !== a && (E || s(a), I.current?.(a));
++    },
++    [E]
++  ), x = O(() => (c((a) => a + 1), () => c((a) => Math.max(0, a - 1))), []), A = O(() => (i((a) => a + 1), () => i((a) => Math.max(0, a - 1))), []), B = $(
++    () => ({
++      contentElement: L,
++      contentId: `dialog-${u}`,
++      descriptionId: `dialog-description-${u}`,
++      descriptionCount: m,
++      open: f,
++      registerDescription: A,
++      registerTitle: x,
++      requestOpenChange: w,
++      titleId: `dialog-title-${u}`,
++      titleCount: l
++    }),
++    [
++      f,
++      m,
++      u,
++      A,
++      x,
++      w,
++      l
++    ]
++  );
++  return /* @__PURE__ */ d(_.Provider, { value: B, children: e });
++}
++const Z = y(function({ disabled: t, onClick: n, type: o = "button", ...r }, s) {
++  const { contentId: l, open: c, requestOpenChange: m } = g("Dialog.Trigger");
++  return /* @__PURE__ */ d(
++    "button",
++    {
++      ...r,
++      ref: s,
++      "aria-controls": c ? l : void 0,
++      "aria-expanded": c,
++      "aria-haspopup": "dialog",
++      "data-state": c ? "open" : "closed",
++      disabled: t,
++      type: o,
++      onClick: (i) => {
++        n?.(i), !i.defaultPrevented && !t && m(!0);
++      }
++    }
++  );
++});
++function ee({ children: e, container: t }) {
++  const { open: n } = g("Dialog.Portal"), [o, r] = v(!1);
++  return R(() => r(!0), []), !o || !n ? null : U(/* @__PURE__ */ d("div", { "data-dialog-portal": "", children: e }), t ?? document.body);
++}
++const te = y(function({ onPointerDown: t, ...n }, o) {
++  const { contentElement: r, open: s, requestOpenChange: l } = g("Dialog.Overlay");
++  return s ? /* @__PURE__ */ d(
++    "div",
++    {
++      ...n,
++      ref: o,
++      "data-state": "open",
++      onPointerDown: (c) => {
++        t?.(c), !c.defaultPrevented && c.target === c.currentTarget && J(r.current) && (c.preventDefault(), l(!1));
++      }
++    }
++  ) : null;
++}), ne = y(function({
++  "aria-describedby": t,
++  "aria-label": n,
++  "aria-labelledby": o,
++  initialFocusRef: r,
++  onEscapeKeyDown: s,
++  tabIndex: l = -1,
++  ...c
++}, m) {
++  const i = g("Dialog.Content"), [u, L] = v(null), E = W(m, L), f = T(s), h = T(r);
++  return f.current = s, h.current = r, Q(() => {
++    if (!i.open || !u) return;
++    i.contentElement.current = u;
++    const I = document.activeElement instanceof HTMLElement ? document.activeElement : null, w = z({
++      content: u,
++      dismiss: () => i.requestOpenChange(!1),
++      initialFocus: () => h.current?.current ?? null,
++      onEscapeKeyDown: (x) => f.current?.(x),
++      restoreFocus: I
++    });
++    return () => {
++      i.contentElement.current === u && (i.contentElement.current = null), w();
++    };
++  }, [i.contentElement, i.open, i.requestOpenChange, u]), i.open ? /* @__PURE__ */ d(
++    "div",
++    {
++      ...c,
++      ref: E,
++      "aria-describedby": t ?? (i.descriptionCount > 0 ? i.descriptionId : void 0),
++      "aria-label": n,
++      "aria-labelledby": o ?? (!n && i.titleCount > 0 ? i.titleId : void 0),
++      "aria-modal": "true",
++      "data-state": "open",
++      id: i.contentId,
++      role: "dialog",
++      tabIndex: l
++    }
++  ) : null;
++}), oe = y(function(t, n) {
++  const { registerTitle: o, titleId: r } = g("Dialog.Title");
++  return R(o, [o]), /* @__PURE__ */ d("h2", { ...t, ref: n, id: r });
++}), re = y(function(t, n) {
++  const { descriptionId: o, registerDescription: r } = g("Dialog.Description");
++  return R(r, [r]), /* @__PURE__ */ d("p", { ...t, ref: n, id: o });
++}), ie = y(function({ disabled: t, onClick: n, type: o = "button", ...r }, s) {
++  const { requestOpenChange: l } = g("Dialog.Close");
++  return /* @__PURE__ */ d(
++    "button",
++    {
++      ...r,
++      ref: s,
++      disabled: t,
++      type: o,
++      onClick: (c) => {
++        n?.(c), !c.defaultPrevented && !t && l(!1);
++      }
++    }
++  );
++}), le = {
++  Close: ie,
++  Content: ne,
++  Description: re,
++  Overlay: te,
++  Portal: ee,
++  Root: Y,
++  Title: oe,
++  Trigger: Z
++};
++export {
++  le as Dialog,
++  ie as DialogClose,
++  ne as DialogContent,
++  re as DialogDescription,
++  te as DialogOverlay,
++  ee as DialogPortal,
++  Y as DialogRoot,
++  oe as DialogTitle,
++  Z as DialogTrigger
++};
+diff --git a/package-lock.json b/package-lock.json
+index c19651f..5fe4b3b 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,23 +1,27 @@
+ {
+   "name": "frontend-architect-dialog-browser-eval",
++  "version": "0.1.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "frontend-architect-dialog-browser-eval",
+-      "dependencies": {
+-        "react": "19.1.1",
+-        "react-dom": "19.1.1"
+-      },
++      "version": "0.1.0",
+       "devDependencies": {
+         "@playwright/test": "1.62.1",
+         "@types/node": "24.3.0",
+         "@types/react": "19.1.10",
+         "@types/react-dom": "19.1.7",
+         "@vitejs/plugin-react": "5.0.2",
++        "react": "19.1.1",
++        "react-dom": "19.1.1",
+         "typescript": "5.9.2",
+         "vite": "7.3.6",
+         "vitest": "4.1.11"
++      },
++      "peerDependencies": {
++        "react": ">=18.3 <20",
++        "react-dom": ">=18.3 <20"
+       }
+     },
+     "node_modules/@babel/code-frame": {
+@@ -1869,6 +1873,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react/-/react-19.1.1.tgz",
+       "integrity": "sha512-w8nqGImo45dmMIfljjMwOGtbmC/mk4CMYhWIicdSflH91J9TyCyczcPFXJzrZ/ZXcgGRFeP6BU0BEJTw6tZdfQ==",
++      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">=0.10.0"
+@@ -1878,6 +1883,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.1.1.tgz",
+       "integrity": "sha512-Dlq/5LAZgF0Gaz6yiqZCf6VCcZs1ghAJyrsu84Q/GT0gV+mCxbfmKNoGRKBYMJ8IEdGPqu49YWXD02GCknEDkw==",
++      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "scheduler": "^0.26.0"
+@@ -1946,6 +1952,7 @@
+       "version": "0.26.0",
+       "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.26.0.tgz",
+       "integrity": "sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA==",
++      "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/semver": {
+diff --git a/package.json b/package.json
+index e721197..b07d805 100644
+--- a/package.json
++++ b/package.json
+@@ -1,19 +1,35 @@
+ {
+   "name": "frontend-architect-dialog-browser-eval",
+-  "private": true,
++  "version": "0.1.0",
+   "type": "module",
++  "files": [
++    "package-dist",
++    "README.md"
++  ],
++  "sideEffects": false,
++  "exports": {
++    ".": {
++      "types": "./package-dist/index.d.ts",
++      "import": "./package-dist/index.js"
++    }
++  },
+   "scripts": {
+     "build": "vite build",
+-    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run build",
+-    "test:browser": "playwright test",
++    "build:package": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json",
++    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run test:package",
++    "prepack": "npm run build:package",
++    "test:browser": "npm run build && playwright test",
++    "test:package": "npm run build:package && tsc -p tsconfig.package-test.json",
+     "test:ssr": "vitest run src/Dialog.ssr.test.tsx",
+     "typecheck": "tsc --noEmit"
+   },
+-  "dependencies": {
+-    "react": "19.1.1",
+-    "react-dom": "19.1.1"
++  "peerDependencies": {
++    "react": ">=18.3 <20",
++    "react-dom": ">=18.3 <20"
+   },
+   "devDependencies": {
++    "react": "19.1.1",
++    "react-dom": "19.1.1",
+     "@playwright/test": "1.62.1",
+     "@types/node": "24.3.0",
+     "@types/react": "19.1.10",
+diff --git a/playwright.config.ts b/playwright.config.ts
+index f332bf4..ba27fb9 100644
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -5,11 +5,6 @@ export default defineConfig({
+   fullyParallel: false,
+   use: {
+     ...devices['Desktop Chrome'],
+-    baseURL: 'http://127.0.0.1:4173',
+-  },
+-  webServer: {
+-    command: 'npm run build && npx vite preview --host 127.0.0.1 --port 4173',
+-    port: 4173,
+-    reuseExistingServer: false,
++    baseURL: 'http://dialog.test',
+   },
+ })
+diff --git a/src/App.tsx b/src/App.tsx
+index f903b93..109a8e9 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,27 +1,61 @@
+-import { Dialog } from './Dialog'
++import { useState } from 'react'
++
++import { Dialog } from './index'
+ import './styles.css'
+ 
++function ControlledDialogExample() {
++  const [open, setOpen] = useState(false)
++
++  return (
++    <Dialog.Root open={open} onOpenChange={setOpen}>
++      <Dialog.Trigger>Open controlled dialog</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Overlay className="overlay">
++          <Dialog.Content className="dialog">
++            <Dialog.Title>Controlled dialog</Dialog.Title>
++            <Dialog.Description>Its open state belongs to the product.</Dialog.Description>
++            <Dialog.Close>Close controlled dialog</Dialog.Close>
++          </Dialog.Content>
++        </Dialog.Overlay>
++      </Dialog.Portal>
++    </Dialog.Root>
++  )
++}
++
+ export function App() {
+   return (
+     <main>
+       <a href="#background">Background link</a>
+-      <Dialog
+-        title="Edit profile"
+-        description="Update your public information."
+-        triggerLabel="Edit profile"
+-      >
+-        <label>
+-          Name
+-          <input name="name" defaultValue="Ada" />
+-        </label>
+-        <Dialog
+-          title="Permissions"
+-          description="Choose who can see this profile."
+-          triggerLabel="Open permissions"
+-        >
+-          <button type="button">Save permissions</button>
+-        </Dialog>
+-      </Dialog>
++      <Dialog.Root>
++        <Dialog.Trigger>Edit profile</Dialog.Trigger>
++        <Dialog.Portal>
++          <Dialog.Overlay className="overlay">
++            <Dialog.Content className="dialog">
++              <Dialog.Title>Edit profile</Dialog.Title>
++              <Dialog.Description>Update your public information.</Dialog.Description>
++              <label>
++                Name
++                <input name="name" defaultValue="Ada" />
++              </label>
++              <Dialog.Root>
++                <Dialog.Trigger>Open permissions</Dialog.Trigger>
++                <Dialog.Portal>
++                  <Dialog.Overlay className="overlay">
++                    <Dialog.Content className="dialog">
++                      <Dialog.Title>Permissions</Dialog.Title>
++                      <Dialog.Description>Choose who can see this profile.</Dialog.Description>
++                      <button type="button">Save permissions</button>
++                      <Dialog.Close>Close</Dialog.Close>
++                    </Dialog.Content>
++                  </Dialog.Overlay>
++                </Dialog.Portal>
++              </Dialog.Root>
++              <Dialog.Close>Close</Dialog.Close>
++            </Dialog.Content>
++          </Dialog.Overlay>
++        </Dialog.Portal>
++      </Dialog.Root>
++      <ControlledDialogExample />
+     </main>
+   )
+ }
+diff --git a/src/Dialog.ssr.test.tsx b/src/Dialog.ssr.test.tsx
+index 9b76a14..7174ee9 100644
+--- a/src/Dialog.ssr.test.tsx
++++ b/src/Dialog.ssr.test.tsx
+@@ -1,5 +1,7 @@
+ // @vitest-environment node
+ 
++import { readFileSync } from 'node:fs'
++
+ import { renderToString } from 'react-dom/server'
+ import { expect, test } from 'vitest'
+ 
+@@ -7,10 +9,32 @@ import { Dialog } from './Dialog'
+ 
+ test('renders the closed primitive without accessing browser globals', () => {
+   const html = renderToString(
+-    <Dialog title="Example" description="Description" triggerLabel="Open">
+-      <button type="button">Action</button>
+-    </Dialog>,
++    <Dialog.Root>
++      <Dialog.Trigger>Open</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Content>
++          <Dialog.Title>Example</Dialog.Title>
++          <Dialog.Description>Description</Dialog.Description>
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>,
+   )
+ 
+   expect(html).toContain('Open')
++  expect(html).not.toContain('role="dialog"')
++})
++
++test('matches the default-open markup used by the browser hydration fixture', () => {
++  const html = renderToString(
++    <Dialog.Root defaultOpen>
++      <Dialog.Trigger>Open by default</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Content aria-label="Hydrated dialog" />
++      </Dialog.Portal>
++    </Dialog.Root>,
++  )
++  const hydrationFixture = readFileSync(new URL('../hydration.html', import.meta.url), 'utf8')
++
++  expect(hydrationFixture).toContain(html)
++  expect(html).not.toContain('role="dialog"')
+ })
+diff --git a/src/Dialog.tsx b/src/Dialog.tsx
+index 55b30e8..a6b8cda 100644
+--- a/src/Dialog.tsx
++++ b/src/Dialog.tsx
+@@ -1,43 +1,290 @@
+-import { type ReactNode, useId, useState } from 'react'
++import {
++  createContext,
++  forwardRef,
++  type ButtonHTMLAttributes,
++  type HTMLAttributes,
++  type ReactNode,
++  type Ref,
++  type RefObject,
++  useCallback,
++  useContext,
++  useEffect,
++  useId,
++  useLayoutEffect,
++  useMemo,
++  useRef,
++  useState,
++} from 'react'
+ import { createPortal } from 'react-dom'
+ 
+-type DialogProps = {
++import { isTopDialogLayer, registerDialogLayer } from './dialog-layer.js'
++
++const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
++
++type DialogContextValue = {
++  contentElement: RefObject<HTMLDivElement | null>
++  contentId: string
++  descriptionId: string
++  descriptionCount: number
++  open: boolean
++  registerDescription: () => () => void
++  requestOpenChange: (open: boolean) => void
++  titleId: string
++}
++
++const DialogContext = createContext<DialogContextValue | null>(null)
++
++function useDialogContext(component: string) {
++  const context = useContext(DialogContext)
++  if (!context) throw new Error(`${component} must be rendered inside Dialog.Root`)
++  return context
++}
++
++function useComposedRefs<T>(...refs: Array<Ref<T> | undefined>) {
++  return useCallback(
++    (value: T | null) => {
++      for (const ref of refs) {
++        if (typeof ref === 'function') ref(value)
++        else if (ref) ref.current = value
++      }
++    },
++    refs,
++  )
++}
++
++export type DialogRootProps = {
+   children: ReactNode
+-  description: string
+-  title: string
+-  triggerLabel: string
++  defaultOpen?: boolean
++  onOpenChange?: (open: boolean) => void
++  open?: boolean
+ }
+ 
+-export function Dialog({ children, description, title, triggerLabel }: DialogProps) {
+-  const [open, setOpen] = useState(false)
+-  const titleId = useId()
+-  const descriptionId = useId()
++export function DialogRoot({ children, defaultOpen = false, onOpenChange, open }: DialogRootProps) {
++  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
++  const [descriptionCount, setDescriptionCount] = useState(0)
++  const generatedId = useId()
++  const contentElement = useRef<HTMLDivElement>(null)
++  const isControlled = open !== undefined
++  const currentOpen = isControlled ? open : uncontrolledOpen
++  const currentOpenRef = useRef(currentOpen)
++  const onOpenChangeRef = useRef(onOpenChange)
++  currentOpenRef.current = currentOpen
++  onOpenChangeRef.current = onOpenChange
++
++  const requestOpenChange = useCallback(
++    (nextOpen: boolean) => {
++      if (currentOpenRef.current === nextOpen) return
++      if (!isControlled) setUncontrolledOpen(nextOpen)
++      onOpenChangeRef.current?.(nextOpen)
++    },
++    [isControlled],
++  )
++
++  const registerDescription = useCallback(() => {
++    setDescriptionCount((count) => count + 1)
++    return () => setDescriptionCount((count) => Math.max(0, count - 1))
++  }, [])
++
++  const context = useMemo<DialogContextValue>(
++    () => ({
++      contentElement,
++      contentId: `dialog-${generatedId}`,
++      descriptionId: `dialog-description-${generatedId}`,
++      descriptionCount,
++      open: currentOpen,
++      registerDescription,
++      requestOpenChange,
++      titleId: `dialog-title-${generatedId}`,
++    }),
++    [
++      currentOpen,
++      descriptionCount,
++      generatedId,
++      registerDescription,
++      requestOpenChange,
++    ],
++  )
++
++  return <DialogContext.Provider value={context}>{children}</DialogContext.Provider>
++}
++
++export type DialogTriggerProps = ButtonHTMLAttributes<HTMLButtonElement>
++
++export const DialogTrigger = forwardRef<HTMLButtonElement, DialogTriggerProps>(function DialogTrigger(
++  { disabled, onClick, type = 'button', ...props },
++  forwardedRef,
++) {
++  const { contentId, open, requestOpenChange } = useDialogContext('Dialog.Trigger')
+ 
+   return (
+-    <>
+-      <button type="button" onClick={() => setOpen(true)}>
+-        {triggerLabel}
+-      </button>
+-      {open &&
+-        createPortal(
+-          <div className="overlay" onClick={() => setOpen(false)}>
+-            <section
+-              aria-describedby={descriptionId}
+-              aria-labelledby={titleId}
+-              className="dialog"
+-              role="dialog"
+-              onClick={(event) => event.stopPropagation()}
+-            >
+-              <h2 id={titleId}>{title}</h2>
+-              <p id={descriptionId}>{description}</p>
+-              {children}
+-              <button type="button" onClick={() => setOpen(false)}>
+-                Close
+-              </button>
+-            </section>
+-          </div>,
+-          document.body,
+-        )}
+-    </>
++    <button
++      {...props}
++      ref={forwardedRef}
++      aria-controls={open ? contentId : undefined}
++      aria-expanded={open}
++      aria-haspopup="dialog"
++      data-state={open ? 'open' : 'closed'}
++      disabled={disabled}
++      type={type}
++      onClick={(event) => {
++        onClick?.(event)
++        if (!event.defaultPrevented && !disabled) requestOpenChange(true)
++      }}
++    />
+   )
++})
++
++export type DialogPortalProps = {
++  children: ReactNode
++  container?: Element | DocumentFragment | null
++}
++
++export function DialogPortal({ children, container }: DialogPortalProps) {
++  const { open } = useDialogContext('Dialog.Portal')
++  const [mounted, setMounted] = useState(false)
++
++  useEffect(() => setMounted(true), [])
++  if (!mounted || !open) return null
++
++  return createPortal(<div data-dialog-portal="">{children}</div>, container ?? document.body)
++}
++
++export type DialogOverlayProps = HTMLAttributes<HTMLDivElement>
++
++export const DialogOverlay = forwardRef<HTMLDivElement, DialogOverlayProps>(function DialogOverlay(
++  { onPointerDown, ...props },
++  forwardedRef,
++) {
++  const { contentElement, open, requestOpenChange } = useDialogContext('Dialog.Overlay')
++  if (!open) return null
++
++  return (
++    <div
++      {...props}
++      ref={forwardedRef}
++      data-state="open"
++      onPointerDown={(event) => {
++        onPointerDown?.(event)
++        if (
++          !event.defaultPrevented &&
++          event.target === event.currentTarget &&
++          isTopDialogLayer(contentElement.current)
++        ) {
++          event.preventDefault()
++          requestOpenChange(false)
++        }
++      }}
++    />
++  )
++})
++
++export type DialogContentProps = Omit<HTMLAttributes<HTMLDivElement>, 'role'> & {
++  initialFocusRef?: RefObject<HTMLElement | null>
++  onEscapeKeyDown?: (event: KeyboardEvent) => void
++}
++
++export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(function DialogContent(
++  {
++    'aria-describedby': ariaDescribedBy,
++    'aria-label': ariaLabel,
++    'aria-labelledby': ariaLabelledBy,
++    initialFocusRef,
++    onEscapeKeyDown,
++    tabIndex = -1,
++    ...props
++  },
++  forwardedRef,
++) {
++  const context = useDialogContext('Dialog.Content')
++  const [element, setElement] = useState<HTMLDivElement | null>(null)
++  const composedRef = useComposedRefs(forwardedRef, setElement)
++  const escapeHandlerRef = useRef(onEscapeKeyDown)
++  const initialFocusRefRef = useRef(initialFocusRef)
++  escapeHandlerRef.current = onEscapeKeyDown
++  initialFocusRefRef.current = initialFocusRef
++
++  useIsomorphicLayoutEffect(() => {
++    if (!context.open || !element) return
++    context.contentElement.current = element
++    const restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
++    const unregister = registerDialogLayer({
++      content: element,
++      dismiss: () => context.requestOpenChange(false),
++      initialFocus: () => initialFocusRefRef.current?.current ?? null,
++      onEscapeKeyDown: (event) => escapeHandlerRef.current?.(event),
++      restoreFocus,
++    })
++
++    return () => {
++      if (context.contentElement.current === element) context.contentElement.current = null
++      unregister()
++    }
++  }, [context.contentElement, context.open, context.requestOpenChange, element])
++
++  if (!context.open) return null
++
++  return (
++    <div
++      {...props}
++      ref={composedRef}
++      aria-describedby={ariaDescribedBy ?? (context.descriptionCount > 0 ? context.descriptionId : undefined)}
++      aria-label={ariaLabel}
++      aria-labelledby={ariaLabelledBy ?? (!ariaLabel ? context.titleId : undefined)}
++      aria-modal="true"
++      data-state="open"
++      id={context.contentId}
++      role="dialog"
++      tabIndex={tabIndex}
++    />
++  )
++})
++
++export type DialogTitleProps = Omit<HTMLAttributes<HTMLHeadingElement>, 'id'>
++
++export const DialogTitle = forwardRef<HTMLHeadingElement, DialogTitleProps>(function DialogTitle(props, forwardedRef) {
++  const { titleId } = useDialogContext('Dialog.Title')
++  return <h2 {...props} ref={forwardedRef} id={titleId} />
++})
++
++export type DialogDescriptionProps = Omit<HTMLAttributes<HTMLParagraphElement>, 'id'>
++
++export const DialogDescription = forwardRef<HTMLParagraphElement, DialogDescriptionProps>(function DialogDescription(
++  props,
++  forwardedRef,
++) {
++  const { descriptionId, registerDescription } = useDialogContext('Dialog.Description')
++  useEffect(registerDescription, [registerDescription])
++  return <p {...props} ref={forwardedRef} id={descriptionId} />
++})
++
++export type DialogCloseProps = ButtonHTMLAttributes<HTMLButtonElement>
++
++export const DialogClose = forwardRef<HTMLButtonElement, DialogCloseProps>(function DialogClose(
++  { disabled, onClick, type = 'button', ...props },
++  forwardedRef,
++) {
++  const { requestOpenChange } = useDialogContext('Dialog.Close')
++  return (
++    <button
++      {...props}
++      ref={forwardedRef}
++      disabled={disabled}
++      type={type}
++      onClick={(event) => {
++        onClick?.(event)
++        if (!event.defaultPrevented && !disabled) requestOpenChange(false)
++      }}
++    />
++  )
++})
++
++export const Dialog = {
++  Close: DialogClose,
++  Content: DialogContent,
++  Description: DialogDescription,
++  Overlay: DialogOverlay,
++  Portal: DialogPortal,
++  Root: DialogRoot,
++  Title: DialogTitle,
++  Trigger: DialogTrigger,
+ }
+diff --git a/src/dialog-layer.ts b/src/dialog-layer.ts
+new file mode 100644
+index 0000000..32d25aa
+--- /dev/null
++++ b/src/dialog-layer.ts
+@@ -0,0 +1,183 @@
++const FOCUSABLE_SELECTOR = [
++  'a[href]',
++  'area[href]',
++  'button:not([disabled])',
++  'input:not([disabled]):not([type="hidden"])',
++  'select:not([disabled])',
++  'textarea:not([disabled])',
++  'iframe',
++  'object',
++  'embed',
++  '[contenteditable="true"]',
++  '[tabindex]:not([tabindex="-1"])',
++].join(',')
++
++export type DialogLayer = {
++  content: HTMLElement
++  dismiss: () => void
++  initialFocus: () => HTMLElement | null
++  onEscapeKeyDown?: (event: KeyboardEvent) => void
++  restoreFocus: HTMLElement | null
++}
++
++type ElementSnapshot = {
++  ariaHidden: string | null
++  inert: boolean
++}
++
++const layers: DialogLayer[] = []
++const elementSnapshots = new Map<HTMLElement, ElementSnapshot>()
++let previousBodyOverflow = ''
++
++function isVisible(element: HTMLElement) {
++  const style = window.getComputedStyle(element)
++  return style.visibility !== 'hidden' && style.display !== 'none' && element.getClientRects().length > 0
++}
++
++function getTabbableElements(content: HTMLElement) {
++  const elements = Array.from(content.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
++    (element) => !element.closest('[inert]') && isVisible(element),
++  )
++
++  return elements.sort((left, right) => {
++    const leftPriority = left.tabIndex > 0 ? left.tabIndex : Number.MAX_SAFE_INTEGER
++    const rightPriority = right.tabIndex > 0 ? right.tabIndex : Number.MAX_SAFE_INTEGER
++    return leftPriority - rightPriority
++  })
++}
++
++function focus(element: HTMLElement | null) {
++  if (!element) return false
++  element.focus({ preventScroll: true })
++  return document.activeElement === element
++}
++
++function focusFirst(layer: DialogLayer) {
++  const requested = layer.initialFocus()
++  if (requested && layer.content.contains(requested) && focus(requested)) return
++
++  focus(getTabbableElements(layer.content)[0] ?? layer.content)
++}
++
++function getTopLayer() {
++  return layers.at(-1)
++}
++
++function handleKeyDown(event: KeyboardEvent) {
++  const layer = getTopLayer()
++  if (!layer) return
++
++  if (event.key === 'Escape') {
++    layer.onEscapeKeyDown?.(event)
++    if (!event.defaultPrevented) {
++      event.preventDefault()
++      layer.dismiss()
++    }
++    event.stopPropagation()
++    return
++  }
++
++  if (event.key !== 'Tab') return
++
++  const tabbable = getTabbableElements(layer.content)
++  if (tabbable.length === 0) {
++    event.preventDefault()
++    focus(layer.content)
++    return
++  }
++
++  const activeElement = document.activeElement
++  const first = tabbable[0]
++  const last = tabbable[tabbable.length - 1]
++
++  if (event.shiftKey && (activeElement === first || !layer.content.contains(activeElement))) {
++    event.preventDefault()
++    focus(last)
++  } else if (!event.shiftKey && (activeElement === last || !layer.content.contains(activeElement))) {
++    event.preventDefault()
++    focus(first)
++  }
++}
++
++function handleFocusIn(event: FocusEvent) {
++  const layer = getTopLayer()
++  if (!layer || layer.content.contains(event.target as Node)) return
++  focusFirst(layer)
++}
++
++function restoreElement(element: HTMLElement, snapshot: ElementSnapshot) {
++  element.inert = snapshot.inert
++  if (snapshot.ariaHidden === null) element.removeAttribute('aria-hidden')
++  else element.setAttribute('aria-hidden', snapshot.ariaHidden)
++}
++
++function syncBackgroundIsolation() {
++  const layer = getTopLayer()
++  if (!layer) {
++    for (const [element, snapshot] of elementSnapshots) restoreElement(element, snapshot)
++    elementSnapshots.clear()
++    document.body.style.overflow = previousBodyOverflow
++    return
++  }
++
++  for (const [element, snapshot] of elementSnapshots) restoreElement(element, snapshot)
++
++  let activeBranch = layer.content.closest<HTMLElement>('[data-dialog-portal]') ?? layer.content
++  while (activeBranch.parentElement) {
++    const parent = activeBranch.parentElement
++    for (const sibling of Array.from(parent.children)) {
++      if (!(sibling instanceof HTMLElement) || sibling === activeBranch) continue
++      if (!elementSnapshots.has(sibling)) {
++        elementSnapshots.set(sibling, {
++          ariaHidden: sibling.getAttribute('aria-hidden'),
++          inert: sibling.inert,
++        })
++      }
++      sibling.inert = true
++      sibling.setAttribute('aria-hidden', 'true')
++    }
++    if (parent === document.body) break
++    activeBranch = parent
++  }
++}
++
++export function registerDialogLayer(layer: DialogLayer) {
++  if (layers.length === 0) {
++    previousBodyOverflow = document.body.style.overflow
++    document.body.style.overflow = 'hidden'
++    document.addEventListener('keydown', handleKeyDown, true)
++    document.addEventListener('focusin', handleFocusIn, true)
++  }
++
++  layers.push(layer)
++  syncBackgroundIsolation()
++  queueMicrotask(() => {
++    if (getTopLayer() === layer) focusFirst(layer)
++  })
++
++  return () => {
++    const wasTopLayer = getTopLayer() === layer
++    const index = layers.indexOf(layer)
++    if (index !== -1) layers.splice(index, 1)
++
++    syncBackgroundIsolation()
++    if (layers.length === 0) {
++      document.removeEventListener('keydown', handleKeyDown, true)
++      document.removeEventListener('focusin', handleFocusIn, true)
++    }
++
++    if (wasTopLayer) {
++      queueMicrotask(() => {
++        if (layer.restoreFocus?.isConnected) focus(layer.restoreFocus)
++        else {
++          const parentLayer = getTopLayer()
++          if (parentLayer && !parentLayer.content.contains(document.activeElement)) focusFirst(parentLayer)
++        }
++      })
++    }
++  }
++}
++
++export function isTopDialogLayer(content: HTMLElement | null) {
++  return content !== null && getTopLayer()?.content === content
++}
+diff --git a/src/hydration-main.tsx b/src/hydration-main.tsx
+new file mode 100644
+index 0000000..97f70e6
+--- /dev/null
++++ b/src/hydration-main.tsx
+@@ -0,0 +1,16 @@
++import { StrictMode } from 'react'
++import { hydrateRoot } from 'react-dom/client'
++
++import { Dialog } from './index'
++
++hydrateRoot(
++  document.getElementById('hydration-root')!,
++  <StrictMode>
++    <Dialog.Root defaultOpen>
++      <Dialog.Trigger>Open by default</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Content aria-label="Hydrated dialog" />
++      </Dialog.Portal>
++    </Dialog.Root>
++  </StrictMode>,
++)
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..00de5ba
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,19 @@
++export {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogRoot,
++  DialogTitle,
++  DialogTrigger,
++  type DialogCloseProps,
++  type DialogContentProps,
++  type DialogDescriptionProps,
++  type DialogOverlayProps,
++  type DialogPortalProps,
++  type DialogRootProps,
++  type DialogTitleProps,
++  type DialogTriggerProps,
++} from './Dialog.js'
+diff --git a/test-results/.last-run.json b/test-results/.last-run.json
+new file mode 100644
+index 0000000..bd5db00
+--- /dev/null
++++ b/test-results/.last-run.json
+@@ -0,0 +1,6 @@
++{
++  "status": "failed",
++  "failedTests": [
++    "c88648056942dba76546-40501c28855587a34241"
++  ]
++}
+\ No newline at end of file
+diff --git a/test-results/dialog-hydrates-stable-ser-5259f-ore-mounting-an-open-portal/error-context.md b/test-results/dialog-hydrates-stable-ser-5259f-ore-mounting-an-open-portal/error-context.md
+new file mode 100644
+index 0000000..b0782ce
+--- /dev/null
++++ b/test-results/dialog-hydrates-stable-ser-5259f-ore-mounting-an-open-portal/error-context.md
+@@ -0,0 +1,166 @@
++# Instructions
++
++- Following Playwright test failed.
++- Explain why, be concise, respect Playwright best practices.
++- Provide a snippet of code with the fix, if possible.
++
++# Test info
++
++- Name: dialog.spec.ts >> hydrates stable server markup before mounting an open portal
++- Location: tests/dialog.spec.ts:97:1
++
++# Error details
++
++```
++Error: expect(locator).toBeVisible() failed
++
++Locator:  getByRole('dialog', { name: 'Hydrated dialog' })
++Expected: visible
++Received: hidden
++Timeout:  5000ms
++
++Call log:
++  - Expect "toBeVisible" with timeout 5000ms
++  - waiting for getByRole('dialog', { name: 'Hydrated dialog' })
++    14 × locator resolved to <div role="dialog" tabindex="-1" id="dialog-«R0»" aria-modal="true" data-state="open" aria-label="Hydrated dialog"></div>
++       - unexpected value "hidden"
++
++```
++
++```yaml
++- dialog "Hydrated dialog"
++```
++
++# Test source
++
++```ts
++  6   | const contentTypes: Record<string, string> = {
++  7   |   '.css': 'text/css',
++  8   |   '.html': 'text/html',
++  9   |   '.js': 'text/javascript',
++  10  |   '.svg': 'image/svg+xml',
++  11  | }
++  12  | 
++  13  | test.beforeEach(async ({ page }) => {
++  14  |   const buildDirectory = resolve(import.meta.dirname, '../dist')
++  15  |   await page.route('http://dialog.test/**', async (route) => {
++  16  |     const pathname = decodeURIComponent(new URL(route.request().url()).pathname)
++  17  |     const requestedFile = resolve(buildDirectory, pathname === '/' ? 'index.html' : `.${pathname}`)
++  18  |     const relativePath = relative(buildDirectory, requestedFile)
++  19  |     if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
++  20  |       await route.abort('blockedbyclient')
++  21  |       return
++  22  |     }
++  23  | 
++  24  |     try {
++  25  |       await route.fulfill({
++  26  |         body: await readFile(requestedFile),
++  27  |         contentType: contentTypes[extname(requestedFile)] ?? 'application/octet-stream',
++  28  |       })
++  29  |     } catch {
++  30  |       await route.fulfill({ status: 404, body: 'Not found' })
++  31  |     }
++  32  |   })
++  33  | })
++  34  | 
++  35  | test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
++  36  |   await page.goto('/')
++  37  |   const trigger = page.getByRole('button', { name: 'Edit profile' })
++  38  |   await trigger.click()
++  39  | 
++  40  |   const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  41  |   await expect(dialog).toBeVisible()
++  42  |   await expect(dialog.getByLabel('Name')).toBeFocused()
++  43  | 
++  44  |   await page.keyboard.press('Shift+Tab')
++  45  |   await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
++  46  |   await page.keyboard.press('Tab')
++  47  |   await expect(dialog.getByLabel('Name')).toBeFocused()
++  48  | 
++  49  |   await page.keyboard.press('Escape')
++  50  |   await expect(dialog).toBeHidden()
++  51  |   await expect(trigger).toBeFocused()
++  52  | })
++  53  | 
++  54  | test('exposes modal semantics, description, portal, and background isolation', async ({ page }) => {
++  55  |   await page.goto('/')
++  56  |   const trigger = page.getByRole('button', { name: 'Edit profile' })
++  57  |   await trigger.click()
++  58  | 
++  59  |   const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  60  |   await expect(dialog).toHaveAttribute('aria-modal', 'true')
++  61  |   await expect(dialog).toHaveAccessibleDescription('Update your public information.')
++  62  |   expect(await dialog.evaluate((element) => element.closest('[data-dialog-portal]')?.parentElement === document.body)).toBe(
++  63  |     true,
++  64  |   )
++  65  |   await expect(page.locator('#root')).toHaveAttribute('inert', '')
++  66  |   await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true')
++  67  | 
++  68  |   await page.evaluate(() => (document.querySelector('main a') as HTMLElement).focus())
++  69  |   await expect(dialog.getByLabel('Name')).toBeFocused()
++  70  | })
++  71  | 
++  72  | test('supports controlled state and consumer-owned close copy', async ({ page }) => {
++  73  |   await page.goto('/')
++  74  |   const trigger = page.getByRole('button', { name: 'Open controlled dialog' })
++  75  |   await trigger.click()
++  76  | 
++  77  |   const dialog = page.getByRole('dialog', { name: 'Controlled dialog' })
++  78  |   await expect(dialog).toBeVisible()
++  79  |   await dialog.getByRole('button', { name: 'Close controlled dialog' }).click()
++  80  |   await expect(dialog).toBeHidden()
++  81  |   await expect(trigger).toBeFocused()
++  82  | })
++  83  | 
++  84  | test('keeps content interaction open and closes only from the top overlay', async ({ page }) => {
++  85  |   await page.goto('/')
++  86  |   const trigger = page.getByRole('button', { name: 'Edit profile' })
++  87  |   await trigger.click()
++  88  |   const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  89  | 
++  90  |   await dialog.getByLabel('Name').click()
++  91  |   await expect(dialog).toBeVisible()
++  92  |   await page.locator('.overlay').click({ position: { x: 4, y: 4 } })
++  93  |   await expect(dialog).toBeHidden()
++  94  |   await expect(trigger).toBeFocused()
++  95  | })
++  96  | 
++  97  | test('hydrates stable server markup before mounting an open portal', async ({ page }) => {
++  98  |   const hydrationErrors: string[] = []
++  99  |   page.on('console', (message) => {
++  100 |     if (message.type() === 'error' && /hydrat|did not match/i.test(message.text())) hydrationErrors.push(message.text())
++  101 |   })
++  102 | 
++  103 |   await page.goto('/hydration.html')
++  104 |   const trigger = page.getByRole('button', { name: 'Open by default' })
++  105 |   const dialog = page.getByRole('dialog', { name: 'Hydrated dialog' })
++> 106 |   await expect(dialog).toBeVisible()
++      |                        ^ Error: expect(locator).toBeVisible() failed
++  107 |   await expect(dialog).toBeFocused()
++  108 |   const dialogId = await dialog.getAttribute('id')
++  109 |   expect(dialogId).not.toBeNull()
++  110 |   await expect(trigger).toHaveAttribute('aria-controls', dialogId!)
++  111 |   expect(hydrationErrors).toEqual([])
++  112 | })
++  113 | 
++  114 | test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
++  115 |   await page.goto('/')
++  116 |   await page.getByRole('button', { name: 'Edit profile' }).click()
++  117 |   const parent = page.getByRole('dialog', { name: 'Edit profile' })
++  118 |   const nestedTrigger = parent.getByRole('button', { name: 'Open permissions' })
++  119 |   await nestedTrigger.click()
++  120 | 
++  121 |   const child = page.getByRole('dialog', { name: 'Permissions' })
++  122 |   await expect(child).toBeVisible()
++  123 |   await expect(child.getByRole('button', { name: 'Save permissions' })).toBeFocused()
++  124 | 
++  125 |   await page.keyboard.press('Escape')
++  126 |   await expect(child).toBeHidden()
++  127 |   await expect(parent).toBeVisible()
++  128 |   await expect(nestedTrigger).toBeFocused()
++  129 | 
++  130 |   await page.keyboard.press('Escape')
++  131 |   await expect(parent).toBeHidden()
++  132 | })
++  133 | 
++```
+\ No newline at end of file
+diff --git a/tests/dialog.spec.ts b/tests/dialog.spec.ts
+index 5beb5a4..f50788f 100644
+--- a/tests/dialog.spec.ts
++++ b/tests/dialog.spec.ts
+@@ -1,5 +1,37 @@
++import { readFile } from 'node:fs/promises'
++import { extname, isAbsolute, relative, resolve } from 'node:path'
++
+ import { expect, test } from '@playwright/test'
+ 
++const contentTypes: Record<string, string> = {
++  '.css': 'text/css',
++  '.html': 'text/html',
++  '.js': 'text/javascript',
++  '.svg': 'image/svg+xml',
++}
++
++test.beforeEach(async ({ page }) => {
++  const buildDirectory = resolve(import.meta.dirname, '../dist')
++  await page.route('http://dialog.test/**', async (route) => {
++    const pathname = decodeURIComponent(new URL(route.request().url()).pathname)
++    const requestedFile = resolve(buildDirectory, pathname === '/' ? 'index.html' : `.${pathname}`)
++    const relativePath = relative(buildDirectory, requestedFile)
++    if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
++      await route.abort('blockedbyclient')
++      return
++    }
++
++    try {
++      await route.fulfill({
++        body: await readFile(requestedFile),
++        contentType: contentTypes[extname(requestedFile)] ?? 'application/octet-stream',
++      })
++    } catch {
++      await route.fulfill({ status: 404, body: 'Not found' })
++    }
++  })
++})
++
+ test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
+   await page.goto('/')
+   const trigger = page.getByRole('button', { name: 'Edit profile' })
+@@ -19,6 +51,66 @@ test('traps focus, closes with Escape, and restores the trigger', async ({ page
+   await expect(trigger).toBeFocused()
+ })
+ 
++test('exposes modal semantics, description, portal, and background isolation', async ({ page }) => {
++  await page.goto('/')
++  const trigger = page.getByRole('button', { name: 'Edit profile' })
++  await trigger.click()
++
++  const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  await expect(dialog).toHaveAttribute('aria-modal', 'true')
++  await expect(dialog).toHaveAccessibleDescription('Update your public information.')
++  expect(await dialog.evaluate((element) => element.closest('[data-dialog-portal]')?.parentElement === document.body)).toBe(
++    true,
++  )
++  await expect(page.locator('#root')).toHaveAttribute('inert', '')
++  await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true')
++
++  await page.evaluate(() => (document.querySelector('main a') as HTMLElement).focus())
++  await expect(dialog.getByLabel('Name')).toBeFocused()
++})
++
++test('supports controlled state and consumer-owned close copy', async ({ page }) => {
++  await page.goto('/')
++  const trigger = page.getByRole('button', { name: 'Open controlled dialog' })
++  await trigger.click()
++
++  const dialog = page.getByRole('dialog', { name: 'Controlled dialog' })
++  await expect(dialog).toBeVisible()
++  await dialog.getByRole('button', { name: 'Close controlled dialog' }).click()
++  await expect(dialog).toBeHidden()
++  await expect(trigger).toBeFocused()
++})
++
++test('keeps content interaction open and closes only from the top overlay', async ({ page }) => {
++  await page.goto('/')
++  const trigger = page.getByRole('button', { name: 'Edit profile' })
++  await trigger.click()
++  const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++
++  await dialog.getByLabel('Name').click()
++  await expect(dialog).toBeVisible()
++  await page.locator('.overlay').click({ position: { x: 4, y: 4 } })
++  await expect(dialog).toBeHidden()
++  await expect(trigger).toBeFocused()
++})
++
++test('hydrates stable server markup before mounting an open portal', async ({ page }) => {
++  const hydrationErrors: string[] = []
++  page.on('console', (message) => {
++    if (message.type() === 'error' && /hydrat|did not match/i.test(message.text())) hydrationErrors.push(message.text())
++  })
++
++  await page.goto('/hydration.html')
++  const trigger = page.getByRole('button', { name: 'Open by default' })
++  const dialog = page.getByRole('dialog', { name: 'Hydrated dialog' })
++  await expect(dialog).toBeVisible()
++  await expect(dialog).toBeFocused()
++  const dialogId = await dialog.getAttribute('id')
++  expect(dialogId).not.toBeNull()
++  await expect(trigger).toHaveAttribute('aria-controls', dialogId!)
++  expect(hydrationErrors).toEqual([])
++})
++
+ test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
+   await page.goto('/')
+   await page.getByRole('button', { name: 'Edit profile' }).click()
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+new file mode 100644
+index 0000000..cfff561
+--- /dev/null
++++ b/tsconfig.build.json
+@@ -0,0 +1,11 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "declaration": true,
++    "emitDeclarationOnly": true,
++    "noEmit": false,
++    "outDir": "package-dist",
++    "rootDir": "src"
++  },
++  "include": ["src/Dialog.tsx", "src/dialog-layer.ts", "src/index.ts"]
++}
+diff --git a/tsconfig.package-test.json b/tsconfig.package-test.json
+new file mode 100644
+index 0000000..bedb584
+--- /dev/null
++++ b/tsconfig.package-test.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext",
++    "noEmit": true
++  },
++  "include": ["consumer-tests/usage.tsx"]
++}
+diff --git a/vite.config.ts b/vite.config.ts
+index 80316f3..d134652 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,4 +1,16 @@
++import { resolve } from 'node:path'
++
+ import react from '@vitejs/plugin-react'
+ import { defineConfig } from 'vite'
+ 
+-export default defineConfig({ plugins: [react()] })
++export default defineConfig({
++  build: {
++    rollupOptions: {
++      input: {
++        hydration: resolve(import.meta.dirname, 'hydration.html'),
++        main: resolve(import.meta.dirname, 'index.html'),
++      },
++    },
++  },
++  plugins: [react()],
++})
+diff --git a/vite.lib.config.ts b/vite.lib.config.ts
+new file mode 100644
+index 0000000..4aee196
+--- /dev/null
++++ b/vite.lib.config.ts
+@@ -0,0 +1,17 @@
++import { resolve } from 'node:path'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  build: {
++    emptyOutDir: true,
++    lib: {
++      entry: resolve(import.meta.dirname, 'src/index.ts'),
++      fileName: 'index',
++      formats: ['es'],
++    },
++    outDir: 'package-dist',
++    rollupOptions: {
++      external: (id) => id === 'react' || id.startsWith('react/') || id === 'react-dom' || id.startsWith('react-dom/'),
++    },
++  },
++})

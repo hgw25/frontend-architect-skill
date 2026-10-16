@@ -1,0 +1,39 @@
+diff --git a/src/process-form.js b/src/process-form.js
+index 5e9a7e7..0b6d2d7 100644
+--- a/src/process-form.js
++++ b/src/process-form.js
+@@ -1,13 +1,25 @@
+ /** Submit a schema-driven form. See README.md for the public contract. */
+ export async function processForm(fields, values, send) {
+-  const errors = {};
+-  for (const field of fields.filter(field => !field.disabled)) {
+-    if (field.required && !values[field.name]) errors[field.name] = 'Required';
++  const enabledFields = fields.filter(field => !field.disabled);
++  const errorEntries = [];
++  const payloadEntries = [];
++
++  for (const field of enabledFields) {
++    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
++    const isEmpty = value === undefined || value === null || value === '';
++    payloadEntries.push([field.name, value]);
++
++    if (field.required && isEmpty) {
++      errorEntries.push([field.name, 'Required']);
++      continue;
++    }
++
++    if (field.validate) {
++      const error = await field.validate(value, values);
++      if (error !== undefined) errorEntries.push([field.name, error]);
++    }
+   }
+-  for (const field of fields.filter(field => field.validate)) {
+-    const error = await field.validate(values[field.name], values);
+-    if (error) errors[field.name] = 'Invalid';
+-  }
+-  if (Object.keys(errors).length) return { errors };
+-  return send(Object.fromEntries(fields.map(field => [field.name, values[field.name]])));
++
++  if (errorEntries.length) return { errors: Object.fromEntries(errorEntries) };
++  return send(Object.fromEntries(payloadEntries));
+ }

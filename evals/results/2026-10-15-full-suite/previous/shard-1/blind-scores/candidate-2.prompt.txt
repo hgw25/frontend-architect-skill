@@ -1,0 +1,364 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+评分时沿同一条证据链检查：用户行为 → 事实与契约 → 不变量和所有权 → 模块边界 →
+实际实现 → 验证结果。只评价任务中可观察的环节；局部修改不要求展示完整设计过程。
+不能因为回答提到了类型、状态机、分层和测试等术语，就认定这些环节已经相互一致。
+命名评价以职责、内容及调用是否一致为依据，不以术语是否高级评分；测试布局评价遵循项目约定、可定位性及执行完整性，不固定要求集中或就近放置。
+对结构设计，用任务支持的现实变化检查修改位置是否符合所有权；允许为领域常见变化预留适度边界，不要求重复已经发生；不奖励无依据的通用机制。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 比较现有契约、平台能力及集成维护成本，选择维护成本相称的完整方案，允许便利接口与适度前瞻，不绕过已有策略再造一套 |
+| `module_boundaries` | 机械套目录或把业务堆在入口 | 有目录分类但状态归属或组件职责含糊 | 遵循框架与项目约定，用可导航的文件表达页面、布局、组件及数据职责；真实变化的修改范围符合所有权，避免不足与过度拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `rendering_performance` | 套用与目标平台无关的优化技巧，或把减少 render 次数直接等同于用户性能 | 能识别重渲染、线程、布局或帧问题中的一部分，但缺少完整成本链或目标运行时证据 | 根据目标平台映射状态更新、调度、跨层传输、宿主更新、布局、绘制/栅格化与呈现边界，并用对应运行时的真实测量定位和验证 |
+| `security_trust` | 遗漏真实边界或因假想风险堆叠防御机制 | 识别风险但重复设防或泛泛提醒 | 追踪实际信任边界、复用已有保障，保留必要授权与秘密保护，内部按契约工作且防护成本与威胁相称 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 实际代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更，调用者能看清操作语义与执行顺序 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证、泛泛而谈或用模拟层冒充真实边界 | 建议运行工具但没有结果、环境或阈值 | 验证对应真实风险，记录实际结果与环境，并说明未验证部分；浏览器、宿主、产物或字段结论使用其真实边界证据 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+- 用 DOM 模拟器证明真实浏览器焦点、水合、布局或视觉行为，或用单次实验室分数证明真实用户性能。
+- 把浏览器渲染管线、旧版跨端 Bridge、固定 16ms 帧预算或某个小程序宿主限制当作所有平台和版本的通用事实。
+
+
+CASE
+id: anticipate-without-current-duplication
+request: 一个新订单页面只展示一个订单，运费目前固定为 10 元；直接在页面计算总价也能 正确工作，没有重复代码、已有缺陷、第二个消费者或已承诺的运费路线图。 请给出你会采用的简单实现结构及理由，不需要完整应用代码。
+artifact: 
+applicable_dimensions: ["solution_complexity", "module_boundaries", "compatibility_evolution"]
+
+RESPONSE:
+采用页面内派生计算，不新增 Hook、服务层或共享工具：
+
+```tsx
+const SHIPPING_FEE_YUAN = 10;
+
+function OrderPage({ order }) {
+  const total = order.subtotal + SHIPPING_FEE_YUAN;
+
+  return (
+    // 展示商品金额、运费和总价
+  );
+}
+```
+
+理由：
+
+- `total` 是现有数据的派生值，不应放入 state，避免两个事实来源。
+- 命名常量比裸写 `+ 10` 更清楚，但仍与唯一消费者放在同一页面模块。
+- 当前没有重复代码、缺陷、其他消费者或路线图，不值得提前创建 `calculateOrderTotal`、运费策略、Context、Store 或独立领域层。
+- 若项目既有金额单位是“分”，则常量也用分（`1000`），并沿用已有货币格式化方式。
+- 将来若运费由订单或接口提供，只需把计算改成 `order.subtotal + order.shippingFee`；届时再根据真实规则决定是否抽取。
+
+现实的后续变化仍可局部完成，因此当前这种“具名常量 + 页面内派生值”是成本最低且易维护的结构。工作区除评估 Skill 与 Git 元数据外没有应用文件，因此未修改任何文件。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: trust-validated-internal-data
+request: 接口适配层已运行时验证订单金额为有限数值并返回类型明确的对象。内部汇总函数 只消费这些对象，不修改输入，没有其他入口。请给出汇总实现与错误处理原则， 并说明将来增加外部输入入口时的调整位置。
+artifact: 
+applicable_dimensions: ["solution_complexity", "security_trust", "correctness_boundary"]
+
+RESPONSE:
+仓库为空，没有现有技术栈、类型或测试可复用，因此未创建文件。按已给契约，汇总函数应信任适配层，不重复校验：
+
+```ts
+// 实际项目中应直接导入适配层已有的订单类型。
+type AdaptedOrder = Readonly<{
+  amount: number
+}>
+
+export function sumOrderAmounts(
+  orders: readonly AdaptedOrder[],
+): number {
+  return orders.reduce((total, order) => total + order.amount, 0)
+}
+```
+
+决策如下：
+
+- 空订单集合返回 `0`。
+- `readonly` 表达不修改数组及订单的约定；函数保持纯计算。
+- 不在这里重复调用 `Number.isFinite`，也不通过过滤、`try/catch` 或默认值掩盖契约违例。
+- 外部数据的格式错误应由接口适配层报告；内部编程错误则自然抛出，由既有应用错误边界处理。
+- 不自行改成分、`bigint` 或 Decimal，因为仓库没有证据表明现有金额语义需要改变。
+- 若汇总结果本身必须保证有限，当前“每项有限”仍不足以排除加法溢出。应补充金额范围/订单数量这一领域约束，优先在适配或领域构造边界落实；只有汇总阶段才能确定的溢出，则在返回前抛出明确的 `RangeError`，而不是返回 `Infinity`。
+
+将来增加 URL、表单、本地存储等外部入口时，在新入口旁增加解析和运行时验证，将其转换成同一个 `AdaptedOrder` 类型后再调用此函数。汇总函数无需新增入口判断；若多个入口开始重复同一套验证，再抽取共享的 `parseOrder`/schema，由各外部适配器调用。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: trivial-formatting-without-dependency
+request: 一个内部页面要把可能为 null 的展示名称去掉首尾空白，为空时显示“未命名”。 只在一个地方使用，项目没有相关工具函数，输入类型为 string | null。 请给出最小实现和验证建议。
+artifact: 
+applicable_dimensions: ["solution_complexity", "correctness_boundary", "verification_evidence"]
+
+RESPONSE:
+最小实现直接放在唯一调用处，无需新增工具函数或依赖：
+
+```tsx
+{displayName?.trim() || '未命名'}
+```
+
+这里不能用 `??`，因为空字符串或纯空白字符串经 `trim()` 后为 `''`，也应显示“未命名”。
+
+建议验证以下输入：
+
+| 输入 | 预期显示 |
+|---|---|
+| `null` | `未命名` |
+| `''` | `未命名` |
+| `'   '` | `未命名` |
+| `'  张三  '` | `张三` |
+| `'张三'` | `张三` |
+
+工作区没有业务源文件，因此未修改文件；上述代码可直接替换实际展示表达式。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: role-folder-growth
+request: 一个持续增长的电商前端目前只有 components、hooks、services、stores、types 和 utils 顶层目录。新增结算功能时，行为、状态、API、类型和测试要分散修改这些目录。 请提出渐进式模块重构方案，并说明模块边界、公开 API 和依赖方向；不能一次性重写项目。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+建议采用“纵向业务模块 + 保留现有横向目录”的渐进式方案：先把新增结算功能完整放进一个模块，旧代码只在被修改时迁移，不进行全仓重排。
+
+仓库当前没有应用源码、包清单或测试配置，只有评估用的 `.frontend-architect`，因此以下目录名是框架无关的建议；实际落地时应沿用项目现有的源码根目录、路由和测试约定。
+
+## 目标结构
+
+结算第一版保持浅层，文件确实增多后再细分：
+
+```text
+<source-root>/
+  app-or-routes/               # 现有入口、路由、全局 Provider
+  features/
+    checkout/
+      index.ts                 # 唯一对外入口
+      CheckoutEntry.*          # 页面/路由接入与组装
+      checkout-model.*         # 领域类型、规则、纯状态转换
+      checkout-workflow.*      # 提交、重试、并发等流程
+      checkout-api.*           # DTO、接口调用和数据映射
+      checkout-ui.*            # 结算交互界面
+      checkout-*.test.*        # 与所属行为就近放置
+  components/                  # 暂时保留
+  hooks/
+  services/
+  stores/
+  types/
+  utils/
+```
+
+当结算内部已经出现多个独立职责时，再自然演进为：
+
+```text
+features/checkout/
+  index.ts
+  ui/
+  model/
+  application/
+  api/
+```
+
+不要为了目录对称预先创建空层级。
+
+## 模块边界
+
+`checkout` 应拥有：
+
+- 结算流程状态及状态转换，例如编辑、提交中、失败、成功。
+- 结算特有的校验、金额展示所依赖的领域结果和提交规则。
+- 结算接口的请求/响应 DTO、领域映射和错误归一化。
+- 结算 UI、局部交互状态及对应测试。
+- 提交的重试、取消、重复点击和过期响应处理策略。
+
+不应拥有：
+
+- 通用 HTTP 客户端、日志、货币格式化等产品无关能力。
+- 路由器初始化和应用级 Provider。
+- 购物车、账户等其他业务模块的内部状态。
+- 仅因为结算使用过一次就被命名为“共享”的工具。
+- 服务端权限、价格或库存的最终裁决；客户端只能展示和处理服务端结果。
+
+状态按真实所有者放置：
+
+- 输入框展开、焦点等短生命周期状态留在 UI。
+- 提交状态和流程转换归 `checkout-workflow`。
+- 领域规则和可派生数据归 `checkout-model`，不要存成第二份状态。
+- 只有确实跨路由、跨生命周期共享的状态才接入全局 store；不要为了沿用现有 `stores` 目录而把整个结算放进全局状态。
+
+## 公开 API
+
+所有外部消费者只从 `features/checkout/index.ts` 导入。若当前只有路由使用结算，公开面应尽量小：
+
+```ts
+// features/checkout/index.ts
+export { CheckoutEntry } from './CheckoutEntry'
+export type {
+  CheckoutEntryProps,
+  CheckoutOutcome,
+} from './checkout-public'
+```
+
+名称需按实际框架调整。原则是：
+
+- 输入只包含调用者真正拥有的标识、初始数据或能力。
+- 输出使用业务结果或事件，如完成、取消，而不是暴露内部 store。
+- 不公开 HTTP DTO、API 客户端、内部 reducer、selectors 或所有内部类型。
+- 只有出现真实的非 UI 调用方时，才增加程序化命令 API。
+- 单元测试可以在模块内直接测试私有规则；模块外集成测试应通过公开入口验证行为。
+
+禁止新代码这样导入：
+
+```ts
+import { submit } from '@/features/checkout/api/submit'
+```
+
+应通过公开入口、上层组装或模块内调用完成。
+
+## 依赖方向
+
+```text
+应用入口 / 路由
+        ↓
+checkout 公开入口
+        ↓
+结算组装层 ─────→ UI
+        ├────────→ workflow
+        └────────→ API adapter
+                       ↓
+model ←──────── workflow
+  ↓                    ↓
+无 UI/网络依赖      通用平台能力
+                       ↓
+                HTTP、日志、存储等
+```
+
+具体约束：
+
+- `model` 不依赖 UI、路由、HTTP、浏览器全局对象。
+- UI 消费领域值和命令，不解析接口响应。
+- API adapter 负责把外部 DTO 转成结算模型，不决定页面如何提示。
+- `shared` 或现有通用目录不能反向依赖 `checkout`。
+- 其他业务模块不能导入结算内部路径。
+- 多模块协作由路由、页面或更高层流程组装，不让两个功能模块相互读取内部 store。
+- 只有在确有替换实现、测试隔离或外部系统边界时，才引入 gateway/port 接口；无需为了“架构完整”增加仓储层和依赖注入框架。
+
+## 渐进迁移步骤
+
+1. **建立准入规则**
+
+   新增的结算行为、状态、API、类型和测试一律进入 `features/checkout`。旧顶层目录暂不搬动，也不阻塞功能开发。
+
+2. **先交付一个完整纵向切片**
+
+   从一个可观察的结算流程开始，让 UI、状态转换、接口适配和行为测试都在模块内闭环。不要先搭完整目录再逐层填空。
+
+3. **迁移被结算修改到的旧代码**
+
+   每次只迁移一个明确所有者：
+
+   - `components` 中仅供结算使用的组件移入结算 UI。
+   - `hooks` 中仅管理结算生命周期的 hook 移入 workflow 或 UI。
+   - `services` 中结算专用调用移入 API adapter。
+   - `stores` 中结算 slice 移入模块，由根 store 只负责注册。
+   - `types` 中结算领域类型移入 model，DTO 移入 API。
+   - `utils` 中仅服务结算的函数移到其调用者附近。
+
+   不要同时保留新旧两份状态并做同步，否则会形成双重事实来源。
+
+4. **按需提供兼容层**
+
+   若旧导入点消费者很多，可让原文件暂时重新导出新实现，并标记迁移范围。新代码不得继续使用旧路径。消费者清零后删除兼容文件。消费者较少时，直接同一提交迁移，避免长期维护 shim。
+
+5. **再治理真正的共享能力**
+
+   只有所有权确实跨业务模块时，才将代码整理为精确命名的共享能力，例如 `http`、`currency`、`storage`、`ui`。不要把原有六个顶层目录整体改名为 `shared`，那只是在搬迁原来的问题。
+
+6. **扩大到其他功能**
+
+   后续商品、购物车、账户等模块在发生实质修改时采用同样方式迁移。等边界稳定且违规开始造成成本后，再使用现有 lint/import 规则约束跨模块深层导入；不必一开始增加新的架构工具。
+
+## 每一步的验收条件
+
+- 现有可观察行为保持不变，或明确记录产品行为变化。
+- 新结算需求主要在 `features/checkout` 内完成。
+- 外部消费者只依赖公开入口。
+- API 字段变化能被限制在 adapter 和其契约测试附近。
+- 结算步骤变化只影响 model、workflow、UI 及相应行为测试。
+- 没有新旧 store 双写、循环依赖或共享目录反向依赖业务模块。
+- 每次迁移后运行项目已有的类型检查、测试和构建命令。
+
+用两个现实变化检验该边界：如果后端调整结算响应字段，应主要修改 API 映射；如果增加一种结算步骤，应主要修改结算模型、流程和 UI。若这两种变化仍然需要横跨全局 `services/stores/types/utils`，说明边界仍在泄漏。
+
+本次只提出方案；工作区没有可供修改或验证的应用代码，`.frontend-architect` 保持未改动。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

@@ -4,10 +4,37 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import copy
 from pathlib import Path
 from unittest.mock import patch
 
 import validate_skill
+import yaml
+
+
+class ReviewCaseSchemaTests(unittest.TestCase):
+    def test_review_snapshots_allow_optional_commands_but_require_valid_structure(self):
+        source = yaml.safe_load((validate_skill.ROOT / 'evals/cases.yaml').read_text())
+        review = next(case for case in source['cases'] if case.get('task_type') == 'review')
+        for change, expected in [
+            ({'validation_commands': None}, None),
+            ({'fixture': None}, 'requires a fixture'),
+            ({'fixture': review['fixture'] + '/after'}, 'requires before/ and after/ snapshots'),
+            ({'task_type': 'unknown'}, 'unsupported task_type'),
+        ]:
+            with self.subTest(change=change):
+                document = copy.deepcopy(source)
+                case = next(case for case in document['cases'] if case['id'] == review['id'])
+                case.update(change)
+                if change.get('validation_commands', '') is None:
+                    case.pop('validation_commands')
+                with patch.object(validate_skill, 'load_yaml', return_value=document):
+                    errors = []
+                    validate_skill.validate_evals(errors)
+                if expected:
+                    self.assertTrue(any(expected in error for error in errors), errors)
+                else:
+                    self.assertEqual(errors, [])
 
 
 class SnapshotDiscoveryTests(unittest.TestCase):
@@ -25,6 +52,43 @@ class SnapshotDiscoveryTests(unittest.TestCase):
                 errors = []
                 validate_skill.validate_markdown(errors)
                 self.assertEqual(errors, [])
+
+
+class SectionRoutingTests(unittest.TestCase):
+    def test_routes_resolve_local_and_cross_file_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "SKILL.md").write_text(
+                "# Entry\n[local](#entry)\n[operation](reference.md#inputs-results--effects)\n"
+                "[repeat](reference.md#examples-1)\n"
+            )
+            (root / "reference.md").write_text(
+                "# Reference\n## Inputs, results & effects\n## Examples\n## Examples\n"
+            )
+            with patch.object(validate_skill, "ROOT", root):
+                errors = []
+                validate_skill.validate_markdown(errors)
+            self.assertEqual(errors, [])
+
+    def test_heading_rename_breaks_route_and_example_heading_is_not_a_section(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "SKILL.md").write_text(
+                "# Entry\n[old](reference.md#readable-operation)\n"
+                "[example](reference.md#only-in-example)\n"
+            )
+            reference = root / "reference.md"
+            reference.write_text("# Reference\n## Readable operation\n```md\n## Only in example\n```\n")
+            with patch.object(validate_skill, "ROOT", root):
+                errors = []
+                validate_skill.validate_markdown(errors)
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn("#only-in-example", errors[0])
+                reference.write_text(reference.read_text().replace("## Readable operation", "## Clear operation"))
+                errors = []
+                validate_skill.validate_markdown(errors)
+            self.assertEqual(len(errors), 2, errors)
+            self.assertTrue(any("#readable-operation" in error for error in errors))
 
 
 class ReleaseMetadataTests(unittest.TestCase):

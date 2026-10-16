@@ -1,0 +1,1 @@
+Trace the existing close interaction and verify settled keyboard focus through the consumer controls.

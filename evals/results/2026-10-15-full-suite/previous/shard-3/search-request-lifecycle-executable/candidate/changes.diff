@@ -1,0 +1,77 @@
+diff --git a/src/search.js b/src/search.js
+index 97267aa..c6689b0 100644
+--- a/src/search.js
++++ b/src/search.js
+@@ -1,22 +1,61 @@
+ export function createSearch(fetchUsers) {
+   let state = { draft: '', submitted: '', status: 'idle', items: [], error: null };
+-  async function submit() {
+-    state.submitted = state.draft.trim();
+-    state.status = 'loading'; state.error = null;
++  let latestRequest = 0;
++  let disposed = false;
++
++  async function run(query) {
++    const request = ++latestRequest;
++    state.status = 'loading';
++    state.error = null;
++
+     try {
+-      state.items = await fetchUsers(state.submitted);
++      const users = await fetchUsers(query);
++
++      if (disposed || request !== latestRequest) return;
++
++      state.items = users.map(({ user_id, display_name }) => ({
++        id: user_id,
++        label: display_name,
++      }));
+       state.status = 'success';
+     } catch (error) {
+-      state.error = error.message; state.status = 'error';
+-    } finally {
+-      if (state.status === 'loading') state.status = 'idle';
++      if (disposed || request !== latestRequest) return;
++
++      state.error = error instanceof Error ? error.message : String(error);
++      state.status = 'error';
+     }
+   }
++
++  async function submit() {
++    if (disposed) return;
++
++    const query = state.draft.trim();
++    if (!query) return;
++
++    state.submitted = query;
++    await run(query);
++  }
++
++  async function retry() {
++    if (disposed || !state.submitted) return;
++
++    await run(state.submitted);
++  }
++
+   return {
+-    setDraft(value) { state.draft = value; },
++    setDraft(value) {
++      if (!disposed) state.draft = value;
++    },
+     submit,
+-    retry: submit,
+-    getState() { return structuredClone(state); },
+-    dispose() {},
++    retry,
++    getState() {
++      return {
++        ...state,
++        items: state.items.map(item => ({ ...item })),
++      };
++    },
++    dispose() {
++      disposed = true;
++    },
+   };
+ }

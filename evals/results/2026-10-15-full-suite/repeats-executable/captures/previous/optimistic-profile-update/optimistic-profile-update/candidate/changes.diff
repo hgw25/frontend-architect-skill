@@ -1,0 +1,169 @@
+diff --git a/src/ProfileForm.test.tsx b/src/ProfileForm.test.tsx
+index 6ef4411..a05ee31 100644
+--- a/src/ProfileForm.test.tsx
++++ b/src/ProfileForm.test.tsx
+@@ -1,13 +1,14 @@
+ // @vitest-environment jsdom
+ 
+ import '@testing-library/jest-dom/vitest'
+-import { act, render, screen } from '@testing-library/react'
++import { act, cleanup, render, screen } from '@testing-library/react'
+ import userEvent from '@testing-library/user-event'
+ import { afterEach, expect, test, vi } from 'vitest'
+ 
+ import { ProfileForm } from './ProfileForm'
+ 
+ afterEach(() => {
++  cleanup()
+   vi.unstubAllGlobals()
+ })
+ 
+@@ -115,3 +116,49 @@ test('rolls back to an older confirmed response when the latest overlapping save
+     'Grace',
+   )
+ })
++
++test('does not let an older response overwrite a newer successful save', async () => {
++  const requests: Array<(response: Response) => void> = []
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(
++      () =>
++        new Promise<Response>((resolve) => {
++          requests.push(resolve)
++        }),
++    ),
++  )
++
++  const user = userEvent.setup()
++  render(
++    <ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />,
++  )
++
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Grace')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  await user.clear(screen.getByLabelText('Display name'))
++  await user.type(screen.getByLabelText('Display name'), 'Lin')
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++
++  await act(async () => {
++    requests[1]?.(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Lin', version: 3 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  })
++
++  await act(async () => {
++    requests[0]?.(
++      new Response(
++        JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }),
++        { status: 200, headers: { 'content-type': 'application/json' } },
++      ),
++    )
++  })
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..f80c7d6 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,15 +1,41 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
+ export function ProfileForm({ profile }: { profile: Profile }) {
+   const [displayName, setDisplayName] = useState(profile.displayName)
+   const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [saveFailed, setSaveFailed] = useState(false)
++  const latestRequestId = useRef(0)
++  const confirmed = useRef({ profile, requestId: 0 })
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++    const submittedName = displayName
++    const requestId = ++latestRequestId.current
++
++    setVisibleName(submittedName)
++    setSaveFailed(false)
++
++    try {
++      const updatedProfile = await updateProfile(submittedName)
++      if (updatedProfile.id !== profile.id) {
++        throw new Error('Profile update returned a different profile')
++      }
++
++      if (requestId > confirmed.current.requestId) {
++        confirmed.current = { profile: updatedProfile, requestId }
++      }
++
++      if (requestId === latestRequestId.current) {
++        setVisibleName(updatedProfile.displayName)
++      }
++    } catch {
++      if (requestId === latestRequestId.current) {
++        setVisibleName(confirmed.current.profile.displayName)
++        setSaveFailed(true)
++      }
++    }
+   }
+ 
+   return (
+@@ -23,6 +49,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
+         />
+       </label>
+       <button>Save</button>
++      {saveFailed && <p role="alert">Save failed. Please retry.</p>}
+     </form>
+   )
+ }
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..06a6cb6 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,12 +4,35 @@ export type Profile = {
+   version: number
+ }
+ 
++export type ProfileUpdate = Pick<Profile, 'displayName'>
++
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) return false
++
++  const profile = value as Record<string, unknown>
++  return (
++    typeof profile.id === 'string' &&
++    typeof profile.displayName === 'string' &&
++    Number.isInteger(profile.version)
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
++  const update: ProfileUpdate = { displayName }
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+     headers: { 'content-type': 'application/json' },
+-    body: JSON.stringify({ displayName }),
++    body: JSON.stringify(update),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error(`Profile update failed with status ${response.status}`)
++  }
++
++  const profile: unknown = await response.json()
++  if (!isProfile(profile)) {
++    throw new Error('Profile update returned an invalid response')
++  }
++
++  return profile
+ }

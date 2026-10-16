@@ -1,0 +1,93 @@
+diff --git a/src/export-selection.mjs b/src/export-selection.mjs
+new file mode 100644
+index 0000000..147c14e
+--- /dev/null
++++ b/src/export-selection.mjs
+@@ -0,0 +1,25 @@
++function decideExport(rows) {
++  if (rows.length === 0) return { kind: 'empty' };
++
++  const blockedIds = rows
++    .filter((row) => row.status !== 'ready')
++    .map((row) => row.id);
++
++  if (blockedIds.length > 0) {
++    return { kind: 'blocked', ids: blockedIds };
++  }
++
++  return { kind: 'ready', ids: rows.map((row) => row.id) };
++}
++
++function createExportPayload(ids) {
++  return { schema: 1, document_ids: ids };
++}
++
++export async function exportSelection(rows, write) {
++  const decision = decideExport(rows);
++  if (decision.kind !== 'ready') return decision;
++
++  await write(createExportPayload(decision.ids));
++  return { kind: 'sent', ids: decision.ids };
++}
+diff --git a/src/export-steps.mjs b/src/export-steps.mjs
+deleted file mode 100644
+index 06dcb55..0000000
+--- a/src/export-steps.mjs
++++ /dev/null
+@@ -1,24 +0,0 @@
+-export function begin(rows, write) {
+-  return { rows, write, decision: undefined, payload: undefined };
+-}
+-
+-export function classify(context) {
+-  const blocked = context.rows.filter((row) => row.status !== 'ready');
+-  context.decision = context.rows.length === 0
+-    ? { kind: 'empty' }
+-    : blocked.length
+-      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }
+-      : { kind: 'ready', ids: context.rows.map((row) => row.id) };
+-}
+-
+-export function encode(context) {
+-  if (context.decision.kind === 'ready') {
+-    context.payload = { schema: 1, document_ids: context.decision.ids };
+-  }
+-}
+-
+-export async function dispatch(context) {
+-  if (context.decision.kind !== 'ready') return context.decision;
+-  await context.write(context.payload);
+-  return { kind: 'sent', ids: context.decision.ids };
+-}
+diff --git a/src/keyboard.mjs b/src/keyboard.mjs
+index c04db7c..5dd863b 100644
+--- a/src/keyboard.mjs
++++ b/src/keyboard.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-selection.mjs';
+ 
+-export async function handleKeyboardExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++export function handleKeyboardExport(rows, write) {
++  return exportSelection(rows, write);
+ }
+diff --git a/src/toolbar.mjs b/src/toolbar.mjs
+index 4ee21aa..c3b9912 100644
+--- a/src/toolbar.mjs
++++ b/src/toolbar.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-selection.mjs';
+ 
+-export async function handleToolbarExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++export function handleToolbarExport(rows, write) {
++  return exportSelection(rows, write);
+ }

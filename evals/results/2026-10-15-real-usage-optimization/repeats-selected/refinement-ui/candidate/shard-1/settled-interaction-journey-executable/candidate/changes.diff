@@ -1,0 +1,119 @@
+diff --git a/src/app.mjs b/src/app.mjs
+index b26b32f..e02b8f8 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -2,24 +2,75 @@ const input = document.querySelector('#name');
+ const feedback = document.querySelector('#feedback');
+ const save = document.querySelector('#save');
+ const grid = document.querySelector('#grid');
+-document.querySelector('#clear').onclick = () => { input.value = ''; };
++
++let draftRevision = 0;
++
++input.addEventListener('input', () => {
++  draftRevision += 1;
++});
++
++document.querySelector('#clear').addEventListener('click', () => {
++  input.value = '';
++  input.dispatchEvent(new Event('input', { bubbles: true }));
++  input.focus();
++});
++
+ save.onclick = async () => {
++  const submittedValue = input.value;
++  const submittedRevision = draftRevision;
++
+   save.disabled = true;
+   feedback.textContent = 'Saving';
+   try {
+-    const response = await fetch('/save', { method: 'POST', body: input.value });
++    const response = await fetch('/save', { method: 'POST', body: submittedValue });
+     if (!response.ok) throw new Error('Save failed');
+-    document.querySelector('td').textContent = input.value;
++    document.querySelector('td').textContent = submittedValue;
+     feedback.textContent = 'Saved';
+-  } catch { feedback.textContent = 'Save failed'; }
+-  finally { input.value = ''; save.disabled = false; }
++    if (draftRevision === submittedRevision) input.value = '';
++  } catch {
++    feedback.textContent = 'Save failed';
++  } finally {
++    save.disabled = false;
++  }
+ };
++
+ const body = document.querySelector('tbody');
+ for (let index = 0; index < 30; index++) {
+   const row = body.insertRow(); row.dataset.row = String(index);
+   row.insertCell().textContent = 'Record ' + index;
+ }
+-if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+-  for (const row of [...body.rows].slice(0, 8)) row.animate({ opacity: [0, 1] }, { duration: 240 });
++
++function animateVisibleRows() {
++  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
++
++  const clip = grid.getBoundingClientRect();
++  const visibleRows = [...body.rows].filter((row) => {
++    const bounds = row.getBoundingClientRect();
++    return bounds.bottom > clip.top && bounds.top < clip.bottom;
++  });
++
++  visibleRows.forEach((row, index) => {
++    row.animate(
++      [
++        { opacity: 0, transform: 'translateY(6px)' },
++        { opacity: 1, transform: 'translateY(0)' },
++      ],
++      {
++        duration: 240,
++        delay: Math.min(index * 16, 160),
++        easing: 'ease-out',
++      },
++    );
++  });
+ }
+-setTimeout(() => { grid.dataset.ready = 'true'; }, Number(new URLSearchParams(location.search).get('delay') || 200));
++
++const delayParameter = new URLSearchParams(location.search).get('delay');
++const requestedDelay = Number(delayParameter);
++const readyDelay = delayParameter !== null && Number.isFinite(requestedDelay) && requestedDelay >= 0
++  ? requestedDelay
++  : 200;
++
++setTimeout(() => {
++  grid.dataset.ready = 'true';
++  requestAnimationFrame(animateVisibleRows);
++}, readyDelay);
+diff --git a/src/style.css b/src/style.css
+index 101573d..8b0d0c5 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -3,8 +3,24 @@ body { font: 16px system-ui; margin: 16px; }
+ main { width: min(560px, 100%); }
+ .field { display: flex; width: 100%; height: 36px; }
+ .field input { flex: 1; min-width: 0; }
+-#clear { width: 28px; opacity: 0; pointer-events: none; }
+-.field:hover #clear, #clear:focus-visible { opacity: 1; pointer-events: auto; }
++#clear {
++  width: 0;
++  padding-inline: 0;
++  border-inline-width: 0;
++  overflow: hidden;
++  opacity: 0;
++  visibility: hidden;
++  pointer-events: none;
++}
++.field:hover #clear,
++.field:focus-within #clear {
++  width: 28px;
++  padding-inline: 2px;
++  border-inline-width: 2px;
++  opacity: 1;
++  visibility: visible;
++  pointer-events: auto;
++}
+ #feedback { min-height: 24px; }
+ #grid { height: 100px; overflow: hidden; }
+ #grid[data-ready='false'] { visibility: hidden; }

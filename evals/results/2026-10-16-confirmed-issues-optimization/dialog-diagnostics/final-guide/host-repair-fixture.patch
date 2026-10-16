@@ -1,0 +1,153 @@
+--- tests/load-built-app.ts
++++ tests/load-built-app.ts
+@@ -15,11 +15,17 @@
+     await route.fulfill({ body: await readFile(filePath), contentType })
+   })
+   await page.goto(`http://dialog.test/${entry === 'index' ? '' : `${entry}.html`}`)
++
++  if (entry === 'hydration') {
++    // The initially open modal correctly makes its background trigger inert, so
++    // an accessible-role query cannot use that trigger as the readiness signal.
++    await page.getByRole('dialog', { name: 'Hydrated example' }).waitFor()
++    return
++  }
++
+   const initialButton =
+     entry === 'controlled'
+       ? 'Open controlled dialog'
+-      : entry === 'hydration'
+-        ? 'Open hydrated dialog'
+-        : 'Edit profile'
++      : 'Edit profile'
+   await page.getByRole('button', { name: initialButton }).waitFor()
+ }
+--- tests/dialog.contract.spec.ts
++++ tests/dialog.contract.spec.ts
+@@ -41,6 +41,10 @@
+ test('hydrates stable trigger markup before mounting an initially open portal', async ({ page }) => {
+   await loadBuiltApp(page, 'hydration')
+ 
++  await expect(page.locator('#root button', { hasText: 'Open hydrated dialog' })).toHaveAttribute(
++    'aria-expanded',
++    'true',
++  )
+   await expect(page.getByRole('dialog', { name: 'Hydrated example' })).toBeVisible()
+   await expect(page.getByLabel('Hydrated field')).toBeFocused()
+   await expect.poll(() => page.evaluate(() => window.__dialogHydrationErrors)).toEqual([])
+--- src/hydration-main.tsx
++++ src/hydration-main.tsx
+@@ -1,16 +1,6 @@
+ import { hydrateRoot } from 'react-dom/client'
+-import { renderToString } from 'react-dom/server'
+ 
+-import {
+-  Dialog,
+-  DialogClose,
+-  DialogContent,
+-  DialogDescription,
+-  DialogOverlay,
+-  DialogPortal,
+-  DialogTitle,
+-  DialogTrigger,
+-} from './Dialog'
++import { HydrationFixture } from './HydrationFixture'
+ import './styles.css'
+ 
+ declare global {
+@@ -19,26 +9,7 @@
+   }
+ }
+ 
+-function HydrationFixture() {
+-  return (
+-    <Dialog defaultOpen>
+-      <DialogTrigger>Open hydrated dialog</DialogTrigger>
+-      <DialogPortal>
+-        <DialogOverlay className="overlay">
+-          <DialogContent className="dialog">
+-            <DialogTitle>Hydrated example</DialogTitle>
+-            <DialogDescription>Hydration fixture.</DialogDescription>
+-            <input aria-label="Hydrated field" />
+-            <DialogClose>Close hydrated dialog</DialogClose>
+-          </DialogContent>
+-        </DialogOverlay>
+-      </DialogPortal>
+-    </Dialog>
+-  )
+-}
+-
+ const root = document.getElementById('root')!
+-root.innerHTML = renderToString(<HydrationFixture />)
+ window.__dialogHydrationErrors = []
+ hydrateRoot(root, <HydrationFixture />, {
+   onRecoverableError(error) {
+--- src/HydrationFixture.tsx
++++ src/HydrationFixture.tsx
+@@ -0,0 +1,28 @@
++import {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogTitle,
++  DialogTrigger,
++} from './Dialog'
++
++export function HydrationFixture() {
++  return (
++    <Dialog defaultOpen>
++      <DialogTrigger>Open hydrated dialog</DialogTrigger>
++      <DialogPortal>
++        <DialogOverlay className="overlay">
++          <DialogContent className="dialog">
++            <DialogTitle>Hydrated example</DialogTitle>
++            <DialogDescription>Hydration fixture.</DialogDescription>
++            <input aria-label="Hydrated field" />
++            <DialogClose>Close hydrated dialog</DialogClose>
++          </DialogContent>
++        </DialogOverlay>
++      </DialogPortal>
++    </Dialog>
++  )
++}
+--- vite.config.ts
++++ vite.config.ts
+@@ -1,6 +1,12 @@
+ import react from '@vitejs/plugin-react'
++import { createElement } from 'react'
++import { renderToString } from 'react-dom/server'
+ import { defineConfig } from 'vite'
+ import { resolve } from 'node:path'
++
++import { HydrationFixture } from './src/HydrationFixture'
++
++const hydrationRoot = '<div id="root"></div>'
+ 
+ export default defineConfig({
+   build: {
+@@ -12,5 +18,22 @@
+       },
+     },
+   },
+-  plugins: [react()],
++  plugins: [
++    {
++      name: 'render-hydration-fixture',
++      transformIndexHtml: {
++        order: 'pre',
++        handler(html, context) {
++          if (context.path !== '/hydration.html') return html
++          if (!html.includes(hydrationRoot)) {
++            throw new Error('The hydration fixture root placeholder is missing.')
++          }
++
++          const serverMarkup = renderToString(createElement(HydrationFixture))
++          return html.replace(hydrationRoot, `<div id="root">${serverMarkup}</div>`)
++        },
++      },
++    },
++    react(),
++  ],
+ })

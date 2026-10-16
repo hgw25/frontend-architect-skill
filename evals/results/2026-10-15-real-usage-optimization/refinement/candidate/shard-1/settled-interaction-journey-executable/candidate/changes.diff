@@ -1,0 +1,126 @@
+diff --git a/src/app.mjs b/src/app.mjs
+index b26b32f..9783409 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -2,24 +2,80 @@ const input = document.querySelector('#name');
+ const feedback = document.querySelector('#feedback');
+ const save = document.querySelector('#save');
+ const grid = document.querySelector('#grid');
+-document.querySelector('#clear').onclick = () => { input.value = ''; };
+-save.onclick = async () => {
++const clear = document.querySelector('#clear');
++const body = document.querySelector('tbody');
++
++let editRevision = 0;
++let saveInProgress = false;
++
++input.addEventListener('input', () => {
++  editRevision += 1;
++});
++
++clear.addEventListener('click', () => {
++  input.value = '';
++  input.dispatchEvent(new Event('input', { bubbles: true }));
++  input.focus();
++});
++
++save.addEventListener('click', async () => {
++  if (saveInProgress) return;
++
++  const submittedValue = input.value;
++  const submittedRevision = editRevision;
++  saveInProgress = true;
+   save.disabled = true;
+   feedback.textContent = 'Saving';
++
+   try {
+-    const response = await fetch('/save', { method: 'POST', body: input.value });
++    const response = await fetch('/save', { method: 'POST', body: submittedValue });
+     if (!response.ok) throw new Error('Save failed');
+-    document.querySelector('td').textContent = input.value;
++
++    body.rows[0].cells[0].textContent = submittedValue;
+     feedback.textContent = 'Saved';
+-  } catch { feedback.textContent = 'Save failed'; }
+-  finally { input.value = ''; save.disabled = false; }
+-};
+-const body = document.querySelector('tbody');
++
++    if (editRevision === submittedRevision) {
++      input.value = '';
++      editRevision += 1;
++    }
++  } catch {
++    feedback.textContent = 'Save failed';
++  } finally {
++    saveInProgress = false;
++    save.disabled = false;
++  }
++});
++
+ for (let index = 0; index < 30; index++) {
+-  const row = body.insertRow(); row.dataset.row = String(index);
++  const row = body.insertRow();
++  row.dataset.row = String(index);
+   row.insertCell().textContent = 'Record ' + index;
+ }
+-if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+-  for (const row of [...body.rows].slice(0, 8)) row.animate({ opacity: [0, 1] }, { duration: 240 });
++
++function animateVisibleRows() {
++  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
++
++  const gridBounds = grid.getBoundingClientRect();
++  const visibleTop = Math.max(gridBounds.top, 0);
++  const visibleBottom = Math.min(gridBounds.bottom, document.documentElement.clientHeight);
++
++  if (visibleBottom <= visibleTop) return;
++
++  for (const row of body.rows) {
++    const rowBounds = row.getBoundingClientRect();
++    if (rowBounds.bottom <= visibleTop || rowBounds.top >= visibleBottom) continue;
++
++    row.animate(
++      { opacity: [0, 1] },
++      { duration: 240, easing: 'ease-out' },
++    );
++  }
+ }
+-setTimeout(() => { grid.dataset.ready = 'true'; }, Number(new URLSearchParams(location.search).get('delay') || 200));
++
++const requestedDelay = new URLSearchParams(location.search).get('delay');
++const readyDelay = requestedDelay === null ? 200 : Number(requestedDelay);
++
++setTimeout(() => {
++  grid.dataset.ready = 'true';
++  requestAnimationFrame(() => requestAnimationFrame(animateVisibleRows));
++}, Number.isFinite(readyDelay) ? Math.max(0, readyDelay) : 200);
+diff --git a/src/style.css b/src/style.css
+index 101573d..49ad4dd 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -3,8 +3,22 @@ body { font: 16px system-ui; margin: 16px; }
+ main { width: min(560px, 100%); }
+ .field { display: flex; width: 100%; height: 36px; }
+ .field input { flex: 1; min-width: 0; }
+-#clear { width: 28px; opacity: 0; pointer-events: none; }
+-.field:hover #clear, #clear:focus-visible { opacity: 1; pointer-events: auto; }
++#clear {
++  flex: 0 0 0;
++  width: 0;
++  padding: 0;
++  border-width: 0;
++  overflow: hidden;
++  opacity: 0;
++  pointer-events: none;
++}
++.field:hover #clear, #clear:focus-visible {
++  flex-basis: 28px;
++  width: 28px;
++  border-width: 2px;
++  opacity: 1;
++  pointer-events: auto;
++}
+ #feedback { min-height: 24px; }
+ #grid { height: 100px; overflow: hidden; }
+ #grid[data-ready='false'] { visibility: hidden; }

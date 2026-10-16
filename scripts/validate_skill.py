@@ -8,6 +8,7 @@ import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 try:
     import yaml
@@ -100,7 +101,7 @@ REQUIRED_CASE_KEYS = {
     "must_observe",
     "fail_if",
 }
-OPTIONAL_CASE_KEYS = {"fixture", "protected_paths", "validation_commands"}
+OPTIONAL_CASE_KEYS = {"fixture", "protected_paths", "validation_commands", "task_type"}
 
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 UNFINISHED_MARKER = re.compile(r"\b(?:TODO|PLACEHOLDER)\b|\[TODO:", re.IGNORECASE)
@@ -222,6 +223,31 @@ def validate_frontmatter(errors: list[str]) -> None:
         add_error(errors, "SKILL.md description violates length or character limits")
 
 
+def markdown_heading_anchors(content: str) -> set[str]:
+    """Resolve the plain Markdown heading links used by this repository."""
+    anchors: set[str] = set()
+    fence = ""
+    for line in content.splitlines():
+        delimiter = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if delimiter:
+            marker = delimiter.group(1)
+            if not fence:
+                fence = marker
+            elif marker[0] == fence[0] and len(marker) >= len(fence):
+                fence = ""
+            continue
+        heading = re.match(r"^#{1,6}\s+(.+?)(?:\s+#+)?\s*$", line)
+        if fence or not heading:
+            continue
+        base = re.sub(r"[^\w -]", "", heading.group(1).lower()).replace(" ", "-")
+        anchor, suffix = base, 0
+        while anchor in anchors:
+            suffix += 1
+            anchor = f"{base}-{suffix}"
+        anchors.add(anchor)
+    return anchors
+
+
 def validate_markdown(errors: list[str]) -> None:
     for markdown_path in ROOT.rglob("*.md"):
         if markdown_path.is_relative_to(ROOT / "evals/results"):
@@ -238,21 +264,23 @@ def validate_markdown(errors: list[str]) -> None:
 
         for target in MARKDOWN_LINK.findall(content):
             clean_target = target.strip().strip("<>")
-            if clean_target.startswith(("http://", "https://", "mailto:", "#")):
+            if clean_target.startswith(("http://", "https://", "mailto:")):
                 continue
 
-            file_target = clean_target.split("#", 1)[0]
-            if not file_target:
-                continue
+            file_target, _, anchor = clean_target.partition("#")
             if file_target.startswith("/"):
                 add_error(errors, f"Non-portable absolute link in {relative_path}: {target}")
                 continue
 
-            resolved_target = (markdown_path.parent / file_target).resolve()
-            if not resolved_target.is_relative_to(ROOT):
+            resolved_target = (markdown_path.parent / file_target).resolve() if file_target else markdown_path.resolve()
+            if not resolved_target.is_relative_to(ROOT.resolve()):
                 add_error(errors, f"Local link escapes the repository in {relative_path}: {target}")
             elif not resolved_target.exists():
                 add_error(errors, f"Broken local link in {relative_path}: {target}")
+            elif anchor and resolved_target.suffix == ".md":
+                headings = markdown_heading_anchors(resolved_target.read_text(encoding="utf-8"))
+                if unquote(anchor) not in headings:
+                    add_error(errors, f"Broken local section link in {relative_path}: {target}")
 
 
 def validate_agent_metadata(errors: list[str]) -> None:
@@ -390,6 +418,11 @@ def validate_evals(errors: list[str]) -> None:
         validate_string_list(case_id, "fail_if", case.get("fail_if"), errors)
 
         fixture = case.get("fixture")
+        task_type = case.get("task_type", "implementation")
+        if task_type not in {"implementation", "review"}:
+            add_error(errors, f"Eval case {case_id!r} has an unsupported task_type")
+        if task_type == "review" and fixture is None:
+            add_error(errors, f"Review fixture case {case_id!r} requires a fixture")
         protected_paths = case.get("protected_paths")
         validation_commands = case.get("validation_commands")
         requires_implementation = (
@@ -427,12 +460,10 @@ def validate_evals(errors: list[str]) -> None:
                             errors,
                             f"Node fixture for eval case {case_id!r} must install with npm ci",
                         )
-            validate_string_list(
-                case_id,
-                "validation_commands",
-                validation_commands,
-                errors,
-            )
+                if task_type == "review" and not all((fixture_path / name).is_dir() for name in ("before", "after")):
+                    add_error(errors, f"Review fixture {case_id!r} requires before/ and after/ snapshots")
+            if task_type != "review" or validation_commands is not None:
+                validate_string_list(case_id, "validation_commands", validation_commands, errors)
             if protected_paths is not None:
                 validate_string_list(case_id, "protected_paths", protected_paths, errors)
                 if isinstance(protected_paths, list):

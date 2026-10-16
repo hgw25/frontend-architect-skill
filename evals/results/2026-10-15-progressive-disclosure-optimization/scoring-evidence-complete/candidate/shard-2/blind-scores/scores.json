@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "review-green-code-coupling",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "结合 README 契约、两个真实入口、完整实现和测试范围判断，明确区分当前行为保持与结构维护性退化。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了原有单一完整操作与新增分阶段可变协议的维护成本，并依据不存在暂停或阶段复用需求，合理认定新增抽象没有相称收益。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "准确指出编排责任从内聚的 exportSelected 泄漏并复制到两个消费者，以及调用者被迫了解私有步骤和顺序。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "既确认当前调用顺序下无功能错误，也具体识别半初始化状态、调用顺序依赖和重新 classify 后 payload 失效缺失等维护风险。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "报告两版各 10/10 测试通过；生成期输出和后续宿主联合运行的 20 项通过均支持行为未回归，宿主还确认 fixture 未修改。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "发现按影响组织，证据、后续改动扩散路径及功能错误与可维护性问题的界线都很清楚，且没有诉诸行数、循环或强制拆文件。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "证据仅覆盖该 fixture 声明的两个真实入口和现有行为测试，无法证明仓库外是否还有未展示的内部消费者。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "root-cause-before-recovery-executable",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "抓住完成事实、原请求关联、作用域隔离、既有恢复能力和运维轮询提议等关键约束，并明确生产事故证据的范围。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "根据手动恢复与增量事件差异定位已有合并事实的使用错误，选择四字段的局部修正，避免无依据引入每 30 秒全量轮询。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "修复位于拥有消息合并和请求进度关联职责的 ledger 内部，没有把恢复或关联协议扩散给调用者，也保留了 recover 边界。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实际差异一致改用合并后的 stored scope、replyTo、id 和 status；语法检查、完整测试及宿主复验均通过，主路径和终态错误路径形成一致变更。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "验证覆盖 done/error、重复终态、无关联完成、其他请求与作用域隔离、完成先于 accept 以及显式历史恢复，直接对应身份、顺序和误释放风险。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "记录了修复前 7 项中 4 项失败、修复后 7/7 通过，并提供 node --check、diff check；后续宿主再次确认 7/7 通过和评估夹具完整。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结果优先地说明根因机制、为何轮询推断不成立、修复范围、验证结果以及仍需生产事件记录才能确认的未知路径。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "fixture 和测试不能确定生产环境是否另有事件丢失或持久化失败；响应已明确保留这一未知项。",
+          "生成期记录是命令输出尾部而非完整命令审计，但宿主随后独立复验了测试和受保护评估夹具。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

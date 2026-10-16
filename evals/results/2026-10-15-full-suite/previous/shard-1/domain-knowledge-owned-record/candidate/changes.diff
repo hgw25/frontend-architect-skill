@@ -1,0 +1,93 @@
+diff --git a/api/catalog.ts b/api/catalog.ts
+new file mode 100644
+index 0000000..ddbff23
+--- /dev/null
++++ b/api/catalog.ts
+@@ -0,0 +1,5 @@
++export type SupplierDto = {
++  supplierId: string;
++  organizationId: string;
++  displayName: string;
++};
+diff --git a/docs/catalog-language.md b/docs/catalog-language.md
+new file mode 100644
+index 0000000..bd070a3
+--- /dev/null
++++ b/docs/catalog-language.md
+@@ -0,0 +1,9 @@
++# 目录领域
++
++目录页同时涉及三种不同的身份，不得根据字段值或历史上的一一对应关系相互替代：
++
++- 卖家资料：目录行展示和资料详情的主体，使用 `supplierId`。界面文案统一使用“卖家资料”，不再称为“账户”。
++- 计费组织：卖家资料所属的计费主体，使用 `organizationId`。`organizationId` 不用于卖家资料详情导航。
++- 登录用户：当前操作人，使用 `userId`。
++
++服务端目前不提供卖家资料或计费组织到登录用户的身份映射。前端不根据 `supplierId` 或 `organizationId` 推断 `userId`，目录也不增加作者用户入口。
+diff --git a/docs/catalog.md b/docs/catalog.md
+new file mode 100644
+index 0000000..63e10c3
+--- /dev/null
++++ b/docs/catalog.md
+@@ -0,0 +1,31 @@
++# 目录
++
++领域说明见 [catalog-language.md](catalog-language.md)，重要选择见 [decisions/](decisions/)。
++
++## 前端映射
++
++目录 API 继续返回 `SupplierDto`，不更改已有接口、DTO 或字段名。列表边界按下表解释数据：
++
++| 来源 | 前端含义 | 用途 |
++| --- | --- | --- |
++| `SupplierDto.supplierId` | 卖家资料标识 | 当前行的资料详情导航和详情请求 |
++| `SupplierDto.organizationId` | 计费组织标识 | 仅用于明确的计费组织功能 |
++| `SupplierDto.displayName` | 卖家资料展示名 | 目录行展示 |
++| 登录会话的 `userId` | 登录用户标识 | 当前操作人相关功能；不从 `SupplierDto` 推导 |
++
++如果项目有 DTO 到页面模型的现有映射器，在该边界保留这两个命名明确的标识；如果目前直接消费 DTO，则直接使用字段，不为本次改名额外引入映射层。两种情况下都不得将 `organizationId` 复制或别名为 `supplierId`。
++
++## 展示与导航
++
++- 将目录页面面向用户的“账户”文案更改为“卖家资料”。
++- 卖家资料详情路由的参数名为 `supplierId`；点击某行资料详情时，传入该行的 `supplierId`。
++- 详情页从路由读取 `supplierId`，并用它调用现有的详情接口；接口名称保持不变。
++- 不增加作者用户入口。目录行已有的收藏保留为本地操作，不与任何一种身份映射绑定。
++
++## 实施与验证
++
++1. 在目录列表的文案资源或组件中完成“账户”到“卖家资料”的替换。
++2. 将详情路由声明、链接构造和详情页取参统一为 `supplierId`，不只更改其中一端。
++3. 保留既有 API 调用名称和收藏逻辑，移除详情导航中对 `organizationId` 的依赖。
++4. 用 `supplierId` 与 `organizationId` 不同的目录行验证：页面显示“卖家资料”，详情链接、路由参数和详情请求均使用 `supplierId`。
++5. 回归验证收藏仍只产生本地操作，且目录不出现作者用户入口。
+diff --git a/docs/decisions/012-directory.md b/docs/decisions/012-directory.md
+new file mode 100644
+index 0000000..56ba80f
+--- /dev/null
++++ b/docs/decisions/012-directory.md
+@@ -0,0 +1,24 @@
++# 012：目录资料详情使用 supplierId
++
++状态：已修订（2026-10-15）
++
++## 决定
++
++目录行表示卖家资料，资料详情导航和详情请求使用 `supplierId`。`organizationId` 只表示计费组织，不作为资料详情的标识符。
++
++现有 API 名称、`SupplierDto` 名称及字段名保持不变；身份含义在前端映射边界和项目领域说明中明确。
++
++## 前端约束
++
++- 目录行从 `SupplierDto` 保留 `supplierId`、`organizationId` 和 `displayName`，但展示主体是卖家资料。
++- 资料详情链接及路由参数命名为 `supplierId`，参数值取当前行的 `supplierId`。
++- `organizationId` 只传给明确以计费组织为对象的功能。
++- 服务端未提供用户身份映射前，不构造 `userId`，不增加作者用户入口。
++
++## 修订原因
++
++本决定原来基于“卖家资料与计费组织一一对应”的当时假设，规定详情导航使用 `organizationId`。现在三种身份已被明确区分，即使它们的值偶然一致，也不能代表同一资源。因此，旧的 `organizationId` 导航决定被本修订取代。
++
++## 影响
++
++以后即使一个计费组织对应多份卖家资料，详情导航也无需改变。若以后需要作者用户入口，必须先由服务端提供权威的用户标识或映射契约，不得在前端用现有两种标识推断。

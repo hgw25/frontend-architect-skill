@@ -1,0 +1,32 @@
+发现 4 个可复现的问题，未修改任何快照文件。
+
+1. **[P1] Retry 会发布用户后来编辑的内容，而不是失败时的负载。**
+   位置：[publish.mjs:24](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/src/community/controllers/publish.mjs:24)，具体错误调用在第 26 行。`failedPayload` 已保存失败负载，但 Retry 仍然读取 `draft.snapshot`。实测先提交 `Release A / tools` 并失败，再编辑成 `Release B / games`，点击 Retry 对应的命令实际发送了后者。用户可能把尚未准备提交的新草稿发布出去；若编辑为空，还会绕过普通 Publish 的空标题禁用条件发送空标题。当前有效要求明确区分 Retry 与普通 Submit：[community.md:26](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/community.md:26)。Retry 应使用已捕获的失败负载，普通 Submit 才读取当前草稿。现有发布测试只检查未编辑草稿时尝试次数及错误清除，没有断言发送的 title/category，因而不能发现此问题。
+
+2. **[P2] 新查询失败后，旧分页游标被用于新查询并可能混合两组结果。**
+   位置：[feed.mjs:9](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/src/community/controllers/feed.mjs:9)，第 10–11 行替换加载状态时保留了旧 items/cursor；第 26 行却已替换 query。实测 A 查询得到 `[A1]` 和 `A-page2`，切换 B 查询后首屏失败，snapshot 仍保留旧游标，且 loading 已恢复 false。[Feed.tsx:18](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/src/community/ui/Feed.tsx:18) 因此继续显示可点击的“加载更多”。执行后请求成为 `{title:'B', status:'unavailable', cursor:'A-page2'}`；在返回 B 的结果时列表拼接成 `[A1, B2]`。真实服务也可能因游标不匹配而继续报错。此问题违反“新查询重置分页”的要求：[community.md:5](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/community.md:5)。切换查询时应使旧分页失效，并确保新的首屏成功前不能追加旧结果；若保留旧列表作为加载展示，也不能让它继续拥有新查询的分页。现有测试覆盖正常追加和旧请求失败时的 loading 保护，没有覆盖“已有游标→切换查询失败→加载更多”。
+
+3. **[P2] 已发布且未拥有、但缺少 activityId 的行错误启用 Get。**
+   位置：[row-actions.mjs:6](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/src/community/ui/row-actions.mjs:6)。此次变更把 `!canAcquire(post)` 改成仅检查 ownership/status，遗漏 activityId；而点击处理仍使用完整的 `canAcquire`，形成显示与执行规则不一致。实测 `{activityId:null,status:'published',owned:false}` 得到 `detailHref:null`、`acquireDisabled:false`，调用 acquire 后命令调用次数却为 0。[PostRow.tsx:33](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/src/community/ui/PostRow.tsx:33) 将该值直接绑定到按钮，用户看到可操作 Get，实际无反馈。要求明确此状态必须禁用 Get：[community.md:10](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/community.md:10)。应恢复复用完整资格规则；收藏仍须独立可用。上一轮正常截图和现有 row 测试均使用有效 activityId，创建表单的空标题禁用记录也无法覆盖这个按钮。
+
+4. **[P2] 回到前台未刷新创作者目录，资料变化不会恢复。**
+   位置：[lifecycle.mjs:2](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/src/community/lifecycle.mjs:2)，由新增资源组装后的 [index.mjs:19](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/src/community/index.mjs:19) 调用。虽然工作区已经创建 creatorDirectory，前台恢复仍只调用 feed.refresh。实测先加载目录，再执行工作区 onForeground，feed 请求增加一次，但 creators 总请求数仍为初次加载的一次，目录名称仍为 `Old`。当创作者在后台期间修改名称、头像或简介时，返回工作区仍展示旧资料。当前要求明确同时恢复 feed 与目录：[community.md:18](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/community.md:18)、[community.md:21](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/community.md:21)。需要将目录刷新纳入恢复入口，并继续保留草稿、收藏和会话内固定分类。该遗漏位于未改变的 lifecycle 文件，单看 diff 或直接测试 directory.refresh 都无法发现。
+
+**验收依据与覆盖边界**
+
+按 [after/README.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/README.md) 及 [决策索引](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/decisions/index.md) 确定：revision 2 brief 为基准，已接受的 [017](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/decisions/017-creator-navigation.md) 覆盖行内创作者导航，要求名称为纯文本并删除详情路由；[018](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/after/docs/decisions/018-local-favorites.md) 确认收藏独立、以 post ID 为身份且在前台恢复后保留。019 仍是草案，不能据此要求刷新分类。发布说明及 flow-state register 是团队已有证据记录，不能替代上述要求或具体分支验收。
+
+已检查 before/after 的全部 34 个变更文件，以及相关未变更 policy/lifecycle；审查沿 UI、控制器、运行入口、传输、路由和数据契约追踪，并读取全部 7 个测试文件的实际断言。覆盖与不足如下：
+
+| 范围 | 已检查证据及剩余限制 |
+| --- | --- |
+| 搜索、状态筛选、分页、请求顺序 | 检查 URL 编解码、API 参数、Filters/Feed 和控制器；执行正常分页、旧错误不清除新 loading、旧成功不覆盖新结果、dispose 后不发布结果及问题 2 的失败路径。宿主 URL 初始化、历史导航和实际路由绑定未提供，未验证端到端分享链接。 |
+| 发布与恢复 | 执行失败后编辑再 Retry；另验证提交时捕获 title/category、pending 去重、成功保留新草稿、普通 Submit 使用新草稿。空标题禁用及 Retry 控件连接为源码检查，没有执行浏览器表单与键盘行为。 |
+| 行内详情、Get、收藏 | 检查标题降级显示、创作者纯文本、三种动作的独立规则；执行 activityId 有/无 × published/unavailable × owned/unowned 的详情、获取执行和收藏命令矩阵，以及问题 3 的按钮资格值。实际 DOM、禁用语义及焦点表现未在浏览器中运行。 |
+| 目录、前台恢复、生命周期 | 检查独立目录路由、目录状态 UI、资源创建与释放；执行目录加载、旧错误不覆盖新结果、工作区前台恢复及草稿/收藏保留。问题 4 已通过真实工作区入口复现；宿主前台事件订阅及关闭事件接线不在快照中。 |
+| 分类与模块边界 | 检查分类复制冻结、工作区局部资源、可注入 API、局部类型和模块依赖；补充执行分类快照隔离。没有依据把未接受的分类刷新草案当作缺陷。宿主 TypeScript 构建及集成没有运行。 |
+| 展示与可访问性 | 检查行内容、可选参与者、列表/目录 loading、empty、error、retry、分页 loading、标签、原生控件、locale 格式化及响应式 CSS。现有格式化测试在替代运行时通过；窄屏、长标题/标签/参与者、长翻译、缩放、真实焦点/键盘、读屏播报、浏览器布局与截图均未执行。已有正常发布行截图不能代表这些状态。 |
+
+实际验证：项目要求的 `node --test test/*.test.mjs` 因环境没有 `node` 而无法启动（退出码 127）；替代执行 `bun test test/*.test.mjs`，Bun 1.3.13 下 10 项通过。另用两次 `bun run -` 执行只读、注入假 API 的断言脚本：第一组复现以上四个缺陷，第二组验证表中所列请求顺序、生命周期、发布及独立动作控制路径。它们验证控制器公开行为，不证明真实服务、React 渲染或浏览器交互。`git diff --no-index --stat before after` 与 `git diff --no-index before after` 返回 1 仅表示快照有差异。
+
+本次实际读取的技能指引仅为工作区内的 [.frontend-architect/SKILL.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/.frontend-architect/SKILL.md)、[verification-and-review.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/.frontend-architect/references/verification-and-review.md) 和 [async-and-lifecycles.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-mixed-diff-candidate-jqcpcy6o/.frontend-architect/references/async-and-lifecycles.md)，均全文读取；未读取安装版技能、其他工作区或外部评估材料。

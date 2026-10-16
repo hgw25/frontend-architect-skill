@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "cohesive-export-operation-executable",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "变更直接围绕现有可变 context 工作流、README 的 toolbar/keyboard 两个公开入口、行为兼容及“不引入框架”约束展开；差异显示两个入口的导出签名和返回路径保持不变。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "以一个窄的内聚操作替代四阶段可变工作流，复用现有 write 契约且未增加依赖、框架或无消费者的通用机制；复杂度与当前两个消费者相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "入口适配、资格决策、payload 构造和 transport 副作用的职责清楚；消费者只调用 exportSelection，无需了解 classify/encode/dispatch 等私有步骤，状态也不再通过可变 context 泄漏。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "新实现、两个调用方和旧 API 删除形成一致且可执行的完整变更；空选择、阻塞选择、成功写入和 transport 抛错均有明确语义。生成期与宿主测试均通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "测试覆盖空输入、全有或全无资格判断、选择顺序、输入不变性、写入错误原样传播，以及 pending write 期间调用方修改 rows 不会改变已接受意图，命中了相关状态与异步竞态边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "给出了实际命令、环境边界和结果：生成期两次 10/10 测试通过、语法检查通过，宿主随后也以 10/10 通过；同时明确未验证真实浏览器接线和后端协议接受情况，没有把单元测试夸大为集成验证。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结果优先地说明了具体结构改善、公开契约范围、现实后续变化及验证结果，并清楚列出尚未证明的真实集成边界。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供 README 正文，因此只能从未修改 README、两个入口的差异以及既有测试间接判断公开契约保持情况。",
+          "“无旧分步 API 残留引用”没有附带独立搜索命令输出；所列生成期检查仅展示了变更前源码检查和变更后目标文件检查。",
+          "没有真实 UI/transport 集成环境证据，实际浏览器事件接线与后端协议接受情况仍未验证。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

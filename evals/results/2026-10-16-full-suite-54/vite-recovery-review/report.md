@@ -1,0 +1,14 @@
+# Vite recovery evidence review
+
+The registered fresh candidate recovery is capture-valid, host checks pass, and the independent grader gives **12.8/16, basic**. It does not replace the initial invalid capture. The result and raw grading are retained without manual score changes.
+
+The raw event chronology adds limits to the grader’s attribution:
+
+1. `item_72` / `item_74` diagnose missing Chokidar change delivery while native `fs.watch` emits `NATIVE change` for the same file. The generator adds a fallback under this observed environment. Its necessity for the supported product environments is not established, but the statement that it had no observed trigger is too strong. The final product has extra listener/timer/cleanup cost driven by the evaluation environment.
+2. The first fallback cleanup incorrectly used `configureServer`’s returned post-configuration hook as teardown; the generator identifies and fixes it before delivery. `item_83` then passes the dev check. This repaired intermediate defect is distinct from a final failure.
+3. `item_85` fails at npm cache EPERM. A writable isolated cache permits `item_101`’s complete check to pass. The final response discloses this environment adaptation.
+4. `item_112` then fails with unhandled FSWatcher `EMFILE`. **Two source edits** (`item_113`, `item_115`) occur before `item_116`’s full check succeeds. Final source includes a native watcher error handler. The subsequent host full check also passes. Therefore that one intermediate failure is not proof that the final source still crashes; it also does not establish the error belonged to the added native watcher rather than Vite’s watcher. The final summary omits this earlier failure and repair. That is factual, but routine repaired intermediate errors need not all appear in a delivery summary: its final check-pass claim does have successful generator and host evidence. The communication penalty is therefore also open to interpretation; any remaining watcher reliability risk, rather than an exhaustive command history, is what would matter to the user.
+
+The grader saw the checked evidence view, which does not include every intermediate patch. Its final-code instability and unjustified-fallback penalties may overstate what the raw sequence establishes. We keep the original score and record this disagreement; no selected favorable regrading, rubric relaxation, or claim that repeat green proves environmental reliability. Cross-host watcher behavior, atomic file replacement and the underlying resource limit remain unverified.
+
+[Selected raw events](event-extract.json) include the original diagnostics, failure, intervening edits and final successful check. The complete raw stream and final diff are in the recovery artifact. This is evidence review, not another model generation or a production code fix.

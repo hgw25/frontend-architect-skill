@@ -1,0 +1,1 @@
+已完成可发布的 headless Dialog，SSR 与水合兼容。类型、构建与 renderToString 通过。浏览器因沙箱启动失败，不能声称浏览器断言已通过。

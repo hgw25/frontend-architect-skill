@@ -1,0 +1,100 @@
+diff --git a/src/search.js b/src/search.js
+index 97267aa..d15a8bf 100644
+--- a/src/search.js
++++ b/src/search.js
+@@ -1,22 +1,82 @@
+ export function createSearch(fetchUsers) {
+-  let state = { draft: '', submitted: '', status: 'idle', items: [], error: null };
+-  async function submit() {
+-    state.submitted = state.draft.trim();
+-    state.status = 'loading'; state.error = null;
++  let state = {
++    draft: '',
++    submitted: '',
++    status: 'idle',
++    items: [],
++    error: null,
++  };
++  let latestRequestId = 0;
++  let disposed = false;
++
++  const isCurrent = requestId =>
++    !disposed && requestId === latestRequestId;
++
++  async function startRequest(query) {
++    const requestId = ++latestRequestId;
++    state = {
++      ...state,
++      submitted: query,
++      status: 'loading',
++      error: null,
++    };
++
+     try {
+-      state.items = await fetchUsers(state.submitted);
+-      state.status = 'success';
++      const users = await fetchUsers(query);
++      if (!isCurrent(requestId)) return;
++
++      state = {
++        ...state,
++        status: 'success',
++        items: users.map(user => ({
++          id: user.user_id,
++          label: user.display_name,
++        })),
++      };
+     } catch (error) {
+-      state.error = error.message; state.status = 'error';
+-    } finally {
+-      if (state.status === 'loading') state.status = 'idle';
++      if (!isCurrent(requestId)) return;
++
++      state = {
++        ...state,
++        status: 'error',
++        error: error instanceof Error ? error.message : String(error),
++      };
+     }
+   }
++
++  async function submit() {
++    if (disposed) return;
++
++    const query = state.draft.trim();
++    if (!query) return;
++
++    await startRequest(query);
++  }
++
++  async function retry() {
++    if (disposed || !state.submitted) return;
++
++    await startRequest(state.submitted);
++  }
++
+   return {
+-    setDraft(value) { state.draft = value; },
++    setDraft(value) {
++      if (disposed) return;
++      state = { ...state, draft: value };
++    },
+     submit,
+-    retry: submit,
+-    getState() { return structuredClone(state); },
+-    dispose() {},
++    retry,
++    getState() {
++      return {
++        draft: state.draft,
++        submitted: state.submitted,
++        status: state.status,
++        items: state.items.map(item => ({ ...item })),
++        error: state.error,
++      };
++    },
++    dispose() {
++      disposed = true;
++    },
+   };
+ }

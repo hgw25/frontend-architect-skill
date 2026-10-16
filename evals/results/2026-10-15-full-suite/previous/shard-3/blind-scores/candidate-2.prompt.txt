@@ -1,0 +1,701 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+评分时沿同一条证据链检查：用户行为 → 事实与契约 → 不变量和所有权 → 模块边界 →
+实际实现 → 验证结果。只评价任务中可观察的环节；局部修改不要求展示完整设计过程。
+不能因为回答提到了类型、状态机、分层和测试等术语，就认定这些环节已经相互一致。
+命名评价以职责、内容及调用是否一致为依据，不以术语是否高级评分；测试布局评价遵循项目约定、可定位性及执行完整性，不固定要求集中或就近放置。
+对结构设计，用任务支持的现实变化检查修改位置是否符合所有权；允许为领域常见变化预留适度边界，不要求重复已经发生；不奖励无依据的通用机制。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 比较现有契约、平台能力及集成维护成本，选择维护成本相称的完整方案，允许便利接口与适度前瞻，不绕过已有策略再造一套 |
+| `module_boundaries` | 机械套目录或把业务堆在入口 | 有目录分类但状态归属或组件职责含糊 | 遵循框架与项目约定，用可导航的文件表达页面、布局、组件及数据职责；真实变化的修改范围符合所有权，避免不足与过度拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `rendering_performance` | 套用与目标平台无关的优化技巧，或把减少 render 次数直接等同于用户性能 | 能识别重渲染、线程、布局或帧问题中的一部分，但缺少完整成本链或目标运行时证据 | 根据目标平台映射状态更新、调度、跨层传输、宿主更新、布局、绘制/栅格化与呈现边界，并用对应运行时的真实测量定位和验证 |
+| `security_trust` | 遗漏真实边界或因假想风险堆叠防御机制 | 识别风险但重复设防或泛泛提醒 | 追踪实际信任边界、复用已有保障，保留必要授权与秘密保护，内部按契约工作且防护成本与威胁相称 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 实际代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更，调用者能看清操作语义与执行顺序 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证、泛泛而谈或用模拟层冒充真实边界 | 建议运行工具但没有结果、环境或阈值 | 验证对应真实风险，记录实际结果与环境，并说明未验证部分；浏览器、宿主、产物或字段结论使用其真实边界证据 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+- 用 DOM 模拟器证明真实浏览器焦点、水合、布局或视觉行为，或用单次实验室分数证明真实用户性能。
+- 把浏览器渲染管线、旧版跨端 Bridge、固定 16ms 帧预算或某个小程序宿主限制当作所有平台和版本的通用事实。
+
+
+CASE
+id: convenience-without-framework
+request: 项目的提示组件接收 tone、role、duration 三个参数。保存成功的调用都应采用 positive、status、3000，而其他提示有不同语义。现在已有两个保存按钮要接入， 请设计方便调用且仍能表达不同提示的接口，不需要完整组件实现。
+artifact: 
+applicable_dimensions: ["solution_complexity", "developer_experience", "module_boundaries"]
+
+RESPONSE:
+建议在底层提示接口上增加一个语义化便利方法 `saved`，同时保留完整的 `show` 接口：
+
+```ts
+type PromptOptions = Pick<
+  PromptProps,
+  'tone' | 'role' | 'duration'
+>
+
+type ShowPrompt = (
+  message: string,
+  options: PromptOptions,
+) => void
+
+export interface PromptApi {
+  show(message: string, options: PromptOptions): void
+  saved(message?: string): void
+}
+
+export function createPromptApi(showPrompt: ShowPrompt): PromptApi {
+  return {
+    show: showPrompt,
+
+    saved(message = '保存成功') {
+      showPrompt(message, {
+        tone: 'positive',
+        role: 'status',
+        duration: 3000,
+      })
+    },
+  }
+}
+```
+
+两个保存按钮只表达业务结果：
+
+```ts
+await saveProfile()
+prompt.saved()
+
+await saveSettings()
+prompt.saved('设置已保存')
+```
+
+其他提示仍显式表达各自语义：
+
+```ts
+prompt.show(message, {
+  tone,
+  role,
+  duration,
+})
+```
+
+关键决策：
+
+- 使用 `saved`，而不是宽泛的 `success`，避免误把所有 positive 提示都固定成同一套参数。
+- `saved` 不开放参数覆盖，确保“保存成功始终是 `positive/status/3000`”这一规则不会被调用方破坏。
+- 保留 `show` 作为窄而完整的通用出口，不需要预设注册表、重载或完整组件改造。
+- 将来保存提示的时长或无障碍语义变化，只需修改 `saved` 一处。
+
+当前仓库没有项目源码或既有调用点，因此未创建虚构目录或示例文件，工作树保持不变。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: reuse-existing-table-capability
+request: 为现有前端表格增加多列排序和键盘导航，给出实现与验证方案。 项目已安装 TableKit 4（本评测虚构库），现有页面使用其 Table 组件。 下面是已核实与安装版本匹配的项目资料，无需联网。
+artifact: TableKit 4 supports controlled multi-column sorting via sortModel/onSortModelChange.
+The existing project wrapper forwards both props and owns locale and keyboard navigation.
+Existing consumer tests cover focus after sorting and localized sort announcements.
+The requested behavior matches that documented contract; no extra dependency is needed.
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "verification_evidence"]
+
+RESPONSE:
+工作区中没有应用源码、`package.json` 或测试文件，Git `HEAD` 也是空树，因此无法提交真实实现；当前工作树保持干净，也未修改 `.frontend-architect`。
+
+具体落地方案：
+
+1. 由现有表格页面或其既有状态层持有唯一的 `sortModel`。
+2. 将 `sortModel` 和 `onSortModelChange` 原样传给现有 Table wrapper。
+3. 更新时直接采用 TableKit 返回的完整有序模型，不自行合并列、编写比较器或维护额外排序状态。
+4. 保留模型中的列顺序作为排序优先级。
+5. 键盘导航、排序后的焦点恢复、locale 和排序播报继续由现有 wrapper/TableKit 负责；页面不增加 `keydown`、手工 `focus()` 或额外 live region。
+6. 不增加依赖，也不绕过现有 wrapper。
+
+等价的调用形态应为：
+
+```tsx
+const [sortModel, setSortModel] = useState(/* 使用项目现有 TableKit 类型 */)
+
+<ExistingTable
+  {...existingProps}
+  sortModel={sortModel}
+  onSortModelChange={setSortModel}
+/>
+```
+
+实际实现时应复用仓库已有的初始值、类型导入和状态持有方式，不能根据空仓库猜测类型名或组件路径。
+
+验证方案：
+
+- 新增或扩展消费方交互测试：按 TableKit 既定操作依次排序两列，断言回调产生包含两列且顺序正确的模型，并确认该模型重新传回表格。
+- 验证修改第二列方向或移除其中一列时，另一列及其优先级保持正确。
+- 运行现有“排序后焦点保持”和“本地化排序播报”测试，避免重复实现同类测试。
+- 在真实浏览器中仅用键盘完成进入表格、单列排序、追加第二排序列和单元格导航；检查焦点可见且排序重渲染后仍位于预期表头。
+- 运行项目既有的类型检查、相关组件测试及完整测试套件。
+
+后续增加第三排序列时，应只改变受控模型内容，不需要修改 wrapper 或键盘导航机制。若补充实际项目源码，我可以据此完成代码和测试提交。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: group-by-api
+request: 请评审下面的 JavaScript groupBy 封装。判断它是否值得作为通用工具进入前端基础库， 指出实际正确性和 API 设计问题，并给出符合现代前端工程约束的建议。不要只改写循环语法。
+artifact: function groupBy(items, generateKey) {
+  if (typeof generateKey === 'string') {
+    const propertyName = generateKey
+    generateKey = (item) => item[propertyName]
+  }
+
+  const result = {}
+  let index = 0
+
+  for (const item of items) {
+    const key = generateKey(item, index++, items)
+    if (result[key]) result[key].push(item)
+    else result[key] = [item]
+  }
+
+  return result
+}
+
+applicable_dimensions: ["requirements_context", "solution_complexity", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+## 结论
+
+当前实现不应原样进入前端基础库。更合适的决策是：
+
+1. 目标运行环境支持时，直接使用 `Object.groupBy()` 或 `Map.groupBy()`。
+2. 只有存在明确的兼容性缺口和多个真实消费者时，才提供一个标准语义的兼容层。
+3. 不保留字符串属性名重载；调用方使用显式 selector。
+
+仓库中没有项目代码、依赖、浏览器矩阵或调用方，现有证据不足以证明需要维护一个新的公共工具。
+
+## 主要问题
+
+### 高：特殊键会直接导致运行时异常
+
+`result` 继承自 `Object.prototype`，而代码用真值判断区分分组是否存在：
+
+```js
+if (result[key]) result[key].push(item)
+```
+
+这些合法分组键都会命中继承属性：
+
+```js
+groupBy([1], () => 'constructor')
+groupBy([1], () => 'toString')
+groupBy([1], () => '__proto__')
+```
+
+实际运行均抛出：
+
+```text
+TypeError: result[key].push is not a function
+```
+
+这不是理论上的“原型污染防护”，而是普通输入即可触发的正确性缺陷。仅改成 `Object.hasOwn()` 也不够：给普通对象的 `__proto__` 赋值仍有特殊语义。对象结果必须使用 null prototype，或者直接采用标准 `Object.groupBy()`。
+
+### 中：没有定义键的语义
+
+对象属性访问会执行键转换，因此这些值会落入同一组：
+
+```js
+1
+'1'
+```
+
+不同对象通常也会一起变成 `"[object Object]"`。如果调用方需要对象身份、类型区别或严格的插入顺序，应返回 `Map`，而不是对象。
+
+此外，对象的整数形式属性按数字顺序枚举，而不是首次出现顺序。实际输入先产生 `2`、后产生 `1`，`Object.keys(result)` 仍得到 `['1', '2']`。
+
+因此公共 API 必须明确分成两种契约：
+
+- `Object.groupBy`：键是 `PropertyKey`，允许属性键转换。
+- `Map.groupBy`：键保持原值和对象身份。
+
+不应由一个模糊的 `groupBy` 猜测调用方想要哪一种。
+
+### 中：字符串重载收益不足，增加了公共契约复杂度
+
+```js
+groupBy(users, 'department')
+```
+
+看似方便，但带来了：
+
+- 字符串究竟是 selector 还是属性名的运行时分派；
+- TypeScript 中 `keyof T`、可选字段、symbol/number 属性和返回键类型的复杂重载；
+- 对 `null`、`undefined` 元素以及继承属性读取语义不明确；
+- 重命名和复杂取值不如显式回调清楚；
+- 函数内部还会重新赋值参数，使入口契约更难追踪。
+
+推荐调用方式更明确：
+
+```js
+Object.groupBy(users, user => user.department)
+```
+
+只有大量已验证调用点确实以简单字段分组，并且这个简写显著改善使用体验时，才值得单独设计，例如命名为 `groupByProperty`，而不是塞入类型重载。
+
+### 中：callback 契约偏离标准且与 Iterable 不协调
+
+当前回调收到：
+
+```js
+generateKey(item, index, items)
+```
+
+但 `items` 实际接受任意 iterable，可能是 `Set` 或一次性 generator，而不一定是数组。把整个 iterable 暴露给回调：
+
+- 鼓励回调重新遍历或修改输入；
+- 对一次性迭代器尤其容易产生意外行为；
+- 与标准 `Object.groupBy` / `Map.groupBy` 的 `(item, index)` 契约不同；
+- 增加以后迁移到标准 API 的成本。
+
+建议只传 `item` 和 `index`。
+
+### 中：返回类型必须表达“分组可能不存在”
+
+若进入 TypeScript 基础库，对象版本不能返回：
+
+```ts
+Record<K, T[]>
+```
+
+因为并非每个可能的键都存在。更准确的是：
+
+```ts
+Partial<Record<K, T[]>>
+```
+
+并限制：
+
+```ts
+K extends PropertyKey
+```
+
+如果 selector 可以返回任意类型，应返回 `Map<K, T[]>`。
+
+### 低：当前名称隐藏了重要选择
+
+`groupBy` 没有告诉调用方结果是对象还是 `Map`、键是否转换、分组顺序如何体现。基础库 API 应使这项选择可见，而不是靠文档补救。
+
+## 推荐方案
+
+优先直接使用平台 API：
+
+```ts
+const byDepartment = Object.groupBy(
+  users,
+  user => user.department,
+)
+
+const byOwner = Map.groupBy(
+  tasks,
+  task => task.owner,
+)
+```
+
+采用前应按项目实际 `browserslist`、Node/SSR、WebView 和小程序运行时检查兼容性。TypeScript 能通过类型检查不代表运行时一定存在该 API，转译也不一定自动补齐 polyfill。
+
+如果项目确实需要本地兼容实现，对象版本至少应收窄为：
+
+```ts
+export function groupByProperty<T, K extends PropertyKey>(
+  items: Iterable<T>,
+  keyOf: (item: T, index: number) => K,
+): Partial<Record<K, T[]>> {
+  const groups: Partial<Record<K, T[]>> = Object.create(null)
+  let index = 0
+
+  for (const item of items) {
+    const key = keyOf(item, index++)
+    const group = groups[key]
+
+    if (group === undefined) {
+      groups[key] = [item]
+    } else {
+      group.push(item)
+    }
+  }
+
+  return groups
+}
+```
+
+需要注意，null-prototype 对象没有 `hasOwnProperty` 等继承方法，这是标准 `Object.groupBy()` 同样具有的可观察行为，应作为返回契约说明，而不是偷偷包装回普通对象。
+
+## 入库前最低验证
+
+如果最终决定提供兼容层，测试应覆盖公共语义，而非循环写法：
+
+- 空 iterable、generator 和 callback index；
+- 同组元素保持输入顺序；
+- `constructor`、`toString`、`__proto__`；
+- symbol 键；
+- 对象版本中 `1` 与 `'1'` 的键转换；
+- Map 版本中的对象身份和不同类型键；
+- 类型测试确认缺失分组可能为 `undefined`；
+- 通过基础库公开入口验证构建产物与声明文件。
+
+综合判断：这段代码暴露了真实正确性缺陷，也没有证明自研公共抽象的必要性。应先选择标准的对象或 Map 语义，再根据项目兼容矩阵决定直接使用、按需 polyfill，还是维护一个窄兼容层。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: feature-internal-decomposition
+request: 一个 React 结算功能已经集中到 features/checkout，但 CheckoutPage.tsx 接近 900 行： 它同时处理表单草稿、价格与优惠计算、优惠券请求、库存订阅、支付 SDK 生命周期、 提交竞态、错误提示和全部 JSX。团队准备机械拆成 components、hooks、services、utils。 请根据实际职责给出细致但不过度的内部模块划分，说明公开 API、状态与副作用所有权、 内部依赖方向、测试放置和停止继续拆分的条件。不要以文件行数作为主要理由。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+结论：不要把 `CheckoutPage.tsx` 机械搬进四个全局式的 `components/hooks/services/utils` 桶。应继续保留 `features/checkout` 这一业务边界，并按“表单、优惠券、库存、支付、提交”这些各自拥有状态或生命周期的能力划分；价格计算作为纯领域规则，页面只负责装配。
+
+当前工作区实际没有 React 源码或 `CheckoutPage.tsx`，Git 树也是空的，只有评估用 `.frontend-architect`。因此下面是基于请求中明确列出的职责给出的目标结构，具体类型名、接口字段和现有数据层接入方式仍需以真实仓库为准；没有虚构项目已有依赖，也没有修改文件。
+
+## 建议结构
+
+```text
+features/checkout/
+  index.ts
+  CheckoutPage.tsx
+
+  model/
+    checkoutTypes.ts
+    pricing.ts
+    pricing.test.ts
+
+  form/
+    useCheckoutDraft.ts
+    checkoutValidation.ts
+    CheckoutForm.tsx
+
+  coupon/
+    useCoupon.ts
+    couponApi.ts
+    CouponField.tsx
+
+  inventory/
+    useInventoryAvailability.ts
+    inventorySource.ts
+
+  payment/
+    usePaymentSession.ts
+    paymentSdkAdapter.ts
+    PaymentSection.tsx
+
+  submission/
+    useCheckoutSubmission.ts
+    checkoutApi.ts
+
+  ui/
+    OrderSummary.tsx
+    CheckoutActions.tsx
+```
+
+这不是要求一次创建完整目录树：
+
+- 某个能力当前只有一个文件时，可以先放在 feature 根目录。
+- `InventoryNotice`、`CheckoutFeedback` 等展示组件只有在确实拥有独立交互、无障碍或错误呈现策略时才提取。
+- 不建立笼统的 `utils.ts`、`services.ts`、`types.ts` 或一个包办全部状态的 `useCheckout()`。
+- `couponApi.ts`、`checkoutApi.ts` 如果只是给现有请求库改名转发，则不必单独存在；只有在负责响应映射、错误归一化或请求策略时才构成边界。
+
+## 职责与所有权
+
+| 模块 | 拥有什么 | 不应拥有 |
+|---|---|---|
+| `CheckoutPage` | 能力装配、把当前输出传给 UI、组织提交顺序 | 各能力的内部状态、请求标识、SDK 实例、订阅清理 |
+| `useCheckoutDraft` | 可编辑草稿、字段 touched/dirty、客户端校验、字段更新 | 价格副本、库存副本、支付状态、最终提交状态 |
+| `pricing` | 纯价格与优惠规则、舍入和汇总结果 | React 状态、网络请求、格式化 JSX、SDK |
+| `useCoupon` | 已应用优惠券、申请中的请求、失败、竞态策略 | 整份 checkout 草稿、最终价格的另一份可写状态 |
+| `useInventoryAvailability` | 当前库存快照、订阅身份、重订阅和清理 | 表单字段、提交按钮状态、通知文案 |
+| `usePaymentSession` | SDK 加载/初始化/挂载/确认能力、实例替换和释放 | 订单提交请求、页面级错误汇总 |
+| `useCheckoutSubmission` | 一次提交的稳定快照、重复提交策略、提交结果与恢复 | 长期表单编辑、SDK DOM 生命周期、库存订阅 |
+| UI 组件 | 语义化渲染、局部输入交互、焦点和无障碍反馈 | 解析 API 响应、直接调用 SDK、复制业务状态 |
+
+关键状态规则：
+
+- 价格、折扣和总价应从草稿、已接受优惠券以及必要领域事实中派生，不再保存一套可写的 `total`、`discount` 状态。
+- 优惠券输入框里尚未提交的文字可以是组件局部状态；“正在验证/已接受/被拒绝”属于优惠券能力。
+- 库存以订阅所有者的快照为准，不同步复制进表单草稿。
+- SDK 实例放在支付 hook 的 `ref` 或其内部资源对象中，不进入 React 可渲染状态；UI 只读取 `status/error` 等投影。
+- 提交时生成不可变快照。之后用户继续编辑草稿，不应改变已经发出的那一次提交或其重试含义。
+- 错误由能恢复或翻译它的模块捕获。页面可以决定错误显示位置和优先级，但不把所有错误重新复制进一个 `checkoutError` 状态。
+
+## API 设计
+
+Feature 对外默认只暴露路由真正需要的入口：
+
+```ts
+export { CheckoutPage } from './CheckoutPage'
+export type { CheckoutPageProps } from './CheckoutPage'
+```
+
+如果页面没有外部 props，则连 `CheckoutPageProps` 也不导出。`pricing`、hooks、SDK adapter 和内部组件不从 `index.ts` 暴露，外部消费者不得深路径导入。
+
+内部 API 应面向能力，而不是暴露实现机械结构：
+
+```ts
+calculateCheckoutSummary(input): CheckoutSummary
+```
+
+这是纯函数。输入是明确的领域事实，不接受整个页面 store，也不访问网络或浏览器环境。
+
+```ts
+useCheckoutDraft(initialDraft): {
+  draft
+  fieldErrors
+  updateField
+  validate
+}
+```
+
+应优先沿用项目已有 form library；如果已有表单控制器，这一层可能只是领域校验和字段映射，而不应再造表单框架。
+
+```ts
+useCoupon(): {
+  state
+  apply(code, eligibilityInput)
+  remove()
+  retry()
+}
+```
+
+`state` 宜表达互斥状态，例如 `idle/applying/applied/rejected`，而不是可能矛盾的多个布尔值。`retry` 使用上一次失败时的输入，不能悄悄读取后来变化的草稿。
+
+```ts
+useInventoryAvailability(itemIdentities): {
+  availability
+  status
+  error
+}
+```
+
+只接受订阅所需的稳定身份，不接受整个 checkout 对象。
+
+```ts
+usePaymentSession(existingSdkOptions): {
+  mountRef
+  status
+  error
+  confirm
+}
+```
+
+具体命名服从 SDK 现有契约。`confirm` 是能力，不应暴露原始 SDK 实例给页面。
+
+```ts
+useCheckoutSubmission({ placeOrder, confirmPayment }): {
+  state
+  submit(snapshot)
+}
+```
+
+这里可以传函数能力，不必为测试专门创建 repository/interface/class。若项目已有 mutation/query 层，应直接复用其取消、缓存和错误约定。
+
+## 异步与生命周期政策
+
+不同操作不能统一套用一种竞态处理：
+
+- 优惠券校验通常是“只发布最新结果”。即使取消旧请求，也仍需请求身份检查，确保旧请求的成功、失败和 `finally` 都不能覆盖新状态。
+- 库存订阅由 `useInventoryAvailability` 获取并释放。输入身份变化时先使旧订阅失效；旧回调不能更新新商品集合的状态。
+- 支付 SDK 由 `usePaymentSession` 完整拥有“创建—挂载—替换—销毁”。旧 effect 的 cleanup 只能释放自己创建的实例，不能误销毁后续实例。
+- 最终提交是写操作，不采用简单的 latest-wins。提交期间应本地禁用或拒绝重复触发；如果服务端已有幂等键，复用它。仅禁用按钮不能解决网络重试、多标签页或多客户端重复写入。
+- 写请求超时不等于失败。如果服务端契约不能证明安全重试，应保留“结果未知/需要核对”的诚实状态，而不是自动再次扣款或创建订单。
+- 页面卸载或支付会话被替换后，旧回调不得再发布当前错误或成功状态。
+
+优惠券有效性依赖哪些草稿字段，以及这些字段变化后是清除、保留还是重新校验，属于必须从现有行为确认的产品契约。重构时应显式保留该策略，不能借拆文件顺手改变。
+
+## 内部依赖方向
+
+```text
+index
+  -> CheckoutPage
+       -> UI components
+       -> form / coupon / inventory / payment / submission
+       -> model
+
+UI components
+  -> model types
+  -> 通过 props 接收值和命令
+
+form / coupon / inventory / payment / submission
+  -> model
+  -> 各自的外部 adapter
+
+external adapters
+  -> 项目已有 HTTP client、订阅设施或第三方 SDK
+
+model
+  -> 不依赖 React、UI、网络、浏览器 API 或 SDK
+```
+
+具体约束：
+
+- `pricing.ts` 不得导入 hooks、组件或 API。
+- adapter 不决定 toast、文案或页面跳转。
+- UI 不解析 transport DTO，也不直接读取 SDK 实例。
+- 各能力之间不要互相导入 hook。需要协调时由 `CheckoutPage` 或提交 workflow 接线。
+- feature 内部采用直接相对导入，不通过 `index.ts` 绕一圈，以免隐藏循环依赖。
+
+`CheckoutPage` 最终应能按执行顺序读懂：读取各能力输出、计算 summary、生成提交快照、渲染 UI。它可以有协调逻辑，但不重新保存各 hook 已经拥有的状态。
+
+## 错误展示
+
+建议保持错误来源，而不是建立一个万能错误数组：
+
+- 字段错误：由表单模块返回，并在对应字段附近呈现。
+- 优惠券拒绝：由优惠券模块返回，在优惠券入口附近呈现。
+- 库存变化：由库存模块提供领域状态，展示位置由相关 UI 决定。
+- 支付初始化或确认错误：支付模块将 SDK 错误归一化后返回。
+- 最终提交错误：提交模块区分可重试拒绝、未知结果及意外失败。
+- 页面级 alert 只负责可访问地展示和聚焦，不重新定义错误含义。
+
+同一个失败只应由一个层级负责通知，避免 hook toast 一次、页面再 toast 一次。
+
+## 测试放置
+
+测试靠近行为所有者，而不是集中建立一套按技术角色分类的测试目录。
+
+- `model/pricing.test.ts`
+  - 优惠适用与不适用。
+  - 舍入、零值、边界金额。
+  - 规则顺序。
+  - 只测试真实业务规则，不测试简单加法或私有函数。
+
+- `coupon/useCoupon.test.tsx`
+  - A 请求后发起 B，B 成功后 A 的成功、失败和 cleanup 都不能覆盖 B。
+  - retry 使用失败时的输入。
+  - eligibility 输入变化遵守既定的清除或重验策略。
+
+- `inventory/useInventoryAvailability.test.tsx`
+  - 身份变化时释放旧订阅并建立新订阅。
+  - 卸载后不再发布状态。
+  - 旧订阅回调不能污染新快照。
+
+- `payment/usePaymentSession.test.tsx`
+  - 初始化、挂载、替换、卸载的资源对应关系。
+  - 部分初始化失败时已获得的资源被释放。
+  - 只有 ready 状态可以确认支付。
+  - 使用 adapter fake，不把测试绑死在 SDK 私有实现上。
+
+- `submission/useCheckoutSubmission.test.tsx`
+  - 快速双击只触发允许的一次写操作。
+  - 提交使用点击时快照。
+  - 成功、明确失败和未知结果不会互相伪装。
+  - 页面卸载或会话替换后旧完成不会发布。
+
+- `CheckoutPage.test.tsx`
+  - 验证失败不会进入支付/下单。
+  - 优惠券结果反映在订单摘要。
+  - 库存变化影响既定的可提交行为。
+  - 支付或下单失败提供正确恢复入口。
+  - 测试用户可见行为，不断言内部 hook 调用次数来证明架构正确。
+
+支付 SDK 真正挂载、浏览器焦点和订阅清理若依赖真实 DOM/SDK，应另外保留一条浏览器或 SDK sandbox 集成测试；单元 fake 不能证明真实集成成功。
+
+## 推荐迁移顺序
+
+1. 先为现有竞态、重复提交和 SDK cleanup 补特征测试，锁定可观察行为。
+2. 提取 `pricing` 等纯规则，页面仍调用原有请求和 SDK。
+3. 逐个提取优惠券、库存、支付生命周期；每完成一个就验证原页面。
+4. 提取提交 workflow，明确稳定快照和重复提交政策。
+5. 最后按交互责任提取 UI 组件。
+6. 删除原页面中已迁移的状态、effect、旧 handler 和补偿逻辑，避免双重所有权。
+
+这样每一步都可独立审查，也不会同时改变结构和行为。
+
+## 停止继续拆分的条件
+
+满足以下条件后就应停止，而不是继续追求更多文件：
+
+- 每一份可写状态和外部资源都有唯一、明确的所有者。
+- 页面只协调能力，不复制能力内部状态。
+- 价格规则能独立于 React 和 I/O 测试。
+- 外部响应、SDK 与订阅细节没有泄漏进 UI。
+- 普通变更有明显入口，且不会跨多个无关技术目录。
+- 删除任一现有边界都会重新混合生命周期、错误策略或业务规则。
+- 剩余 helper 只服务一个所有者，与其一起变化，提取后反而增加跳转。
+- 新文件若只能叫 `utils`、`manager`、`common`，或只是参数原样转发，就不再提取。
+- 不为每个 JSX 块、每个类型或每个单函数建立目录和 barrel。
+
+用三个现实变化校验即可：
+
+- 更换支付 SDK：应主要修改 `paymentSdkAdapter`、支付生命周期及其测试，表单和价格规则稳定。
+- 修改优惠计算规则：应落在 `pricing` 及其测试，支付和库存模块稳定。
+- 改变库存订阅协议：应落在 `inventorySource` 和订阅 hook，订单摘要只消费不变的领域结果。
+
+如果这些变化仍会迫使维护者进入多个不相关模块，边界还在泄漏；如果进一步拆分只产生转发文件，当前粒度已经足够。
+
+本次按本地 Skill 的职责所有权、依赖方向和生命周期原则收敛了方案；`.frontend-architect` 保持未改动。由于仓库没有应用源码或测试配置，未执行代码修改、构建或测试。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.

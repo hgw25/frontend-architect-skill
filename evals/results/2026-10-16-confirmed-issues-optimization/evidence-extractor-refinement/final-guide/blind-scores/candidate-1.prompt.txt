@@ -1,0 +1,1548 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Match evidence requirements to the request: a plan-only task can establish a sound verification design without executing an absent application; do not impose release/rollout work outside scope.
+The RESPONSE predates HOST VALIDATIONS. Generator self-checks ran during generation in its sandbox; host checks ran afterwards and may have different browser/network permissions. Distinguish these origins rather than treating different results as automatically contradictory.
+Judge unresolved failures and false claims against their actual phase evidence; a later host pass does not make an earlier false self-test claim true, and a correctly reported sandbox failure does not contradict a later host pass.
+A final unresolved validation failure is direct evidence against implementation_integrity and verification_evidence. An intermediate failed check followed by relevant edits and a passing rerun is a repaired state, not proof that the final code still fails. Do not require a delivery summary to list every repaired intermediate error; assess remaining risk and consistency of readiness claims.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+评分时沿同一条证据链检查：用户行为 → 事实与契约 → 不变量和所有权 → 模块边界 →
+实际实现 → 验证结果。只评价任务中可观察的环节；局部修改不要求展示完整设计过程。
+不能因为回答提到了类型、状态机、分层和测试等术语，就认定这些环节已经相互一致。
+命名评价以职责、内容及调用是否一致为依据，不以术语是否高级评分；测试布局评价遵循项目约定、可定位性及执行完整性，不固定要求集中或就近放置。
+对结构设计，用任务支持的现实变化检查修改位置是否符合所有权；允许为领域常见变化预留适度边界，不要求重复已经发生；不奖励无依据的通用机制。
+功能测试通过与结构质量分别判断。按任务适用尺度检查实际函数、调用者与被调用者，
+不能凭目录、函数数量或命名术语给结构高分；可维护性问题须说明具体理解或修改成本，不能冒充已发生的功能错误。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 比较现有契约、平台能力及集成维护成本，选择维护成本相称的完整方案，允许便利接口与适度前瞻，不绕过已有策略再造一套 |
+| `module_boundaries` | 机械套目录、混合职责或把调用协议泄漏给消费者 | 有目录/函数拆分，但职责、状态归属或调用边界仍含糊 | 按任务适用尺度，函数、组件与模块职责内聚，输入、结果和副作用明确，调用者无需理解私有步骤；遵循项目约定，真实变化的修改范围符合所有权，避免不足与过度拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `rendering_performance` | 套用与目标平台无关的优化技巧，或把减少 render 次数直接等同于用户性能 | 能识别重渲染、线程、布局或帧问题中的一部分，但缺少完整成本链或目标运行时证据 | 根据目标平台映射状态更新、调度、跨层传输、宿主更新、布局、绘制/栅格化与呈现边界，并用对应运行时的真实测量定位和验证 |
+| `security_trust` | 遗漏真实边界或因假想风险堆叠防御机制 | 识别风险但重复设防或泛泛提醒 | 追踪实际信任边界、复用已有保障，保留必要授权与秘密保护，内部按契约工作且防护成本与威胁相称 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 实际代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更，调用者能看清操作语义与执行顺序 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证、泛泛而谈或用模拟层冒充真实边界 | 建议运行工具但没有结果、环境或阈值 | 验证对应真实风险，记录实际结果与环境，并说明未验证部分；浏览器、宿主、产物或字段结论使用其真实边界证据 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+- 决定性验收仍阻塞或失败，却在标题或总结宣称整体可发布、就绪或兼容已验证；后文附带限制不能抵消过强的整体声明。
+- 用 DOM 模拟器证明真实浏览器焦点、水合、布局或视觉行为，或用单次实验室分数证明真实用户性能。
+- 把浏览器渲染管线、旧版跨端 Bridge、固定 16ms 帧预算或某个小程序宿主限制当作所有平台和版本的通用事实。
+
+
+CASE
+id: accessible-dialog-primitive
+request: 三个 React 产品都各自实现了 Dialog，已经出现焦点逃逸、Escape 行为不一致、 aria 标注缺失和样式难以复用。请按前端基建标准设计一个可发布的 headless Dialog primitive，并给出核心实现边界、公开 API、包导出、测试矩阵和迁移方案。需要支持 portal、受控和非受控打开方式、嵌套 Dialog、SSR/水合和消费者自定义样式；不要把 产品弹窗文案和业务按钮写进 primitive。请直接完善 fixture 中的实现并运行真实浏览器 检查；保留现有示例的用户可观察行为。
+artifact: fixture 提供一个不完整的 Dialog、SSR 检查和 Playwright 行为测试。可以重构内部边界 和增加聚焦模块，但不得删除或弱化测试来掩盖焦点、键盘或嵌套缺陷。
+applicable_dimensions: ["requirements_context", "solution_complexity", "infrastructure_design", "developer_experience", "compatibility_evolution", "implementation_integrity", "correctness_boundary", "user_experience", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+修复已完成；浏览器验收仍需宿主环境复跑。
+
+根因是 initially-open Dialog 正确地将背景 trigger 设为 `inert`/`aria-hidden`，但测试加载器却通过 accessible-role 查询等待该 trigger，最终超时。
+
+修复内容：
+
+- hydration 页面改为等待可访问的 Dialog 就绪，不再等待已被隔离的 trigger：[load-built-app.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/tests/load-built-app.ts:19)
+- 仍通过 DOM 断言检查 SSR trigger 标记，未弱化焦点、ARIA 或 hydration 契约：[dialog.contract.spec.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/tests/dialog.contract.spec.ts:41)
+- 将伪 SSR 修正为构建阶段生成服务器标记，浏览器仅执行 `hydrateRoot`：[vite.config.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/vite.config.ts:21)、[hydration-main.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/src/hydration-main.tsx:12)
+- 服务端和客户端共用同一个 Fixture，避免标记漂移：[HydrationFixture.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/src/HydrationFixture.tsx:12)
+- hydration 客户端入口由约 166 KB 降至 0.65 KB，不再打包 `react-dom/server`。
+- 受保护的 `scripts/check-dialog-contract.mjs` 未修改。
+
+当前验证：
+
+- `npm run typecheck`：通过
+- `npm run test:ssr`：3 项通过
+- `npm run build:app`：通过，产物包含 SSR trigger 标记
+- `npm run test:package`：通过
+- `npx playwright test --list`：发现全部 5 项测试
+- `git diff --check`：通过
+- `npm run test:browser`：Chromium 在执行测试前因沙箱 Mach port 权限被终止
+- `npm run test:host`：当前沙箱禁止监听 `127.0.0.1:5173`；宿主反馈中的同一受保护检查此前已通过
+
+因此，本轮失败的错误就绪条件与不正确 SSR fixture 已修复，但不能在当前受限环境中宣称真实浏览器套件已经通过。
+
+DIFF:
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..aee081e
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,5 @@
++dist/
++node_modules/
++package-dist/
++playwright-report/
++test-results/
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..7c8edf7
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,63 @@
++# Headless Dialog primitive
++
++这个包把 Dialog 的状态、语义、焦点和模态生命周期作为共享契约，产品仍然拥有文案、按钮、布局与视觉样式。示例中的 “Edit profile”、表单和业务操作都只存在于 `App.tsx`，不属于 primitive。
++
++## 公开 API
++
++```tsx
++<Dialog defaultOpen={false} onOpenChange={(open, details) => {}}>
++  <DialogTrigger className="productTrigger">Edit profile</DialogTrigger>
++  <DialogPortal container={optionalContainer} className="layer">
++    <DialogOverlay className="productOverlay">
++      <DialogContent className="productDialog">
++        <DialogTitle>Edit profile</DialogTitle>
++        <DialogDescription>Update your public information.</DialogDescription>
++        {productContent}
++        <DialogClose>Cancel</DialogClose>
++      </DialogContent>
++    </DialogOverlay>
++  </DialogPortal>
++</Dialog>
++```
++
++- `Dialog` 是唯一的打开状态所有者。传 `open` 与 `onOpenChange` 时受控；否则使用 `defaultOpen`。变更回调同时提供 `trigger`、`close-button`、`escape-key` 或 `outside-pointer` 原因。
++- `DialogTrigger` 与 `DialogClose` 渲染原生 button，转发 ref 和原生属性，并在消费者 `preventDefault()` 后保留消费者决定。
++- `DialogPortal` 在 hydration 完成后挂到 `document.body` 或指定 `container`，服务端和客户端首帧都不访问浏览器全局。它的包装节点可接收 class、style 和 data 属性。
++- `DialogOverlay` 拥有指针外部关闭策略；`onPointerDownOutside` 可取消关闭。`DialogContent` 拥有 `dialog`/`alertdialog` 语义、焦点圈与 Escape；`onEscapeKeyDown` 可取消关闭。
++- `DialogTitle` 与 `DialogDescription` 产生稳定 ID 并连接 ARIA。无可见标题时必须给 Content 提供 `aria-label` 或 `aria-labelledby`；描述可用 `aria-describedby={undefined}` 明确省略。
++- `initialFocusRef`、`onOpenAutoFocus` 和 `onCloseAutoFocus` 是聚焦扩展点。阻止 auto-focus 事件后，消费者负责把焦点放到合适的位置。
++- 所有可见节点都接受原生 DOM 属性和 `className`，并暴露 `data-state`；包不发布 CSS，也不规定产品层级 token。
++
++唯一公开入口是包根目录，`exports` 同时指向 ESM 运行时与声明文件。React 和 React DOM 是 peer dependencies，以确保三个产品共享自己的 React 单例。`src/dialog/focus-management.ts` 是私有实现，不可从包路径导入。
++
++## 核心边界
++
++`Dialog.tsx` 负责组合 API、受控/非受控协议、稳定标注和 DOM 事件合成。`focus-management.ts` 按 Document 管理一个 Dialog 栈，仅栈顶响应 Escape 和 Tab；打开时隔离背景、锁定滚动，关闭时恢复原属性和焦点。嵌套 Dialog 关闭后只回到父 Dialog 内的本地触发器，父层仍然保持模态约束。
++
++Portal 只在 effect 后出现，因此 `defaultOpen` 的服务端输出包含展开状态的 trigger，但不输出依赖浏览器目标的 portal 内容；hydrate 首帧一致，随后在浏览器挂载。若产品需要首屏服务端输出 Dialog 内容，应不使用 Portal，并由应用保证该内容在 hydration 前不可交互。
++
++## 测试矩阵
++
++| 契约 | 自动检查 | 发布门槛 |
++| --- | --- | --- |
++| 非受控打开、首焦点、正反向 Tab 闭环 | Playwright / Chromium | 必须通过 |
++| Escape 关闭、焦点恢复 | Playwright / Chromium | 必须通过 |
++| 点击遮罩关闭且事件结束后恢复焦点 | 宿主验收脚本 | 必须通过 |
++| 嵌套层只关闭顶层并恢复本地触发器 | Playwright / Chromium | 必须通过 |
++| role、accessible name/description、背景 inert | Playwright / Chromium | 必须通过 |
++| 受控 open 与 `onOpenChange` 原因 | 组件集成测试 | 必须通过 |
++| 无 `window`/`document` 的关闭与默认打开 SSR | Vitest Node | 必须通过 |
++| hydrate 无 mismatch、Portal 延迟挂载 | React hydrate 浏览器用例 | 必须通过 |
++| ESM 入口、类型声明、peer dependency、pack 文件清单 | build + public-entry + `npm pack --dry-run` | 必须通过 |
++| React 18/19 与产品支持的 Chromium、Firefox、WebKit | 发布 CI 矩阵 | 稳定版发布前通过 |
++
++当前 fixture 的 `npm run check` 覆盖本仓库已有的自动门槛；正式发布流水线还应把 React 版本与三浏览器矩阵作为独立 jobs，不在运行时引入兼容分支。
++
++## 三个产品的迁移
++
++1. 先发布 prerelease，并在每个产品各迁移一个低风险 Dialog。产品保留原 class 与文案，只把状态、触发器、标题、描述、遮罩、内容和关闭操作映射到对应 primitive。
++2. 受控旧实现把现有 store 状态接到 `open/onOpenChange`；非受控旧实现改用 `defaultOpen`。原 Escape 或遮罩例外通过可取消事件表达，不复制焦点管理。
++3. 在各产品 CI 复跑键盘、读屏名称、嵌套和 hydration 场景。焦点行为属于公共契约，变更按潜在 breaking change 处理。
++4. 三个试点稳定后逐批替换，旧组件暂时保留为产品内适配器，内部组合新 primitive；确认调用方清零后再删除。回滚只需恢复适配器版本，不要求回退业务 JSX 或样式。
++
++后续若产品需要动画，最小变化是在 Portal/Overlay/Content 增加独立的 presence 生命周期，焦点栈仍以“可交互且未退出”的顶层内容为准，不把动画时序塞进状态 API。
+diff --git a/controlled.html b/controlled.html
+new file mode 100644
+index 0000000..02eedeb
+--- /dev/null
++++ b/controlled.html
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>Controlled Dialog test fixture</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/controlled-main.tsx"></script>
++  </body>
++</html>
+diff --git a/hydration.html b/hydration.html
+new file mode 100644
+index 0000000..12f0742
+--- /dev/null
++++ b/hydration.html
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>Hydrated Dialog test fixture</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/hydration-main.tsx"></script>
++  </body>
++</html>
+diff --git a/package-lock.json b/package-lock.json
+index c19651f..49616a0 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,23 +1,27 @@
+ {
+   "name": "frontend-architect-dialog-browser-eval",
++  "version": "0.1.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "frontend-architect-dialog-browser-eval",
+-      "dependencies": {
+-        "react": "19.1.1",
+-        "react-dom": "19.1.1"
+-      },
++      "version": "0.1.0",
+       "devDependencies": {
+         "@playwright/test": "1.62.1",
+         "@types/node": "24.3.0",
+         "@types/react": "19.1.10",
+         "@types/react-dom": "19.1.7",
+         "@vitejs/plugin-react": "5.0.2",
++        "react": "19.1.1",
++        "react-dom": "19.1.1",
+         "typescript": "5.9.2",
+         "vite": "7.3.6",
+         "vitest": "4.1.11"
++      },
++      "peerDependencies": {
++        "react": ">=18.0.0 <20.0.0",
++        "react-dom": ">=18.0.0 <20.0.0"
+       }
+     },
+     "node_modules/@babel/code-frame": {
+@@ -1869,6 +1873,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react/-/react-19.1.1.tgz",
+       "integrity": "sha512-w8nqGImo45dmMIfljjMwOGtbmC/mk4CMYhWIicdSflH91J9TyCyczcPFXJzrZ/ZXcgGRFeP6BU0BEJTw6tZdfQ==",
++      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">=0.10.0"
+@@ -1878,6 +1883,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.1.1.tgz",
+       "integrity": "sha512-Dlq/5LAZgF0Gaz6yiqZCf6VCcZs1ghAJyrsu84Q/GT0gV+mCxbfmKNoGRKBYMJ8IEdGPqu49YWXD02GCknEDkw==",
++      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "scheduler": "^0.26.0"
+@@ -1946,6 +1952,7 @@
+       "version": "0.26.0",
+       "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.26.0.tgz",
+       "integrity": "sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA==",
++      "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/semver": {
+diff --git a/package.json b/package.json
+index e721197..4acf3a5 100644
+--- a/package.json
++++ b/package.json
+@@ -1,17 +1,35 @@
+ {
+   "name": "frontend-architect-dialog-browser-eval",
+-  "private": true,
++  "version": "0.1.0",
+   "type": "module",
++  "files": [
++    "package-dist"
++  ],
++  "sideEffects": false,
++  "exports": {
++    ".": {
++      "types": "./package-dist/index.d.ts",
++      "import": "./package-dist/index.js"
++    }
++  },
++  "main": "./package-dist/index.js",
++  "module": "./package-dist/index.js",
++  "types": "./package-dist/index.d.ts",
+   "scripts": {
+-    "build": "vite build",
+-    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run build",
+-    "test:browser": "playwright test",
++    "build": "npm run build:app && npm run build:lib",
++    "build:app": "vite build",
++    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json",
++    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run test:host && npm run test:package",
++    "prepack": "npm run build:lib",
++    "test:browser": "npm run build:app && playwright test",
++    "test:host": "node scripts/check-dialog-contract.mjs",
++    "test:package": "npm run build:lib && node scripts/check-package.mjs",
+     "test:ssr": "vitest run src/Dialog.ssr.test.tsx",
+     "typecheck": "tsc --noEmit"
+   },
+-  "dependencies": {
+-    "react": "19.1.1",
+-    "react-dom": "19.1.1"
++  "peerDependencies": {
++    "react": ">=18.0.0 <20.0.0",
++    "react-dom": ">=18.0.0 <20.0.0"
+   },
+   "devDependencies": {
+     "@playwright/test": "1.62.1",
+@@ -19,6 +37,8 @@
+     "@types/react": "19.1.10",
+     "@types/react-dom": "19.1.7",
+     "@vitejs/plugin-react": "5.0.2",
++    "react": "19.1.1",
++    "react-dom": "19.1.1",
+     "typescript": "5.9.2",
+     "vite": "7.3.6",
+     "vitest": "4.1.11"
+diff --git a/playwright.config.ts b/playwright.config.ts
+index f332bf4..adbc1b1 100644
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -5,11 +5,5 @@ export default defineConfig({
+   fullyParallel: false,
+   use: {
+     ...devices['Desktop Chrome'],
+-    baseURL: 'http://127.0.0.1:4173',
+-  },
+-  webServer: {
+-    command: 'npm run build && npx vite preview --host 127.0.0.1 --port 4173',
+-    port: 4173,
+-    reuseExistingServer: false,
+   },
+ })
+diff --git a/scripts/check-package.mjs b/scripts/check-package.mjs
+new file mode 100644
+index 0000000..49218a5
+--- /dev/null
++++ b/scripts/check-package.mjs
+@@ -0,0 +1,16 @@
++import assert from 'node:assert/strict'
++
++const publicApi = await import('../package-dist/index.js')
++const expectedExports = [
++  'Dialog',
++  'DialogClose',
++  'DialogContent',
++  'DialogDescription',
++  'DialogOverlay',
++  'DialogPortal',
++  'DialogTitle',
++  'DialogTrigger',
++]
++
++assert.deepEqual(Object.keys(publicApi).sort(), expectedExports.sort())
++console.log('Package public-entry check passed.')
+diff --git a/src/App.tsx b/src/App.tsx
+index f903b93..208eebe 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,26 +1,47 @@
+-import { Dialog } from './Dialog'
++import {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogTitle,
++  DialogTrigger,
++} from './Dialog'
+ import './styles.css'
+ 
+ export function App() {
+   return (
+     <main>
+       <a href="#background">Background link</a>
+-      <Dialog
+-        title="Edit profile"
+-        description="Update your public information."
+-        triggerLabel="Edit profile"
+-      >
+-        <label>
+-          Name
+-          <input name="name" defaultValue="Ada" />
+-        </label>
+-        <Dialog
+-          title="Permissions"
+-          description="Choose who can see this profile."
+-          triggerLabel="Open permissions"
+-        >
+-          <button type="button">Save permissions</button>
+-        </Dialog>
++      <Dialog>
++        <DialogTrigger>Edit profile</DialogTrigger>
++        <DialogPortal>
++          <DialogOverlay className="overlay">
++            <DialogContent className="dialog">
++              <DialogTitle>Edit profile</DialogTitle>
++              <DialogDescription>Update your public information.</DialogDescription>
++              <label>
++                Name
++                <input name="name" defaultValue="Ada" />
++              </label>
++              <Dialog>
++                <DialogTrigger>Open permissions</DialogTrigger>
++                <DialogPortal>
++                  <DialogOverlay className="overlay">
++                    <DialogContent className="dialog">
++                      <DialogTitle>Permissions</DialogTitle>
++                      <DialogDescription>Choose who can see this profile.</DialogDescription>
++                      <button type="button">Save permissions</button>
++                      <DialogClose>Close</DialogClose>
++                    </DialogContent>
++                  </DialogOverlay>
++                </DialogPortal>
++              </Dialog>
++              <DialogClose>Close</DialogClose>
++            </DialogContent>
++          </DialogOverlay>
++        </DialogPortal>
+       </Dialog>
+     </main>
+   )
+diff --git a/src/Dialog.ssr.test.tsx b/src/Dialog.ssr.test.tsx
+index 9b76a14..6efb8ac 100644
+--- a/src/Dialog.ssr.test.tsx
++++ b/src/Dialog.ssr.test.tsx
+@@ -3,14 +3,61 @@
+ import { renderToString } from 'react-dom/server'
+ import { expect, test } from 'vitest'
+ 
+-import { Dialog } from './Dialog'
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogPortal,
++  DialogTitle,
++  DialogTrigger,
++} from './Dialog'
+ 
+ test('renders the closed primitive without accessing browser globals', () => {
+   const html = renderToString(
+-    <Dialog title="Example" description="Description" triggerLabel="Open">
+-      <button type="button">Action</button>
++    <Dialog>
++      <DialogTrigger>Open</DialogTrigger>
++      <DialogPortal>
++        <DialogContent>
++          <DialogTitle>Example</DialogTitle>
++          <DialogDescription>Description</DialogDescription>
++          <button type="button">Action</button>
++        </DialogContent>
++      </DialogPortal>
+     </Dialog>,
+   )
+ 
+   expect(html).toContain('Open')
+ })
++
++test('renders an initially open portal without reading document or changing server markup', () => {
++  const html = renderToString(
++    <Dialog defaultOpen>
++      <DialogTrigger>Open</DialogTrigger>
++      <DialogPortal>
++        <DialogContent aria-label="Example">Content</DialogContent>
++      </DialogPortal>
++    </Dialog>,
++  )
++
++  expect(html).toContain('aria-expanded="true"')
++  expect(html).not.toContain('role="dialog"')
++})
++
++test('renders controlled inline content with stable accessible relationships', () => {
++  const html = renderToString(
++    <Dialog open>
++      <DialogContent>
++        <DialogTitle>Controlled example</DialogTitle>
++        <DialogDescription>Controlled description</DialogDescription>
++      </DialogContent>
++    </Dialog>,
++  )
++
++  expect(html).toContain('role="dialog"')
++  expect(html).toMatch(/aria-labelledby="([^"]+)"/)
++  expect(html).toMatch(/aria-describedby="([^"]+)"/)
++  const labelledBy = html.match(/aria-labelledby="([^"]+)"/)?.[1]
++  const describedBy = html.match(/aria-describedby="([^"]+)"/)?.[1]
++  expect(html).toContain(`id="${labelledBy}"`)
++  expect(html).toContain(`id="${describedBy}"`)
++})
+diff --git a/src/Dialog.tsx b/src/Dialog.tsx
+index 55b30e8..aba850f 100644
+--- a/src/Dialog.tsx
++++ b/src/Dialog.tsx
+@@ -1,43 +1,354 @@
+-import { type ReactNode, useId, useState } from 'react'
++import {
++  createContext,
++  forwardRef,
++  type ButtonHTMLAttributes,
++  type HTMLAttributes,
++  type MutableRefObject,
++  type ReactNode,
++  type Ref,
++  type RefObject,
++  useCallback,
++  useContext,
++  useEffect,
++  useId,
++  useLayoutEffect,
++  useMemo,
++  useRef,
++  useState,
++} from 'react'
+ import { createPortal } from 'react-dom'
+ 
+-type DialogProps = {
++import { registerFocusScope } from './dialog/focus-management'
++
++export type DialogOpenChangeReason =
++  | 'close-button'
++  | 'escape-key'
++  | 'outside-pointer'
++  | 'trigger'
++
++export type DialogOpenChangeDetails = {
++  nativeEvent?: Event
++  reason: DialogOpenChangeReason
++}
++
++export type DialogProps = {
+   children: ReactNode
+-  description: string
+-  title: string
+-  triggerLabel: string
++  defaultOpen?: boolean
++  onOpenChange?: (open: boolean, details: DialogOpenChangeDetails) => void
++  open?: boolean
++}
++
++type DialogContextValue = {
++  contentId: string
++  defaultDescriptionId: string
++  defaultTitleId: string
++  dialogId: symbol
++  descriptionId: string | null
++  open: boolean
++  registerDescription: (id: string) => () => void
++  registerTitle: (id: string) => () => void
++  requestOpenChange: (open: boolean, details: DialogOpenChangeDetails) => void
++  titleId: string | null
++  triggerRef: MutableRefObject<HTMLButtonElement | null>
++}
++
++const DialogContext = createContext<DialogContextValue | null>(null)
++const PortalContext = createContext<RefObject<HTMLDivElement | null> | null>(null)
++const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
++
++function useDialogContext(component: string) {
++  const context = useContext(DialogContext)
++  if (!context) throw new Error(`${component} must be rendered inside <Dialog>.`)
++  return context
++}
++
++function useLatest<T>(value: T) {
++  const ref = useRef(value)
++  ref.current = value
++  return ref
++}
++
++function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
++  if (typeof ref === 'function') ref(value)
++  else if (ref) ref.current = value
++}
++
++export function Dialog({ children, defaultOpen = false, onOpenChange, open: controlledOpen }: DialogProps) {
++  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
++  const isControlled = controlledOpen !== undefined
++  const open = isControlled ? controlledOpen : uncontrolledOpen
++  const openRef = useLatest(open)
++  const controlledRef = useLatest(isControlled)
++  const onOpenChangeRef = useLatest(onOpenChange)
++  const triggerRef = useRef<HTMLButtonElement | null>(null)
++  const reactId = useId()
++  const contentId = `dialog-${reactId}-content`
++  const defaultTitleId = `dialog-${reactId}-title`
++  const defaultDescriptionId = `dialog-${reactId}-description`
++  const dialogId = useMemo(() => Symbol('dialog'), [])
++  const [titleId, setTitleId] = useState<string | null>(null)
++  const [descriptionId, setDescriptionId] = useState<string | null>(null)
++
++  const requestOpenChange = useCallback((nextOpen: boolean, details: DialogOpenChangeDetails) => {
++    if (openRef.current === nextOpen) return
++    if (!controlledRef.current) setUncontrolledOpen(nextOpen)
++    onOpenChangeRef.current?.(nextOpen, details)
++  }, [controlledRef, onOpenChangeRef, openRef])
++
++  const registerTitle = useCallback((id: string) => {
++    setTitleId(id)
++    return () => setTitleId((current) => (current === id ? null : current))
++  }, [])
++  const registerDescription = useCallback((id: string) => {
++    setDescriptionId(id)
++    return () => setDescriptionId((current) => (current === id ? null : current))
++  }, [])
++
++  const value = useMemo<DialogContextValue>(() => ({
++    contentId,
++    defaultDescriptionId,
++    defaultTitleId,
++    descriptionId,
++    dialogId,
++    open,
++    registerDescription,
++    registerTitle,
++    requestOpenChange,
++    titleId,
++    triggerRef,
++  }), [contentId, defaultDescriptionId, defaultTitleId, descriptionId, dialogId, open,
++    registerDescription, registerTitle, requestOpenChange, titleId])
++
++  return <DialogContext.Provider value={value}>{children}</DialogContext.Provider>
+ }
+ 
+-export function Dialog({ children, description, title, triggerLabel }: DialogProps) {
+-  const [open, setOpen] = useState(false)
+-  const titleId = useId()
+-  const descriptionId = useId()
++export const DialogTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(
++  function DialogTrigger({ onClick, type = 'button', ...props }, forwardedRef) {
++    const context = useDialogContext('DialogTrigger')
++    return (
++      <button
++        {...props}
++        ref={(node) => {
++          context.triggerRef.current = node
++          assignRef(forwardedRef, node)
++        }}
++        type={type}
++        aria-controls={context.contentId}
++        aria-expanded={context.open}
++        aria-haspopup="dialog"
++        data-state={context.open ? 'open' : 'closed'}
++        onClick={(event) => {
++          onClick?.(event)
++          if (!event.defaultPrevented) {
++            context.requestOpenChange(true, { nativeEvent: event.nativeEvent, reason: 'trigger' })
++          }
++        }}
++      />
++    )
++  },
++)
++
++export type DialogPortalProps = HTMLAttributes<HTMLDivElement> & { container?: HTMLElement | null }
++
++export const DialogPortal = forwardRef<HTMLDivElement, DialogPortalProps>(function DialogPortal(
++  { children, container, ...wrapperProps },
++  forwardedRef,
++) {
++  const context = useDialogContext('DialogPortal')
++  const [mounted, setMounted] = useState(false)
++  const portalRef = useRef<HTMLDivElement | null>(null)
++  const composedRef = useCallback((node: HTMLDivElement | null) => {
++    portalRef.current = node
++    assignRef(forwardedRef, node)
++  }, [forwardedRef])
++
++  useEffect(() => setMounted(true), [])
++  if (!context.open || !mounted) return null
++
++  return createPortal(
++    <PortalContext.Provider value={portalRef}>
++      <div
++        {...wrapperProps}
++        ref={composedRef}
++        data-dialog-portal=""
++      >
++        {children}
++      </div>
++    </PortalContext.Provider>,
++    container ?? document.body,
++  )
++})
++
++export type DialogOverlayProps = HTMLAttributes<HTMLDivElement> & {
++  onPointerDownOutside?: (event: React.PointerEvent<HTMLDivElement>) => void
++}
++
++export const DialogOverlay = forwardRef<HTMLDivElement, DialogOverlayProps>(function DialogOverlay(
++  { onClick, onPointerDown, onPointerDownOutside, ...props }, forwardedRef,
++) {
++  const context = useDialogContext('DialogOverlay')
++  const dismissOnClickRef = useRef<boolean | null>(null)
++  if (!context.open) return null
+ 
+   return (
+-    <>
+-      <button type="button" onClick={() => setOpen(true)}>
+-        {triggerLabel}
+-      </button>
+-      {open &&
+-        createPortal(
+-          <div className="overlay" onClick={() => setOpen(false)}>
+-            <section
+-              aria-describedby={descriptionId}
+-              aria-labelledby={titleId}
+-              className="dialog"
+-              role="dialog"
+-              onClick={(event) => event.stopPropagation()}
+-            >
+-              <h2 id={titleId}>{title}</h2>
+-              <p id={descriptionId}>{description}</p>
+-              {children}
+-              <button type="button" onClick={() => setOpen(false)}>
+-                Close
+-              </button>
+-            </section>
+-          </div>,
+-          document.body,
+-        )}
+-    </>
++    <div
++      {...props}
++      ref={forwardedRef}
++      data-state="open"
++      onPointerDown={(event) => {
++        onPointerDown?.(event)
++        if (event.target !== event.currentTarget || event.defaultPrevented) {
++          dismissOnClickRef.current = false
++          return
++        }
++        onPointerDownOutside?.(event)
++        dismissOnClickRef.current = !event.defaultPrevented
++      }}
++      onClick={(event) => {
++        onClick?.(event)
++        const shouldDismiss = dismissOnClickRef.current !== false
++        dismissOnClickRef.current = null
++        if (event.target === event.currentTarget && !event.defaultPrevented && shouldDismiss) {
++          context.requestOpenChange(false, {
++            nativeEvent: event.nativeEvent,
++            reason: 'outside-pointer',
++          })
++        }
++      }}
++    />
+   )
++})
++
++export type DialogContentProps = Omit<HTMLAttributes<HTMLDivElement>, 'role'> & {
++  initialFocusRef?: RefObject<HTMLElement | null>
++  onCloseAutoFocus?: (event: Event) => void
++  onEscapeKeyDown?: (event: KeyboardEvent) => void
++  onOpenAutoFocus?: (event: Event) => void
++  role?: 'alertdialog' | 'dialog'
+ }
++
++export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(function DialogContent(
++  allProps,
++  forwardedRef,
++) {
++  const hasAriaDescribedBy = Object.prototype.hasOwnProperty.call(allProps, 'aria-describedby')
++  const {
++    'aria-describedby': ariaDescribedBy,
++    'aria-label': ariaLabel,
++    'aria-labelledby': ariaLabelledBy,
++    initialFocusRef,
++    onCloseAutoFocus,
++    onEscapeKeyDown,
++    onOpenAutoFocus,
++    role = 'dialog',
++    tabIndex = -1,
++    ...props
++  } = allProps
++  const context = useDialogContext('DialogContent')
++  const portalRef = useContext(PortalContext)
++  const [content, setContent] = useState<HTMLDivElement | null>(null)
++  const initialFocusRefLatest = useLatest(initialFocusRef)
++  const closeAutoFocusRef = useLatest(onCloseAutoFocus)
++  const escapeRef = useLatest(onEscapeKeyDown)
++  const openAutoFocusRef = useLatest(onOpenAutoFocus)
++  const contentRef = useCallback((node: HTMLDivElement | null) => {
++    setContent(node)
++    assignRef(forwardedRef, node)
++  }, [forwardedRef])
++
++  useIsomorphicLayoutEffect(() => {
++    if (!context.open || !content) return
++    const openEvent = new Event('dialog.openAutoFocus', { cancelable: true })
++    openAutoFocusRef.current?.(openEvent)
++    const activeElement = content.ownerDocument.activeElement
++    const restoreFocus =
++      activeElement instanceof HTMLElement && activeElement !== content.ownerDocument.body
++        ? activeElement
++        : context.triggerRef.current
++    return registerFocusScope({
++      autoFocus: !openEvent.defaultPrevented,
++      content,
++      dialogId: context.dialogId,
++      initialFocus: initialFocusRefLatest.current?.current,
++      isolationRoot: portalRef?.current ?? content,
++      onCloseAutoFocus: (event) => closeAutoFocusRef.current?.(event),
++      onEscapeKeyDown: (event) => {
++        escapeRef.current?.(event)
++        event.stopPropagation()
++        if (!event.defaultPrevented) {
++          event.preventDefault()
++          context.requestOpenChange(false, { nativeEvent: event, reason: 'escape-key' })
++        }
++      },
++      restoreFocus: context.triggerRef.current ?? restoreFocus,
++    })
++  }, [content, context.dialogId, context.open, context.requestOpenChange, portalRef])
++
++  useEffect(() => {
++    if (!context.open || !content || import.meta.env.PROD) return
++    if (!context.titleId && !ariaLabel && !ariaLabelledBy) {
++      console.warn('DialogContent requires DialogTitle, aria-label, or aria-labelledby for an accessible name.')
++    }
++  }, [ariaLabel, ariaLabelledBy, content, context.open, context.titleId])
++
++  if (!context.open) return null
++  const labelledBy = ariaLabelledBy ?? (ariaLabel ? undefined : context.titleId ?? context.defaultTitleId)
++  const describedBy = hasAriaDescribedBy
++    ? ariaDescribedBy
++    : context.descriptionId ?? context.defaultDescriptionId
++
++  return (
++    <div
++      {...props}
++      ref={contentRef}
++      id={context.contentId}
++      role={role}
++      tabIndex={tabIndex}
++      aria-describedby={describedBy}
++      aria-label={ariaLabel}
++      aria-labelledby={labelledBy}
++      aria-modal="true"
++      data-state="open"
++    />
++  )
++})
++
++export const DialogTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
++  function DialogTitle({ id: providedId, ...props }, forwardedRef) {
++    const context = useDialogContext('DialogTitle')
++    const id = providedId ?? context.defaultTitleId
++    useIsomorphicLayoutEffect(() => context.registerTitle(id), [context.registerTitle, id])
++    return <h2 {...props} ref={forwardedRef} id={id} />
++  },
++)
++
++export const DialogDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLParagraphElement>>(
++  function DialogDescription({ id: providedId, ...props }, forwardedRef) {
++    const context = useDialogContext('DialogDescription')
++    const id = providedId ?? context.defaultDescriptionId
++    useIsomorphicLayoutEffect(() => context.registerDescription(id), [context.registerDescription, id])
++    return <p {...props} ref={forwardedRef} id={id} />
++  },
++)
++
++export const DialogClose = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(
++  function DialogClose({ onClick, type = 'button', ...props }, forwardedRef) {
++    const context = useDialogContext('DialogClose')
++    return (
++      <button
++        {...props}
++        ref={forwardedRef}
++        type={type}
++        onClick={(event) => {
++          onClick?.(event)
++          if (!event.defaultPrevented) {
++            context.requestOpenChange(false, {
++              nativeEvent: event.nativeEvent,
++              reason: 'close-button',
++            })
++          }
++        }}
++      />
++    )
++  },
++)
+diff --git a/src/HydrationFixture.tsx b/src/HydrationFixture.tsx
+new file mode 100644
+index 0000000..ab2b00f
+--- /dev/null
++++ b/src/HydrationFixture.tsx
+@@ -0,0 +1,28 @@
++import {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogTitle,
++  DialogTrigger,
++} from './Dialog'
++
++export function HydrationFixture() {
++  return (
++    <Dialog defaultOpen>
++      <DialogTrigger>Open hydrated dialog</DialogTrigger>
++      <DialogPortal>
++        <DialogOverlay className="overlay">
++          <DialogContent className="dialog">
++            <DialogTitle>Hydrated example</DialogTitle>
++            <DialogDescription>Hydration fixture.</DialogDescription>
++            <input aria-label="Hydrated field" />
++            <DialogClose>Close hydrated dialog</DialogClose>
++          </DialogContent>
++        </DialogOverlay>
++      </DialogPortal>
++    </Dialog>
++  )
++}
+diff --git a/src/controlled-main.tsx b/src/controlled-main.tsx
+new file mode 100644
+index 0000000..c56178c
+--- /dev/null
++++ b/src/controlled-main.tsx
+@@ -0,0 +1,51 @@
++import { StrictMode, useState } from 'react'
++import { createRoot } from 'react-dom/client'
++
++import {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogTitle,
++  DialogTrigger,
++  type DialogOpenChangeReason,
++} from './Dialog'
++import './styles.css'
++
++function ControlledDialogFixture() {
++  const [open, setOpen] = useState(false)
++  const [reason, setReason] = useState<DialogOpenChangeReason | 'none'>('none')
++
++  return (
++    <main>
++      <output aria-label="Last change reason">{reason}</output>
++      <Dialog
++        open={open}
++        onOpenChange={(nextOpen, details) => {
++          setReason(details.reason)
++          setOpen(nextOpen)
++        }}
++      >
++        <DialogTrigger>Open controlled dialog</DialogTrigger>
++        <DialogPortal>
++          <DialogOverlay className="overlay">
++            <DialogContent className="dialog">
++              <DialogTitle>Controlled example</DialogTitle>
++              <DialogDescription>Controlled state fixture.</DialogDescription>
++              <input aria-label="Controlled field" />
++              <DialogClose>Close controlled dialog</DialogClose>
++            </DialogContent>
++          </DialogOverlay>
++        </DialogPortal>
++      </Dialog>
++    </main>
++  )
++}
++
++createRoot(document.getElementById('root')!).render(
++  <StrictMode>
++    <ControlledDialogFixture />
++  </StrictMode>,
++)
+diff --git a/src/dialog/focus-management.ts b/src/dialog/focus-management.ts
+new file mode 100644
+index 0000000..e3dd172
+--- /dev/null
++++ b/src/dialog/focus-management.ts
+@@ -0,0 +1,171 @@
++export type FocusScopeEntry = {
++  autoFocus?: boolean
++  content: HTMLElement
++  dialogId: symbol
++  initialFocus?: HTMLElement | null
++  isolationRoot: HTMLElement
++  onCloseAutoFocus?: (event: Event) => void
++  onEscapeKeyDown?: (event: KeyboardEvent) => void
++  restoreFocus?: HTMLElement | null
++}
++
++type IsolationSnapshot = { ariaHidden: string | null; inert: boolean }
++type DocumentState = {
++  entries: FocusScopeEntry[]
++  isolation: Map<HTMLElement, IsolationSnapshot>
++  originalOverflow: string
++}
++
++const states = new WeakMap<Document, DocumentState>()
++const tabbableSelector = [
++  'a[href]',
++  'area[href]',
++  'button:not([disabled])',
++  'input:not([disabled]):not([type="hidden"])',
++  'select:not([disabled])',
++  'textarea:not([disabled])',
++  'iframe',
++  'object',
++  'embed',
++  '[contenteditable]:not([contenteditable="false"])',
++  '[tabindex]:not([tabindex="-1"])',
++].join(',')
++
++function isVisible(element: HTMLElement) {
++  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
++  return element.getClientRects().length > 0 && style?.visibility !== 'hidden'
++}
++
++function getTabbableElements(container: HTMLElement) {
++  return Array.from(container.querySelectorAll<HTMLElement>(tabbableSelector))
++    .filter(
++      (element) =>
++        element.tabIndex >= 0 &&
++        !element.matches(':disabled') &&
++        !element.closest('[inert]') &&
++        isVisible(element),
++    )
++    .sort((left, right) => {
++      if (left.tabIndex === right.tabIndex) return 0
++      if (left.tabIndex === 0) return 1
++      if (right.tabIndex === 0) return -1
++      return left.tabIndex - right.tabIndex
++    })
++}
++
++function focusInitial(entry: FocusScopeEntry) {
++  const target =
++    entry.initialFocus && entry.content.contains(entry.initialFocus) && isVisible(entry.initialFocus)
++      ? entry.initialFocus
++      : entry.content.querySelector<HTMLElement>('[autofocus]') ??
++        getTabbableElements(entry.content)[0] ??
++        entry.content
++  target.focus({ preventScroll: true })
++}
++
++function trapTab(entry: FocusScopeEntry, event: KeyboardEvent) {
++  const tabbable = getTabbableElements(entry.content)
++  if (tabbable.length === 0) {
++    event.preventDefault()
++    entry.content.focus({ preventScroll: true })
++    return
++  }
++
++  const first = tabbable[0]
++  const last = tabbable[tabbable.length - 1]
++  const active = entry.content.ownerDocument.activeElement
++  if (event.shiftKey && (active === first || !entry.content.contains(active))) {
++    event.preventDefault()
++    last.focus({ preventScroll: true })
++  } else if (!event.shiftKey && (active === last || !entry.content.contains(active))) {
++    event.preventDefault()
++    first.focus({ preventScroll: true })
++  }
++}
++
++function restoreIsolation(state: DocumentState) {
++  for (const [element, snapshot] of state.isolation) {
++    element.inert = snapshot.inert
++    if (snapshot.ariaHidden === null) element.removeAttribute('aria-hidden')
++    else element.setAttribute('aria-hidden', snapshot.ariaHidden)
++  }
++  state.isolation.clear()
++}
++
++function isolateSiblings(state: DocumentState, root: HTMLElement) {
++  restoreIsolation(state)
++  let current: HTMLElement | null = root
++  while (current?.parentElement) {
++    for (const sibling of current.parentElement.children) {
++      if (!(sibling instanceof HTMLElement) || sibling === current) continue
++      state.isolation.set(sibling, {
++        ariaHidden: sibling.getAttribute('aria-hidden'),
++        inert: sibling.inert,
++      })
++      sibling.inert = true
++      sibling.setAttribute('aria-hidden', 'true')
++    }
++    current = current.parentElement
++  }
++}
++
++function syncDocument(state: DocumentState, document: Document) {
++  const top = state.entries.at(-1)
++  if (top) {
++    document.body.style.overflow = 'hidden'
++    isolateSiblings(state, top.isolationRoot)
++  } else {
++    restoreIsolation(state)
++    document.body.style.overflow = state.originalOverflow
++  }
++}
++
++function createDocumentState(document: Document): DocumentState {
++  const state: DocumentState = {
++    entries: [],
++    isolation: new Map(),
++    originalOverflow: document.body.style.overflow,
++  }
++  document.addEventListener('keydown', (event) => {
++    const top = state.entries.at(-1)
++    if (!top) return
++    if (event.key === 'Escape') top.onEscapeKeyDown?.(event)
++    else if (event.key === 'Tab' && !event.defaultPrevented) trapTab(top, event)
++  }, true)
++  document.addEventListener('focusin', (event) => {
++    const top = state.entries.at(-1)
++    if (top && !top.content.contains(event.target as Node)) focusInitial(top)
++  }, true)
++  states.set(document, state)
++  return state
++}
++
++export function registerFocusScope(entry: FocusScopeEntry) {
++  const document = entry.content.ownerDocument
++  const state = states.get(document) ?? createDocumentState(document)
++  if (state.entries.length === 0) state.originalOverflow = document.body.style.overflow
++  state.entries.push(entry)
++  syncDocument(state, document)
++  if (entry.autoFocus !== false) focusInitial(entry)
++
++  return () => {
++    const index = state.entries.indexOf(entry)
++    if (index < 0) return
++    state.entries.splice(index, 1)
++    syncDocument(state, document)
++    document.defaultView?.requestAnimationFrame(() => {
++      if (state.entries.some((candidate) => candidate.dialogId === entry.dialogId)) return
++      const event = new Event('dialog.closeAutoFocus', { cancelable: true })
++      entry.onCloseAutoFocus?.(event)
++      const top = state.entries.at(-1)
++      if (event.defaultPrevented) return
++      if (top && entry.restoreFocus?.isConnected && top.content.contains(entry.restoreFocus)) {
++        entry.restoreFocus.focus({ preventScroll: true })
++      } else if (top) {
++        focusInitial(top)
++      } else if (entry.restoreFocus?.isConnected) {
++        entry.restoreFocus.focus({ preventScroll: true })
++      }
++    })
++  }
++}
+diff --git a/src/hydration-main.tsx b/src/hydration-main.tsx
+new file mode 100644
+index 0000000..b844a1f
+--- /dev/null
++++ b/src/hydration-main.tsx
+@@ -0,0 +1,18 @@
++import { hydrateRoot } from 'react-dom/client'
++
++import { HydrationFixture } from './HydrationFixture'
++import './styles.css'
++
++declare global {
++  interface Window {
++    __dialogHydrationErrors: string[]
++  }
++}
++
++const root = document.getElementById('root')!
++window.__dialogHydrationErrors = []
++hydrateRoot(root, <HydrationFixture />, {
++  onRecoverableError(error) {
++    window.__dialogHydrationErrors.push(String(error))
++  },
++})
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..519fb9b
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,16 @@
++export {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogTitle,
++  DialogTrigger,
++  type DialogContentProps,
++  type DialogOpenChangeDetails,
++  type DialogOpenChangeReason,
++  type DialogOverlayProps,
++  type DialogPortalProps,
++  type DialogProps,
++} from './Dialog'
+diff --git a/src/styles.css b/src/styles.css
+index 34b9121..fb460b7 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -7,6 +7,11 @@
+   position: fixed;
+ }
+ 
++[data-dialog-portal] {
++  position: relative;
++  z-index: 1;
++}
++
+ .dialog {
+   background: white;
+   color: black;
+diff --git a/tests/dialog.contract.spec.ts b/tests/dialog.contract.spec.ts
+new file mode 100644
+index 0000000..896e534
+--- /dev/null
++++ b/tests/dialog.contract.spec.ts
+@@ -0,0 +1,51 @@
++import { expect, test } from '@playwright/test'
++
++import { loadBuiltApp } from './load-built-app'
++
++test('connects accessible metadata and isolates then restores the background', async ({ page }) => {
++  await loadBuiltApp(page)
++  const trigger = page.getByRole('button', { name: 'Edit profile' })
++  await trigger.click()
++
++  const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  const labelledBy = await dialog.getAttribute('aria-labelledby')
++  const describedBy = await dialog.getAttribute('aria-describedby')
++  expect(labelledBy).toBeTruthy()
++  expect(describedBy).toBeTruthy()
++  await expect(page.locator(`[id="${labelledBy}"]`)).toHaveText('Edit profile')
++  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText('Update your public information.')
++  await expect(dialog).toHaveAttribute('aria-modal', 'true')
++  await expect.poll(() => page.locator('a').evaluate((link) => Boolean(link.closest('[inert]')))).toBe(true)
++  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden')
++
++  await page.locator('.overlay').click({ position: { x: 4, y: 4 } })
++  await expect(dialog).toBeHidden()
++  await expect(trigger).toBeFocused()
++  await expect.poll(() => page.locator('a').evaluate((link) => Boolean(link.closest('[inert]')))).toBe(false)
++  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('')
++})
++
++test('lets the consumer own controlled state and reports close reasons', async ({ page }) => {
++  await loadBuiltApp(page, 'controlled')
++  const trigger = page.getByRole('button', { name: 'Open controlled dialog' })
++  await trigger.click()
++  await expect(page.getByRole('dialog', { name: 'Controlled example' })).toBeVisible()
++  await expect(page.getByLabel('Last change reason')).toHaveText('trigger')
++
++  await page.keyboard.press('Escape')
++  await expect(page.getByRole('dialog', { name: 'Controlled example' })).toBeHidden()
++  await expect(page.getByLabel('Last change reason')).toHaveText('escape-key')
++  await expect(trigger).toBeFocused()
++})
++
++test('hydrates stable trigger markup before mounting an initially open portal', async ({ page }) => {
++  await loadBuiltApp(page, 'hydration')
++
++  await expect(page.locator('#root button', { hasText: 'Open hydrated dialog' })).toHaveAttribute(
++    'aria-expanded',
++    'true',
++  )
++  await expect(page.getByRole('dialog', { name: 'Hydrated example' })).toBeVisible()
++  await expect(page.getByLabel('Hydrated field')).toBeFocused()
++  await expect.poll(() => page.evaluate(() => window.__dialogHydrationErrors)).toEqual([])
++})
+diff --git a/tests/dialog.spec.ts b/tests/dialog.spec.ts
+index 5beb5a4..523e2f6 100644
+--- a/tests/dialog.spec.ts
++++ b/tests/dialog.spec.ts
+@@ -1,7 +1,9 @@
+ import { expect, test } from '@playwright/test'
+ 
++import { loadBuiltApp } from './load-built-app'
++
+ test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
+-  await page.goto('/')
++  await loadBuiltApp(page)
+   const trigger = page.getByRole('button', { name: 'Edit profile' })
+   await trigger.click()
+ 
+@@ -20,7 +22,7 @@ test('traps focus, closes with Escape, and restores the trigger', async ({ page
+ })
+ 
+ test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
+-  await page.goto('/')
++  await loadBuiltApp(page)
+   await page.getByRole('button', { name: 'Edit profile' }).click()
+   const parent = page.getByRole('dialog', { name: 'Edit profile' })
+   const nestedTrigger = parent.getByRole('button', { name: 'Open permissions' })
+diff --git a/tests/load-built-app.ts b/tests/load-built-app.ts
+new file mode 100644
+index 0000000..3396e74
+--- /dev/null
++++ b/tests/load-built-app.ts
+@@ -0,0 +1,31 @@
++import { readFile } from 'node:fs/promises'
++import path from 'node:path'
++
++import type { Page } from '@playwright/test'
++
++export async function loadBuiltApp(page: Page, entry: 'controlled' | 'hydration' | 'index' = 'index') {
++  await page.route('http://dialog.test/**', async (route) => {
++    const pathname = new URL(route.request().url()).pathname.replace(/^\//, '') || 'index.html'
++    const filePath = path.resolve('dist', pathname)
++    const contentType = pathname.endsWith('.html')
++      ? 'text/html'
++      : pathname.endsWith('.css')
++        ? 'text/css'
++        : 'text/javascript'
++    await route.fulfill({ body: await readFile(filePath), contentType })
++  })
++  await page.goto(`http://dialog.test/${entry === 'index' ? '' : `${entry}.html`}`)
++
++  if (entry === 'hydration') {
++    // The initially open modal correctly makes its background trigger inert, so
++    // an accessible-role query cannot use that trigger as the readiness signal.
++    await page.getByRole('dialog', { name: 'Hydrated example' }).waitFor()
++    return
++  }
++
++  const initialButton =
++    entry === 'controlled'
++      ? 'Open controlled dialog'
++      : 'Edit profile'
++  await page.getByRole('button', { name: initialButton }).waitFor()
++}
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+new file mode 100644
+index 0000000..28b357f
+--- /dev/null
++++ b/tsconfig.build.json
+@@ -0,0 +1,12 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "declaration": true,
++    "declarationMap": true,
++    "emitDeclarationOnly": true,
++    "noEmit": false,
++    "outDir": "package-dist",
++    "rootDir": "src"
++  },
++  "include": ["src/Dialog.tsx", "src/dialog/**/*.ts", "src/index.ts"]
++}
+diff --git a/vite.config.ts b/vite.config.ts
+index 80316f3..d4d7719 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,4 +1,39 @@
+ import react from '@vitejs/plugin-react'
++import { createElement } from 'react'
++import { renderToString } from 'react-dom/server'
+ import { defineConfig } from 'vite'
++import { resolve } from 'node:path'
+ 
+-export default defineConfig({ plugins: [react()] })
++import { HydrationFixture } from './src/HydrationFixture'
++
++const hydrationRoot = '<div id="root"></div>'
++
++export default defineConfig({
++  build: {
++    rollupOptions: {
++      input: {
++        controlled: resolve(process.cwd(), 'controlled.html'),
++        hydration: resolve(process.cwd(), 'hydration.html'),
++        main: resolve(process.cwd(), 'index.html'),
++      },
++    },
++  },
++  plugins: [
++    {
++      name: 'render-hydration-fixture',
++      transformIndexHtml: {
++        order: 'pre',
++        handler(html, context) {
++          if (context.path !== '/hydration.html') return html
++          if (!html.includes(hydrationRoot)) {
++            throw new Error('The hydration fixture root placeholder is missing.')
++          }
++
++          const serverMarkup = renderToString(createElement(HydrationFixture))
++          return html.replace(hydrationRoot, `<div id="root">${serverMarkup}</div>`)
++        },
++      },
++    },
++    react(),
++  ],
++})
+diff --git a/vite.lib.config.ts b/vite.lib.config.ts
+new file mode 100644
+index 0000000..4a2aa7b
+--- /dev/null
++++ b/vite.lib.config.ts
+@@ -0,0 +1,16 @@
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  build: {
++    emptyOutDir: true,
++    lib: {
++      entry: 'src/index.ts',
++      fileName: 'index',
++      formats: ['es'],
++    },
++    outDir: 'package-dist',
++    rollupOptions: {
++      external: ['react', 'react-dom', 'react/jsx-runtime'],
++    },
++  },
++})
+
+
+GENERATOR SELF-CHECKS (during generation; output tails, not a full command audit):
+[{"attempt": 0, "command": "/bin/zsh -lc 'npm run typecheck'", "exit_code": 127, "kind": "executed check", "output_tail": "\n> typecheck\n> tsc --noEmit\n\nsh: tsc: command not found\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'npm run test:browser'", "exit_code": 1, "kind": "executed check", "output_tail": "\n> test:browser\n> playwright test\n\n[WebServer] (node:85748) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)\n[WebServer] (node:85770) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)\n[WebServer] (node:85797) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)\n[WebServer] error when starting preview server:\n[WebServer] Error: listen EPERM: operation not permitted 127.0.0.1:4173\n[WebServer]     at Server.setupListenHandle [as _listen2] (node:net:1918:21)\n[WebServer]     at listenInCluster (node:net:1997:12)\n[WebServer]     at node:net:2206:7\n[WebServer]     at process.processTicksAndRejections (node:internal/process/task_queues:89:21)\n\nError: Process from config.webServer was not able to start. Exit code: 1\n\n\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'npm run test:browser'", "exit_code": 1, "kind": "executed check", "output_tail": "ychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/playwright_chromiumdev_profile-XX3me2 --remote-debugging-pipe --no-startup-window\n      - <launched> pid=87258\n      - [pid=87258][err] [1016/154732.893970:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9\n      - [pid=87258][err] [1016/154732.895094:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.\n      - [pid=87258][err] [1016/154732.895438:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.\n      - [pid=87258][err] [1016/154732.895558:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.87258: Permission denied (1100)\n      - [pid=87258] <gracefully close start>\n      - [pid=87258] <kill>\n      - [pid=87258] <will force kill>\n      - [pid=87258] exception while trying to kill process: Error: kill EPERM\n      - [pid=87258] <process did exit: exitCode=null, signal=SIGTRAP>\n      - [pid=87258] starting temporary directories cleanup\n      - [pid=87258] finished temporary directories cleanup\n      - [pid=87258] <gracefully close end>\n\n\n    Error Context: test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus/error-context.md\n\n  2 failed\n    tests/dialog.spec.ts:5:1 › traps focus, closes with Escape, and restores the trigger ───────────\n    tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus ─\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'npm pack --dry-run --ignore-scripts'", "exit_code": 255, "kind": "executed check", "output_tail": "npm error code EPERM\nnpm error syscall open\nnpm error path /Users/heguangwei/.npm/_cacache/tmp/44628f2e\nnpm error errno -1\nnpm error\nnpm error Your cache folder contains root-owned files, due to a bug in\nnpm error previous versions of npm which has since been addressed.\nnpm error\nnpm error To permanently fix this problem, please run:\nnpm error   sudo chown -R 501:20 \"/Users/heguangwei/.npm\"\nnpm error Log files were not written due to an error writing to the directory: /Users/heguangwei/.npm/_logs\nnpm error You can rerun the command with `--loglevel=verbose` to see the logs in your terminal\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'npx playwright test --browser=webkit'", "exit_code": 1, "kind": "executed check", "output_tail": "t/error-context.md\n\n  4) [webkit] › tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus \n\n    Error: browserType.launch: Target page, context or browser has been closed\n    Browser logs:\n\n    <launching> /Users/heguangwei/Library/Caches/ms-playwright/webkit-2336/pw_run.sh --inspector-pipe --headless --no-startup-window\n    <launched> pid=99978\n    [pid=99978][err] /Users/heguangwei/Library/Caches/ms-playwright/webkit-2336/pw_run.sh: line 7: 99984 Abort trap: 6           DYLD_FRAMEWORK_PATH=\"$DYLIB_PATH\" DYLD_LIBRARY_PATH=\"$DYLIB_PATH\" \"$PLAYWRIGHT\" \"$@\"\n    Call log:\n      - <launching> /Users/heguangwei/Library/Caches/ms-playwright/webkit-2336/pw_run.sh --inspector-pipe --headless --no-startup-window\n      - <launched> pid=99978\n      - [pid=99978][err] /Users/heguangwei/Library/Caches/ms-playwright/webkit-2336/pw_run.sh: line 7: 99984 Abort trap: 6           DYLD_FRAMEWORK_PATH=\"$DYLIB_PATH\" DYLD_LIBRARY_PATH=\"$DYLIB_PATH\" \"$PLAYWRIGHT\" \"$@\"\n      - [pid=99978] <gracefully close start>\n      - [pid=99978] <kill>\n      - [pid=99978] <will force kill>\n      - [pid=99978] exception while trying to kill process: Error: kill ESRCH\n      - [pid=99978] <process did exit: exitCode=134, signal=null>\n      - [pid=99978] starting temporary directories cleanup\n      - [pid=99978] finished temporary directories cleanup\n      - [pid=99978] <gracefully close end>\n\n\n    Error Context: test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus-webkit/error-context.md\n\n  4 failed\n    [webkit] › tests/dialog.contract.spec.ts:5:1 › connects accessible metadata and isolates then restores the background \n    [webkit] › tests/dialog.contract.spec.ts:28:1 › lets the consumer own controlled state and reports close reasons \n    [webkit] › tests/dialog.spec.ts:5:1 › traps focus, closes with Escape, and restores the trigger \n    [webkit] › tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus \n"}, {"attempt": 0, "command": "/bin/zsh -lc 'npx playwright test --browser=firefox'", "exit_code": 1, "kind": "executed check", "output_tail": "or-context.md\n\n  4) [firefox] › tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus \n\n    Error: browserType.launch: Failed to launch the browser process.\n    Browser logs:\n\n    <launching> /Users/heguangwei/Library/Caches/ms-playwright/firefox-1538/firefox/Nightly.app/Contents/MacOS/firefox -no-remote -headless -profile /var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/playwright_firefoxdev_profile-xRb4zT -juggler-pipe -silent\n    <launched> pid=560\n    [pid=560][err] *** You are running in headless mode.\n    [pid=560] <process did exit: exitCode=null, signal=SIGABRT>\n    [pid=560] starting temporary directories cleanup\n    Call log:\n      - <launching> /Users/heguangwei/Library/Caches/ms-playwright/firefox-1538/firefox/Nightly.app/Contents/MacOS/firefox -no-remote -headless -profile /var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/playwright_firefoxdev_profile-xRb4zT -juggler-pipe -silent\n      - <launched> pid=560\n      - [pid=560][err] *** You are running in headless mode.\n      - [pid=560] <process did exit: exitCode=null, signal=SIGABRT>\n      - [pid=560] starting temporary directories cleanup\n      - [pid=560] <gracefully close start>\n      - [pid=560] <kill>\n      - [pid=560] <skipped force kill spawnedProcess.killed=false processClosed=true>\n      - [pid=560] finished temporary directories cleanup\n      - [pid=560] <gracefully close end>\n\n\n    Error Context: test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus-firefox/error-context.md\n\n  4 failed\n    [firefox] › tests/dialog.contract.spec.ts:5:1 › connects accessible metadata and isolates then restores the background \n    [firefox] › tests/dialog.contract.spec.ts:28:1 › lets the consumer own controlled state and reports close reasons \n    [firefox] › tests/dialog.spec.ts:5:1 › traps focus, closes with Escape, and restores the trigger \n    [firefox] › tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus \n"}, {"attempt": 0, "command": "/bin/zsh -lc 'npm run test:host'", "exit_code": 1, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 test:host\n> node scripts/check-dialog-contract.mjs\n\nnode:net:1918\n      const error = new UVExceptionWithHostPort(rval, 'listen', address, port);\n                    ^\n\nError: listen EPERM: operation not permitted 127.0.0.1:5173\n    at Server.setupListenHandle [as _listen2] (node:net:1918:21)\n    at listenInCluster (node:net:1997:12)\n    at node:net:2206:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:89:21) {\n  code: 'EPERM',\n  errno: -1,\n  syscall: 'listen',\n  address: '127.0.0.1',\n  port: 5173\n}\n\nNode.js v22.22.2\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'cat hydration.html'", "exit_code": 0, "kind": "source inspection", "output_tail": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Hydrated Dialog test fixture</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/hydration-main.tsx\"></script>\n  </body>\n</html>\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run build:app'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 build:app\n> vite build\n\nvite v7.3.6 building client environment for production...\ntransforming...\n✓ 43 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                       0.48 kB │ gzip:  0.29 kB\ndist/hydration.html                   0.50 kB │ gzip:  0.30 kB\ndist/controlled.html                  0.50 kB │ gzip:  0.30 kB\ndist/assets/styles-CiLjJk5D.css       0.24 kB │ gzip:  0.19 kB\ndist/assets/controlled-BubbuS0w.js    0.77 kB │ gzip:  0.41 kB\ndist/assets/main-DtgalcBa.js          1.02 kB │ gzip:  0.44 kB\ndist/assets/hydration-CsPxuN-v.js   166.59 kB │ gzip: 50.69 kB\ndist/assets/styles-DYh_A_tt.js      193.38 kB │ gzip: 61.25 kB\n✓ built in 379ms\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npx playwright test tests/dialog.contract.spec.ts --grep \"hydrates stable\" --reporter=line'", "exit_code": 1, "kind": "executed check", "output_tail": "ofile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/playwright_chromiumdev_profile-qQfTMW --remote-debugging-pipe --no-startup-window\n      - <launched> pid=12945\n      - [pid=12945][err] [1016/155827.206485:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9\n      - [pid=12945][err] [1016/155827.207861:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.\n      - [pid=12945][err] [1016/155827.208167:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.\n      - [pid=12945][err] [1016/155827.208266:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.12945: Permission denied (1100)\n      - [pid=12945] <gracefully close start>\n      - [pid=12945] <kill>\n      - [pid=12945] <will force kill>\n      - [pid=12945] exception while trying to kill process: Error: kill EPERM\n      - [pid=12945] <process did exit: exitCode=null, signal=SIGTRAP>\n      - [pid=12945] starting temporary directories cleanup\n      - [pid=12945] finished temporary directories cleanup\n      - [pid=12945] <gracefully close end>\n\n\n    Error Context: test-results/dialog.contract-hydrates-s-00e05-ng-an-initially-open-portal/error-context.md\n\n\n  1 failed\n    tests/dialog.contract.spec.ts:41:1 › hydrates stable trigger markup before mounting an initially open portal \n"}, {"attempt": 1, "command": "/bin/zsh -lc 'cat src/Dialog.tsx'", "exit_code": 0, "kind": "source inspection", "output_tail": "belledBy ?? (ariaLabel ? undefined : context.titleId ?? context.defaultTitleId)\n  const describedBy = hasAriaDescribedBy\n    ? ariaDescribedBy\n    : context.descriptionId ?? context.defaultDescriptionId\n\n  return (\n    <div\n      {...props}\n      ref={contentRef}\n      id={context.contentId}\n      role={role}\n      tabIndex={tabIndex}\n      aria-describedby={describedBy}\n      aria-label={ariaLabel}\n      aria-labelledby={labelledBy}\n      aria-modal=\"true\"\n      data-state=\"open\"\n    />\n  )\n})\n\nexport const DialogTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(\n  function DialogTitle({ id: providedId, ...props }, forwardedRef) {\n    const context = useDialogContext('DialogTitle')\n    const id = providedId ?? context.defaultTitleId\n    useIsomorphicLayoutEffect(() => context.registerTitle(id), [context.registerTitle, id])\n    return <h2 {...props} ref={forwardedRef} id={id} />\n  },\n)\n\nexport const DialogDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLParagraphElement>>(\n  function DialogDescription({ id: providedId, ...props }, forwardedRef) {\n    const context = useDialogContext('DialogDescription')\n    const id = providedId ?? context.defaultDescriptionId\n    useIsomorphicLayoutEffect(() => context.registerDescription(id), [context.registerDescription, id])\n    return <p {...props} ref={forwardedRef} id={id} />\n  },\n)\n\nexport const DialogClose = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(\n  function DialogClose({ onClick, type = 'button', ...props }, forwardedRef) {\n    const context = useDialogContext('DialogClose')\n    return (\n      <button\n        {...props}\n        ref={forwardedRef}\n        type={type}\n        onClick={(event) => {\n          onClick?.(event)\n          if (!event.defaultPrevented) {\n            context.requestOpenChange(false, {\n              nativeEvent: event.nativeEvent,\n              reason: 'close-button',\n            })\n          }\n        }}\n      />\n    )\n  },\n)\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'cat dist/hydration.html'", "exit_code": 0, "kind": "source inspection", "output_tail": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Hydrated Dialog test fixture</title>\n    <script type=\"module\" crossorigin src=\"/assets/hydration-CsPxuN-v.js\"></script>\n    <link rel=\"modulepreload\" crossorigin href=\"/assets/styles-DYh_A_tt.js\">\n    <link rel=\"stylesheet\" crossorigin href=\"/assets/styles-CiLjJk5D.css\">\n  </head>\n  <body>\n    <div id=\"root\"></div>\n  </body>\n</html>\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'cat src/Dialog.ssr.test.tsx'", "exit_code": 0, "kind": "source inspection", "output_tail": "// @vitest-environment node\n\nimport { renderToString } from 'react-dom/server'\nimport { expect, test } from 'vitest'\n\nimport {\n  Dialog,\n  DialogContent,\n  DialogDescription,\n  DialogPortal,\n  DialogTitle,\n  DialogTrigger,\n} from './Dialog'\n\ntest('renders the closed primitive without accessing browser globals', () => {\n  const html = renderToString(\n    <Dialog>\n      <DialogTrigger>Open</DialogTrigger>\n      <DialogPortal>\n        <DialogContent>\n          <DialogTitle>Example</DialogTitle>\n          <DialogDescription>Description</DialogDescription>\n          <button type=\"button\">Action</button>\n        </DialogContent>\n      </DialogPortal>\n    </Dialog>,\n  )\n\n  expect(html).toContain('Open')\n})\n\ntest('renders an initially open portal without reading document or changing server markup', () => {\n  const html = renderToString(\n    <Dialog defaultOpen>\n      <DialogTrigger>Open</DialogTrigger>\n      <DialogPortal>\n        <DialogContent aria-label=\"Example\">Content</DialogContent>\n      </DialogPortal>\n    </Dialog>,\n  )\n\n  expect(html).toContain('aria-expanded=\"true\"')\n  expect(html).not.toContain('role=\"dialog\"')\n})\n\ntest('renders controlled inline content with stable accessible relationships', () => {\n  const html = renderToString(\n    <Dialog open>\n      <DialogContent>\n        <DialogTitle>Controlled example</DialogTitle>\n        <DialogDescription>Controlled description</DialogDescription>\n      </DialogContent>\n    </Dialog>,\n  )\n\n  expect(html).toContain('role=\"dialog\"')\n  expect(html).toMatch(/aria-labelledby=\"([^\"]+)\"/)\n  expect(html).toMatch(/aria-describedby=\"([^\"]+)\"/)\n  const labelledBy = html.match(/aria-labelledby=\"([^\"]+)\"/)?.[1]\n  const describedBy = html.match(/aria-describedby=\"([^\"]+)\"/)?.[1]\n  expect(html).toContain(`id=\"${labelledBy}\"`)\n  expect(html).toContain(`id=\"${describedBy}\"`)\n})\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'cat src/dialog/focus-management.ts'", "exit_code": 0, "kind": "source inspection", "output_tail": "e {\n    restoreIsolation(state)\n    document.body.style.overflow = state.originalOverflow\n  }\n}\n\nfunction createDocumentState(document: Document): DocumentState {\n  const state: DocumentState = {\n    entries: [],\n    isolation: new Map(),\n    originalOverflow: document.body.style.overflow,\n  }\n  document.addEventListener('keydown', (event) => {\n    const top = state.entries.at(-1)\n    if (!top) return\n    if (event.key === 'Escape') top.onEscapeKeyDown?.(event)\n    else if (event.key === 'Tab' && !event.defaultPrevented) trapTab(top, event)\n  }, true)\n  document.addEventListener('focusin', (event) => {\n    const top = state.entries.at(-1)\n    if (top && !top.content.contains(event.target as Node)) focusInitial(top)\n  }, true)\n  states.set(document, state)\n  return state\n}\n\nexport function registerFocusScope(entry: FocusScopeEntry) {\n  const document = entry.content.ownerDocument\n  const state = states.get(document) ?? createDocumentState(document)\n  if (state.entries.length === 0) state.originalOverflow = document.body.style.overflow\n  state.entries.push(entry)\n  syncDocument(state, document)\n  if (entry.autoFocus !== false) focusInitial(entry)\n\n  return () => {\n    const index = state.entries.indexOf(entry)\n    if (index < 0) return\n    state.entries.splice(index, 1)\n    syncDocument(state, document)\n    document.defaultView?.requestAnimationFrame(() => {\n      if (state.entries.some((candidate) => candidate.dialogId === entry.dialogId)) return\n      const event = new Event('dialog.closeAutoFocus', { cancelable: true })\n      entry.onCloseAutoFocus?.(event)\n      const top = state.entries.at(-1)\n      if (event.defaultPrevented) return\n      if (top && entry.restoreFocus?.isConnected && top.content.contains(entry.restoreFocus)) {\n        entry.restoreFocus.focus({ preventScroll: true })\n      } else if (top) {\n        focusInitial(top)\n      } else if (entry.restoreFocus?.isConnected) {\n        entry.restoreFocus.focus({ preventScroll: true })\n      }\n    })\n  }\n}\n"}, {"attempt": 1, "command": "/bin/zsh -lc \"node -e \\\"console.log(require('./node_modules/react-dom/package.json').exports['./server'])\\\"\"", "exit_code": 0, "kind": "executed check", "output_tail": "{\n  'react-server': './server.react-server.js',\n  workerd: './server.edge.js',\n  bun: './server.bun.js',\n  deno: './server.browser.js',\n  worker: './server.browser.js',\n  node: './server.node.js',\n  'edge-light': './server.edge.js',\n  browser: './server.browser.js',\n  default: './server.node.js'\n}\n"}, {"attempt": 1, "command": "/bin/zsh -lc \"node -e \\\"import('react-dom/server').then(m => console.log(Object.keys(m)))\\\"\"", "exit_code": 0, "kind": "executed check", "output_tail": "[\n  'default',\n  'renderToPipeableStream',\n  'renderToStaticMarkup',\n  'renderToString',\n  'resumeToPipeableStream',\n  'version'\n]\n"}, {"attempt": 1, "kind": "source changes", "paths": ["/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/src/HydrationFixture.tsx", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/src/hydration-main.tsx", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/vite.config.ts"]}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run build:app'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 build:app\n> vite build\n\nvite v7.3.6 building client environment for production...\ntransforming...\n✓ 37 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                       0.48 kB │ gzip:  0.29 kB\ndist/controlled.html                  0.50 kB │ gzip:  0.30 kB\ndist/hydration.html                   0.65 kB │ gzip:  0.39 kB\ndist/assets/styles-CiLjJk5D.css       0.24 kB │ gzip:  0.19 kB\ndist/assets/hydration-QaJ_QtSB.js     0.65 kB │ gzip:  0.36 kB\ndist/assets/controlled-CX-w4QN1.js    0.77 kB │ gzip:  0.41 kB\ndist/assets/main-Dk2MyDrz.js          1.02 kB │ gzip:  0.44 kB\ndist/assets/styles-edvcAGzq.js      193.36 kB │ gzip: 61.24 kB\n✓ built in 268ms\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'cat dist/hydration.html'", "exit_code": 0, "kind": "source inspection", "output_tail": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>Hydrated Dialog test fixture</title>\n    <script type=\"module\" crossorigin src=\"/assets/hydration-QaJ_QtSB.js\"></script>\n    <link rel=\"modulepreload\" crossorigin href=\"/assets/styles-edvcAGzq.js\">\n    <link rel=\"stylesheet\" crossorigin href=\"/assets/styles-CiLjJk5D.css\">\n  </head>\n  <body>\n    <div id=\"root\"><button type=\"button\" aria-controls=\"dialog-«R0»-content\" aria-expanded=\"true\" aria-haspopup=\"dialog\" data-state=\"open\">Open hydrated dialog</button></div>\n  </body>\n</html>\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run test:ssr'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 test:ssr\n> vitest run src/Dialog.ssr.test.tsx\n\n\n RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk\n\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  15:59:57\n   Duration  120ms (transform 33ms, setup 0ms, import 53ms, tests 5ms, environment 0ms)\n\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run test:host'", "exit_code": 1, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 test:host\n> node scripts/check-dialog-contract.mjs\n\nnode:net:1918\n      const error = new UVExceptionWithHostPort(rval, 'listen', address, port);\n                    ^\n\nError: listen EPERM: operation not permitted 127.0.0.1:5173\n    at Server.setupListenHandle [as _listen2] (node:net:1918:21)\n    at listenInCluster (node:net:1997:12)\n    at node:net:2206:7\n    at process.processTicksAndRejections (node:internal/process/task_queues:89:21) {\n  code: 'EPERM',\n  errno: -1,\n  syscall: 'listen',\n  address: '127.0.0.1',\n  port: 5173\n}\n\nNode.js v22.22.2\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run typecheck'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 typecheck\n> tsc --noEmit\n\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run test:package'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 test:package\n> npm run build:lib && node scripts/check-package.mjs\n\n\n> frontend-architect-dialog-browser-eval@0.1.0 build:lib\n> vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json\n\nvite v7.3.6 building client environment for production...\ntransforming...\n✓ 3 modules transformed.\nrendering chunks...\ncomputing gzip size...\npackage-dist/index.js  9.67 kB │ gzip: 3.22 kB\n✓ built in 47ms\nPackage public-entry check passed.\n"}, {"attempt": 1, "kind": "source changes", "paths": ["/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/tests/dialog.contract.spec.ts", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/tests/load-built-app.ts"]}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run test:ssr'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 test:ssr\n> vitest run src/Dialog.ssr.test.tsx\n\n\n RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk\n\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  16:00:40\n   Duration  121ms (transform 36ms, setup 0ms, import 56ms, tests 5ms, environment 0ms)\n\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npx playwright test --list'", "exit_code": 0, "kind": "executed check", "output_tail": "Listing tests:\n  dialog.contract.spec.ts:5:1 › connects accessible metadata and isolates then restores the background\n  dialog.contract.spec.ts:28:1 › lets the consumer own controlled state and reports close reasons\n  dialog.contract.spec.ts:41:1 › hydrates stable trigger markup before mounting an initially open portal\n  dialog.spec.ts:5:1 › traps focus, closes with Escape, and restores the trigger\n  dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus\nTotal: 5 tests in 2 files\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run build:app'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 build:app\n> vite build\n\nvite v7.3.6 building client environment for production...\ntransforming...\n✓ 37 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                       0.48 kB │ gzip:  0.29 kB\ndist/controlled.html                  0.50 kB │ gzip:  0.30 kB\ndist/hydration.html                   0.65 kB │ gzip:  0.39 kB\ndist/assets/styles-CiLjJk5D.css       0.24 kB │ gzip:  0.19 kB\ndist/assets/hydration-QaJ_QtSB.js     0.65 kB │ gzip:  0.36 kB\ndist/assets/controlled-CX-w4QN1.js    0.77 kB │ gzip:  0.41 kB\ndist/assets/main-Dk2MyDrz.js          1.02 kB │ gzip:  0.44 kB\ndist/assets/styles-edvcAGzq.js      193.36 kB │ gzip: 61.24 kB\n✓ built in 307ms\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run typecheck'", "exit_code": 0, "kind": "executed check", "output_tail": "\n> frontend-architect-dialog-browser-eval@0.1.0 typecheck\n> tsc --noEmit\n\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'npm run test:browser'", "exit_code": 1, "kind": "executed check", "output_tail": "overType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/playwright_chromiumdev_profile-MjrdqW --remote-debugging-pipe --no-startup-window\n      - <launched> pid=18093\n      - [pid=18093][err] [1016/160046.950563:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9\n      - [pid=18093][err] [1016/160046.951869:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.\n      - [pid=18093][err] [1016/160046.952204:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.\n      - [pid=18093][err] [1016/160046.952273:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.18093: Permission denied (1100)\n      - [pid=18093] <gracefully close start>\n      - [pid=18093] <kill>\n      - [pid=18093] <will force kill>\n      - [pid=18093] exception while trying to kill process: Error: kill EPERM\n      - [pid=18093] <process did exit: exitCode=null, signal=SIGTRAP>\n      - [pid=18093] starting temporary directories cleanup\n      - [pid=18093] finished temporary directories cleanup\n      - [pid=18093] <gracefully close end>\n\n\n    Error Context: test-results/dialog-only-the-top-nested-7e320-pe-and-restores-local-focus/error-context.md\n\n  5 failed\n    tests/dialog.contract.spec.ts:5:1 › connects accessible metadata and isolates then restores the background \n    tests/dialog.contract.spec.ts:28:1 › lets the consumer own controlled state and reports close reasons \n    tests/dialog.contract.spec.ts:41:1 › hydrates stable trigger markup before mounting an initially open portal \n    tests/dialog.spec.ts:5:1 › traps focus, closes with Escape, and restores the trigger ───────────\n    tests/dialog.spec.ts:24:1 › only the top nested dialog handles Escape and restores local focus ─\n"}, {"attempt": 1, "command": "/bin/zsh -lc 'git diff --check'", "exit_code": 0, "kind": "executed check", "output_tail": ""}, {"attempt": 1, "command": "/bin/zsh -lc 'git diff --check'", "exit_code": 0, "kind": "executed check", "output_tail": ""}]
+
+PRIOR DELIVERIES AND HOST FEEDBACK (each claim belongs to its own phase; the main RESPONSE and HOST VALIDATIONS are the final attempt):
+[{"attempt": 0, "response_before_host_checks": "实现已完成；类型、SSR、构建及发布产物检查通过，但当前沙箱禁止启动浏览器和监听本地端口，因此不能宣称真实浏览器验收已通过。\n\n主要交付：\n\n- 可组合 headless API，支持受控/非受控、Portal、嵌套 Dialog、ARIA、事件取消、ref 与自定义样式：[Dialog.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/src/Dialog.tsx:76)\n- 独立焦点栈、Tab 闭环、顶层 Escape、背景 inert、滚动锁定及焦点恢复：[focus-management.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/src/dialog/focus-management.ts:143)\n- 示例文案、业务按钮和样式仍留在产品层，原有可观察行为保留：[App.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/src/App.tsx)\n- ESM 包出口、声明文件、React peer dependencies 和发布构建：[package.json](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/package.json:9)\n- 公开 API、实现边界、测试矩阵和三个产品的增量迁移方案：[README.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/README.md:5)\n- 新增受控、ARIA/背景隔离及 hydration 浏览器用例，同时保留原焦点和嵌套断言：[dialog.contract.spec.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/tests/dialog.contract.spec.ts:5)\n\n验证结果：\n\n- `npm run typecheck`：通过\n- `npm run test:ssr`：3 项通过\n- `npm run build:app`：通过\n- `npm run test:package`：通过\n- `npm pack --dry-run`：通过，产物共 9 个文件\n- Playwright：5 项测试成功发现并编译\n- Chromium、WebKit、Firefox 实际启动均被沙箱终止；宿主脚本监听 `127.0.0.1:5173` 时返回 `EPERM`\n\n在允许浏览器进程与本地端口的环境运行 `npm run check`，即可完成剩余真实浏览器验收。", "subsequent_host_checks": [{"command": "verify protected evaluation harness", "exit_code": 0, "duration_seconds": 0.0, "output": ""}, {"command": "npm ci", "exit_code": 0, "duration_seconds": 1.786, "output": "\nadded 101 packages, and audited 102 packages in 2s\n\n18 packages are looking for funding\n  run `npm fund` for details\n\n1 high severity vulnerability\n\nTo address all issues, run:\n  npm audit fix\n\nRun `npm audit` for details.\n"}, {"command": "npx playwright install chromium", "exit_code": 0, "duration_seconds": 1.711, "output": ""}, {"command": "node scripts/check-dialog-contract.mjs", "exit_code": 0, "duration_seconds": 1.616, "output": "Host public-contract check passed: outside dismissal settles on trigger; reopen/Escape returns focus.\n"}, {"command": "npm run check", "exit_code": 1, "duration_seconds": 36.562, "output": "\n> frontend-architect-dialog-browser-eval@0.1.0 check\n> npm run typecheck && npm run test:ssr && npm run test:browser && npm run test:host && npm run test:package\n\n\n> frontend-architect-dialog-browser-eval@0.1.0 typecheck\n> tsc --noEmit\n\n\n> frontend-architect-dialog-browser-eval@0.1.0 test:ssr\n> vitest run src/Dialog.ssr.test.tsx\n\n\n RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk\n\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  15:57:05\n   Duration  102ms (transform 29ms, setup 0ms, import 46ms, tests 5ms, environment 0ms)\n\n\n> frontend-architect-dialog-browser-eval@0.1.0 test:browser\n> npm run build:app && playwright test\n\n\n> frontend-architect-dialog-browser-eval@0.1.0 build:app\n> vite build\n\nvite v7.3.6 building client environment for production...\ntransforming...\n✓ 43 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                       0.48 kB │ gzip:  0.29 kB\ndist/hydration.html                   0.50 kB │ gzip:  0.30 kB\ndist/controlled.html                  0.50 kB │ gzip:  0.30 kB\ndist/assets/styles-CiLjJk5D.css       0.24 kB │ gzip:  0.19 kB\ndist/assets/controlled-BubbuS0w.js    0.77 kB │ gzip:  0.41 kB\ndist/assets/main-DtgalcBa.js          1.02 kB │ gzip:  0.44 kB\ndist/assets/hydration-CsPxuN-v.js   166.59 kB │ gzip: 50.69 kB\ndist/assets/styles-DYh_A_tt.js      193.38 kB │ gzip: 61.25 kB\n✓ built in 394ms\n\nRunning 5 tests using 2 workers\n····T\n\n  1) tests/dialog.contract.spec.ts:41:1 › hydrates stable trigger markup before mounting an initially open portal \n\n    Test timeout of 30000ms exceeded.\n\n    Error: locator.waitFor: Test timeout of 30000ms exceeded.\n    Call log:\n      - waiting for getByRole('button', { name: 'Open hydrated dialog' }) to be visible\n\n\n       at load-built-app.ts:24\n\n      22 |         ? 'Open hydrated dialog'\n      23 |         : 'Edit profile'\n    > 24 |   await page.getByRole('button', { name: initialButton }).waitFor()\n         |                                                           ^\n      25 | }\n      26 |\n        at loadBuiltApp (/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/tests/load-built-app.ts:24:59)\n        at /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk/tests/dialog.contract.spec.ts:42:3\n\n    Error Context: test-results/dialog.contract-hydrates-s-00e05-ng-an-initially-open-portal/error-context.md\n\n  1 failed\n    tests/dialog.contract.spec.ts:41:1 › hydrates stable trigger markup before mounting an initially open portal \n  4 passed (30.7s)\n(node:10191) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:10190) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n"}]}]
+
+HOST VALIDATIONS (after RESPONSE, by the capture runner):
+COMMAND verify protected evaluation harness EXIT 0
+
+COMMAND npm ci EXIT 0
+
+added 101 packages, and audited 102 packages in 2s
+
+18 packages are looking for funding
+  run `npm fund` for details
+
+1 high severity vulnerability
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+
+COMMAND npx playwright install chromium EXIT 0
+
+COMMAND node scripts/check-dialog-contract.mjs EXIT 0
+Host public-contract check passed: outside dismissal settles on trigger; reopen/Escape returns focus.
+
+COMMAND npm run check EXIT 0
+
+> frontend-architect-dialog-browser-eval@0.1.0 check
+> npm run typecheck && npm run test:ssr && npm run test:browser && npm run test:host && npm run test:package
+
+
+> frontend-architect-dialog-browser-eval@0.1.0 typecheck
+> tsc --noEmit
+
+
+> frontend-architect-dialog-browser-eval@0.1.0 test:ssr
+> vitest run src/Dialog.ssr.test.tsx
+
+
+ RUN  v4.1.11 /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-xd9dm1rk
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  16:01:50
+   Duration  101ms (transform 28ms, setup 0ms, import 44ms, tests 5ms, environment 0ms)
+
+
+> frontend-architect-dialog-browser-eval@0.1.0 test:browser
+> npm run build:app && playwright test
+
+
+> frontend-architect-dialog-browser-eval@0.1.0 build:app
+> vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 37 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                       0.48 kB │ gzip:  0.29 kB
+dist/controlled.html                  0.50 kB │ gzip:  0.30 kB
+dist/hydration.html                   0.65 kB │ gzip:  0.39 kB
+dist/assets/styles-CiLjJk5D.css       0.24 kB │ gzip:  0.19 kB
+dist/assets/hydration-QaJ_QtSB.js     0.65 kB │ gzip:  0.36 kB
+dist/assets/controlled-CX-w4QN1.js    0.77 kB │ gzip:  0.41 kB
+dist/assets/main-Dk2MyDrz.js          1.02 kB │ gzip:  0.44 kB
+dist/assets/styles-edvcAGzq.js      193.36 kB │ gzip: 61.24 kB
+✓ built in 282ms
+
+Running 5 tests using 2 workers
+·····
+  5 passed (780ms)
+
+> frontend-architect-dialog-browser-eval@0.1.0 test:host
+> node scripts/check-dialog-contract.mjs
+
+Host public-contract check passed: outside dismissal settles on trigger; reopen/Escape returns focus.
+
+> frontend-architect-dialog-browser-eval@0.1.0 test:package
+> npm run build:lib && node scripts/check-package.mjs
+
+
+> frontend-architect-dialog-browser-eval@0.1.0 build:lib
+> vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 3 modules transformed.
+rendering chunks...
+computing gzip size...
+package-dist/index.js  9.67 kB │ gzip: 3.22 kB
+✓ built in 39ms
+Package public-entry check passed.
+(node:20251) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20250) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)

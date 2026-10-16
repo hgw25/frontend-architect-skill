@@ -1,0 +1,30 @@
+Complete the following frontend task in the provided workspace.
+Preserve the requested stack and scope. Inspect existing files before deciding.
+Before solving the task, read .frontend-architect/SKILL.md completely.
+Treat that local copy as the only task-specific Skill for this evaluation.
+Read routed references only from .frontend-architect/references; do not read an installed or global frontend-architect Skill or reference.
+For auditable guidance reads, use standalone cat commands with explicit file paths (no globs, variables, pipes or chained commands). Read SKILL.md in full; references may also use sed -n with a numeric print range and explicit paths. List files separately from reading them.
+To locate reference section boundaries, standalone rg -n '^#{1,6} ' with explicit reference paths is supported. Heading reads count as guidance access, not a full section read.
+Do not read any eval definitions, rubric, expected observations, or prior results.
+Keep all files in .frontend-architect unchanged. If the task discusses Skill maintenance, describe proposed guidance changes in the answer rather than editing the instructions being evaluated.
+Return a concrete, decision-oriented answer; do not invent repository facts.
+
+USER REQUEST:
+评审下面的表单处理逻辑。契约规定 disabled 字段不参与校验和提交。 不需要设计通用规则引擎，请指出实际缺陷，给出小范围修复和有意义的测试。
+
+PROVIDED ARTIFACT:
+async function processForm(fields, values, send) {
+  const errors = {};
+  for (const field of fields.filter(field => !field.disabled)) {
+    if (field.required && !values[field.name]) errors[field.name] = 'Required';
+  }
+  for (const field of fields.filter(field => field.validate)) {
+    const error = await field.validate(values[field.name], values);
+    if (error) errors[field.name] = error;
+  }
+  if (Object.keys(errors).length) return { errors };
+  const payload = Object.fromEntries(fields
+    .filter(field => !field.disabled)
+    .map(field => [field.name, values[field.name]]));
+  return send(payload);
+}

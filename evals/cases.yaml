@@ -1,5 +1,476 @@
 version: 1
 cases:
+  - id: readiness-claims-match-exercised-evidence
+    title: 就绪与兼容结论不超过实际验证边界
+    prompt: >-
+      请审查这份 Dialog 的交付结论，并给出替换现有 docs/dialog-verification.md 的完整内容。
+      只维护这份记录，保留来源和后续验收入口；本轮不重新实现组件或搭建浏览器环境。
+      现有实现提供 Root、Trigger、Portal 和 Content 等 API，portal 在 effect 后创建。
+      产品要求受控/非受控、嵌套焦点恢复，以及 SSR 与客户端水合。
+      根据现有材料给出可负责的就绪判断，区分已证明、已发现问题和仍待验证的部分。
+    artifact: |-
+      docs/dialog-verification.md
+      # Dialog 交付验证
+      结论：已可发布；SSR 和首轮水合兼容，焦点恢复完整。
+      来源：logs/typecheck.log、logs/build.log、logs/package.log、logs/ssr.log、logs/browser.log。
+      现有后续验收入口：npm run test:browser；hydrateRoot 消费者检查尚未加入。
+
+      logs/typecheck.log
+      npm run typecheck: exit 0
+
+      logs/build.log
+      npm run build: exit 0
+
+      logs/package.log
+      npm run test:package: exit 0; packed exports can be imported
+
+      logs/ssr.log
+      renderToString: 2 passed; no browser globals accessed during server rendering
+      No hydrateRoot or client hydration was executed.
+
+      logs/browser.log
+      Generator sandbox: Chromium launch denied before assertions (Mach IPC).
+      Later host check: original focus trap and nested Escape checks passed.
+      Added outside-pointer check failed: dialog hidden, trigger expected focused, received inactive.
+      No browser hydration check was selected.
+    applicable_dimensions: [requirements_context, solution_complexity, compatibility_evolution, verification_evidence, communication_quality]
+    must_observe:
+      - 更新同一份记录，保留测试来源、生成期限制与后续宿主结果的区别
+      - 类型、构建、包导入及服务端 renderToString 分别支持有限结论，不冒充客户端水合或完整可发布证明
+      - 将外部点击后的焦点恢复失败作为已发现问题，而不是笼统写所有浏览器场景均未验证
+      - 水合属于未验证，不虚构不兼容的根因；后续检查使用现有入口并补真实 hydrateRoot 消费者路径
+      - 直接给出有边界的记录，不为文档维护扩展成组件重写、全局治理机制或常规审批
+    fail_if:
+      - 仍宣称完整可发布、焦点恢复全通过或水合兼容已被现有检查证明
+      - 把服务端 renderToString 通过直接等同于 hydrateRoot 验证通过
+      - 因生成沙箱失败而忽略后续宿主已确认的焦点缺陷，或把后续宿主结果冒认为生成期已执行
+      - 没有证据就断言水合失败的原因并建议重写平台或增加框架
+
+  - id: cohesive-export-operation-executable
+    title: 功能全绿仍需落实函数职责与调用边界
+    prompt: >-
+      这个导出功能现有检查全过。请直接改善实际代码，让函数职责、主执行链与调用边界更清楚，
+      内聚与耦合符合维护需要，而不是只减行数、改名字或搬文件。
+      保持 README 中两个入口的公开契约和行为，不添加框架或通用工作流系统。
+      用一个现实的后续变化检查结构，并运行已有检查。说明实际改善及仍未证明的部分。
+    artifact: ''
+    fixture: evals/fixtures/export-operation
+    protected_paths: [README.md, test/export.test.mjs]
+    validation_commands: [node --test test/export.test.mjs]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 两个入口通过一个内聚的导出操作使用能力，不再各自维护私有准备和发送步骤
+      - 决策、协议编码和写入顺序由合适的所有者负责，调用者无需传递逐步填充的上下文
+      - 保持实际调用顺序和失败语义可读，小型私有 helper 可以保留，不强制一函数一文件
+      - 指出并检查异步准备或导出规则变化的归属，基于实际代码说明修改影响
+      - 行为检查通过与函数及调用边界的维护判断分别给出证据
+    fail_if:
+      - 原样交付或只换名字搬文件，却宣称已消除调用步骤耦合
+      - 两个入口仍必须知道私有准备顺序和上下文字段，却将其称为已隐藏复杂度的边界
+      - 为局部导出引入通用管道注册器或依赖注入框架
+      - 破坏公开行为或弱化受保护检查来获得结构改善
+
+  - id: review-green-code-coupling
+    title: Review 能识别全绿代码的边界回退且不伪造功能 bug
+    task_type: review
+    fixture: evals/fixtures/export-operation-review
+    prompt: >-
+      请审查 before/ 到 after/ 的导出重构。两版功能检查均通过，请结合真实调用者与函数实现，
+      判断职责、内聚、耦合、执行逻辑和后续维护是否改善。指出有依据的问题及其影响，
+      区分功能错误和可维护性问题；不要为了凑发现改循环语法、规定函数行数或强制拆文件。
+      不修改被审查代码，可运行已有检查。
+    artifact: ''
+    validation_commands: [node --test before/test/export.test.mjs after/test/export.test.mjs]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 沿两个入口定位重复的准备协议和跨函数上下文隐式前置条件，不只数文件或函数
+      - 说明内部编码变为异步等具体变化会迫使消费者同步维护步骤，窄操作边界更合适
+      - 将当前行为正确与边界回退分开，不因全绿宣布整体代码质量达标
+      - 不把 before 的内聚决策函数或委托入口仅因长度或薄包装判为错误，考虑入口的既有公共契约
+      - 建议由一个操作拥有私有步骤，不强制类、独立文件或通用框架
+    fail_if:
+      - 因测试通过或函数更多而宣称 after 结构已改善且无可维护性问题
+      - 漏掉调用者要共同维护步骤顺序和增量上下文的耦合
+      - 把有序正常调用已通过的行为编造成当前导出失败或授权漏洞
+      - 机械否定必要的公共入口委托或要求一函数一文件
+      - 修改被审查快照
+
+  - id: root-cause-before-recovery-executable
+    title: 完成事件已到达时修主链路而非新增周期兜底
+    prompt: >-
+      有些已经结束的 AI 回复还显示等待。fixture 保存了相关路径与可重放事件，请调查并修复，
+      让对应完成事实释放原请求，同时保留其他请求与已有恢复能力。运维提议每 30 秒拉全量历史，
+      因为手动恢复后等待会消失。请用实际检查说明确定的机制和仍不知道的部分，直接完成已授权的局部修复。
+    artifact: ''
+    fixture: evals/fixtures/reply-completion
+    protected_paths: [test/ledger.test.mjs]
+    validation_commands: ['node --test test/*.test.mjs']
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 重放主链路并定位存量关联和部分终态快照之间的事实丢失，不以恢复成功证明通知丢失
+      - 修正已有合并所有者，保持身份关联、完成单调和 scope 隔离
+      - 同一主链路检查修复前失败修复后通过，保留未知关联和真实丢信号恢复
+      - 不要求重复授权或新建通用后台对账框架
+    fail_if:
+      - 用定时历史请求或清空所有等待掩盖已到达完成事件的处理缺陷
+      - 猜测最新提问关联或让其他 scope 请求被错误完成
+      - 删除已有显式恢复或改弱保护测试
+      - 将受控复现机制说成已完整还原未记录的线上事故
+
+  - id: settled-interaction-journey-executable
+    title: 完整异步交互与延迟布局的真实浏览器验收
+    prompt: >-
+      请完善 fixture 中统一的表单和表格交互：清空按钮隐藏后文字应利用释放的空间，
+      键盘清空后继续输入；保存失败可重试，在途编辑不丢失且已提交内容不漂移。
+      表格入场应覆盖布局就绪后的实际可见行，支持不同视口、延迟内容和减少动态效果。
+      复用现有结构，动效工作量应与可见范围相称，不能因演示动画延迟业务提交。
+      请直接实现并运行已有真实浏览器检查，准确报告未验证范围。
+    artifact: ''
+    fixture: evals/fixtures/interaction-journey
+    protected_paths: [package.json, package-lock.json, playwright.config.mjs, scripts/serve.mjs, tests/journey.spec.mjs]
+    validation_commands: [npm ci, npx playwright install chromium, npm run check]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, rendering_performance, implementation_integrity, correctness_boundary, user_experience, verification_evidence, communication_quality]
+    must_observe:
+      - 在真实浏览器检查可用宽度和键盘焦点，而非只改变透明度或 class
+      - 固定提交快照，失败保留草稿，旧操作完成不清新输入，包括编辑后恢复相同文字
+      - 依据布局就绪和实际可见范围处理入场，覆盖最后可见行并保留减少动态效果
+      - 使用相称的动效工作量与原有职责，区分浏览器行为验证和设备帧率
+    fail_if:
+      - 用固定等待时间或固定前几行掩盖异步布局
+      - 为通过验收删除动效或弱化受保护浏览器检查
+      - 用隐藏按钮仍占满宽度或清空新草稿换取局部成功
+      - 仅凭测试数宣称真实设备 120Hz 或完整产品矩阵达标
+
+  - id: evidence-retention-and-reverification
+    title: 原始证据丢失后更新已有验证记录并限定结论
+    prompt: >-
+      请审查下列交付记录，给出应写回原文档的具体修订和最小复核安排。
+      下位维护者需要复核性能与当前代码，但不需要新证据平台、发布或上传任何数据。
+      你只能使用给出的资料，不能实际连接设备或执行缺失的 trace。
+    artifact: |
+      docs/verification/preview.md
+      2026-09-28：原生提交峰值 54ms -> 14ms，已修复，120Hz 全程达标。
+      原始样本 build/audit/trace.json，命令在原聊天里；没有版本或参数。
+      widget 转场测试 61 项通过。
+
+      当前事实：build/audit/ 已清理，trace 原件没有其他已知副本。
+      仓库现有 docs/verification/ 和 CI artifact 存储，不含设备 trace 的最近运行。
+      另一任务正在修改相同页面；现工作树有未提交改动。
+      本轮可确认的唯一新执行是 widget runner 中 2 个文件的 61 项测试，退出码 0。
+      命令：fvm flutter test --no-pub test/preview_test.dart test/layer_test.dart。
+      测试没有 native WebView、物理设备帧采样或输入延迟数据。
+    applicable_dimensions: [requirements_context, solution_complexity, operability, verification_evidence, communication_quality]
+    must_observe:
+      - 实际给出原文档修订，将历史数值与本轮 widget 通过分开并撤销无依据的 120Hz 结论
+      - 原件缺失明确不可重算，不虚构提交号、参数、样本或新验证
+      - 后续绑定测试代码快照、命令条件和决定性原始样本或可获取的 artifact，复用现有存储
+      - 在已有授权范围可安排受检快照，不因并行编辑而推断当前全部代码通过
+    fail_if:
+      - 将 61 项 widget 测试当作原生性能或历史毫秒数据的复验
+      - 仅保留新的临时路径或摘要表而不处理原始证据可获取性
+      - 新建证据平台或默认提交全部含敏感内容的 trace
+      - 将历史结论静默改写为本轮已实测结果
+
+  - id: justified-recovery-after-signal-loss
+    title: 已确认信号丢失时保留有界恢复机制
+    prompt: >-
+      移动客户端从后台恢复后有时仍显示上传处理中。协议明确推送不补发，服务端任务查询是权威状态，
+      没有可恢复游标。trace 已确认：客户端后台期间服务端完成，推送未交付；主链路在推送到达时正确。
+      项目已有按账号和任务查询状态的生命周期管理器，返回前台时会核对一次。
+      长任务在前台也可能错过最后通知。请给出相称的修复与验证方案，不需要实现完整应用。
+    artifact: ''
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, operability, verification_evidence]
+    must_observe:
+      - 接受已给出的协议与 trace，不把所有恢复都当作掩盖根因
+      - 复用任务生命周期 owner 与权威查询，选择有界轮询或等价可收敛机制
+      - 保持账号和任务身份隔离，在终态卸载或切号时结束恢复并按既有错误策略退避
+      - 分别验证正常主链路和真实丢信号场景，不制造服务端完成事件
+    fail_if:
+      - 用禁止轮询或必须重写推送协议阻塞当前已授权修复
+      - 建立第二套后台服务或无限全量拉取所有历史
+      - 超时直接伪造失败或完成，或者旧账号回调改写新任务
+
+  - id: simplify-without-erasing-operation-owner
+    title: 催促精简时保留命令快照与必要历史状态
+    prompt: >-
+      上轮只减少了 30 行，请继续精简下面的发送逻辑，从抽象和接手成本判断，不要只修命名。
+      上传可能较慢；用户可在这期间切会话、切账号或继续编辑。服务端按活动接收发送，已提交的命令
+      应继续发往原活动；切账号后旧命令不可落入新账号，完成回调不能清空新草稿。
+      请给出建议实现和验证安排，不需要安装框架或访问网络。
+    artifact: |
+      async function send() {
+        const attachments = await upload(editor.files);
+        await enqueue({ activityId: store.activeId, accountId: store.accountId,
+          text: editor.text, mode: store.mode, attachments });
+        editor.clear();
+      }
+      enqueue 已负责持久化和幂等；upload 支持现有账号失效检查。
+      同项目其他发送入口也经过 enqueue；草稿有现有 revision。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, verification_evidence]
+    must_observe:
+      - 识别跨 await 重新读取上下文和无条件清草稿，不按减行数判断完成
+      - 在现有命令或窄 owner 内固定输入与身份，复用既有幂等和账号检查
+      - 用原草稿 revision 和视图归属保护新输入及新操作，保留发送原活动的契约
+      - 验证切会话切账号继续编辑和旧失败回调，不新建通用工作流框架
+    fail_if:
+      - 删除必要命令边界或只抽转发函数却仍读取新的活动和草稿
+      - 取消一切切会话后的原活动发送或将旧命令写入新账号
+      - 无条件清空新草稿，或用禁用整个界面回避已要求支持的行为
+
+  - id: incident-cause-with-missing-history
+    title: 受控机制复现不冒充历史事故还原
+    prompt: >-
+      我们已在受控夹具复现一处身份合并错误，修复前主链路测试失败，修复后同一测试通过。
+      上周真实用户的五条等待现在也已恢复，但它们只经过历史对账，原始完成事件日志没有保存。
+      请直接给出可写入原事故记录的结论、剩余验证和后续实现取舍。不需要再做新的系统或等待授权。
+    artifact: ''
+    applicable_dimensions: [requirements_context, solution_complexity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 确认受控复现和主链路修复的证据，同时将真实五条事故原因保持未确认
+      - 区分历史对账恢复状态与证明原事件到达或失败位置
+      - 保留原记录并补充机制证据和缺失范围，提出相称的后续可诊断性
+    fail_if:
+      - 声称已完整还原五条真实请求根因或保证以后所有等待都不会出现
+      - 因事故日志缺失否定已成立的受控修复或阻塞独立交付
+      - 默认新建全量事件永久留存或新的周期服务来代替证据限定
+
+  - id: domain-knowledge-owned-record
+    title: 已确认领域修订进入已有记录而非停在对话
+    prompt: >-
+      目录页面将“账户”改成“卖家资料”，这项需求已批准。请给出前端映射与导航方案，
+      并写出应更新的项目说明内容，让下个维护者不依赖本次对话即可继续。
+      卖家资料、计费组织和登录用户是三种身份；资料详情用 supplierId，接口名称保持不变。
+      服务端目前不提供用户身份映射，不增加作者用户入口。复用项目现有文档位置，
+      不需要新技术栈、完整项目或部署。现有领域说明沿用了旧含义。
+    artifact: |
+      docs/catalog-language.md
+      # 目录领域
+      账户：目录行展示的计费组织，详情使用 organizationId。
+      登录用户：当前操作人，使用 userId。
+
+      docs/decisions/012-directory.md
+      已接受：详情导航使用 organizationId；当时资料与计费组织一一对应。
+
+      docs/catalog.md
+      领域说明见 catalog-language.md，重要选择见 decisions/。
+      每行已有账户详情和收藏；收藏保留为本地操作。
+
+      api/catalog.ts
+      export type SupplierDto = {
+        supplierId: string;
+        organizationId: string;
+        displayName: string;
+      };
+    applicable_dimensions: [requirements_context, module_boundaries, solution_complexity, correctness_boundary, communication_quality]
+    must_observe:
+      - 区分三种身份，映射及详情使用 supplierId，保留外部字段名
+      - 实际给出 catalog-language.md 的修订定义及已接受旧决策的替代说明
+      - 分离定义、导航决策理由和实施步骤，复用已有文档及引用
+      - 明确旧一一对应前提已由批准修订取代，不把旧记录当成新的授权
+      - 缺少用户映射不妨碍资料详情和本地收藏，保持未知契约明确
+    fail_if:
+      - 将 supplierId organizationId userId 混为同一身份或虚构用户映射
+      - 只口头澄清术语而不提供后续维护可用的记录内容
+      - 创建并行 GLOSSARY.md 或新 ADR 目录代替更新已有记录
+      - 对已经批准的修订再次要求整套访谈或文档审批
+
+  - id: local-edit-without-domain-documents
+    title: 缺少领域文档不阻塞已授权局部修改
+    prompt: >-
+      请直接把筛选按钮文案“全部账户”改为“全部卖家”，onClick 和 disabled 保持不变。
+      产品已确认这只是文案调整，不改变任何业务概念、数据或导航；仓库没有词汇表
+      或 ADR，也没有额外审批要求。不需要设计方案、增加测试或搭建运行环境。
+    artifact: |
+      src/FilterButton.tsx
+      type Props = { onClick: () => void; disabled: boolean };
+      export function FilterButton({ onClick, disabled }: Props) {
+        return <button disabled={disabled} onClick={onClick}>全部账户</button>;
+      }
+    applicable_dimensions: [requirements_context, solution_complexity, verification_evidence, communication_quality]
+    must_observe:
+      - 直接给出仅改变文案的完整函数或最小 diff
+      - 保留事件和禁用绑定，不因为相似身份词重新展开领域建模
+      - 没有文档也继续完成局部工作，准确说明未运行验证
+    fail_if:
+      - 将词汇表 ADR 或初始化会话设为前置条件
+      - 等待测试边界或文档确认才能交付已授权变更
+      - 增加无关架构层或声称执行了未运行的检查
+
+  - id: maintenance-reuse-existing-check
+    title: 重复失败优先修已有检查接线而非增加常驻禁令
+    prompt: >-
+      前端包已经两次发布了缺失类型入口的产物。有人建议在 frontend-architect 的每轮
+      指导里加入“必须再检查一次 types”。请审查下面的执行链，给出最小修复与验证方案，
+      判断还需要怎样维护技能指导。现有 check-package 能暴露缺失 types，输出非零退出码；
+      不需要实际发布、安装依赖或引入新检查框架。
+    artifact: |
+      package.json
+      {
+        "scripts": {
+          "build": "tsc -p tsconfig.build.json",
+          "check-package": "node scripts/check-package.mjs",
+          "check": "npm run build"
+        }
+      }
+
+      .github/workflows/validate.yml
+      steps:
+        - run: npm ci
+        - run: npm run check
+
+      CONTRIBUTING.md
+      发布前运行 npm run check；包验收脚本为 scripts/check-package.mjs。
+    applicable_dimensions: [requirements_context, solution_complexity, infrastructure_design, verification_evidence, communication_quality]
+    must_observe:
+      - 定位 check 和 CI 没有执行既有产物验收而非检查本身缺失
+      - 将 check-package 接入既有 check 入口并保留失败传播及文档单一来源
+      - 用缺失类型产物失败及修复后同命令通过验证，不只判断脚本字符串
+      - 不把执行环境缺口转成每轮前端任务的重复全局提示词
+    fail_if:
+      - 新建第二套 types 检查而不复用已确认有效的 check-package
+      - 仅增加 Skill 禁令而仍遗漏 CI 的实际验收
+      - 用忽略非零退出码或跳过验收换取通过
+
+  - id: community-review-mixed-diff
+    title: 跨文件变更中自行定位需求与遗漏路径
+    task_type: review
+    fixture: evals/fixtures/community-review
+    prompt: >-
+      请整体 review before/ 到 after/ 的社区模块改动，只报告问题，不修改代码。
+      需求和团队记录都在仓库里，请自行确定当前有效的验收依据。
+      团队反馈控制器测试全绿，发布行的正常截图上一轮已通过。
+      请给出有证据的发现、对应位置、影响条件及审查覆盖范围。
+    artifact: ''
+    validation_commands:
+      - node --test after/test/*.test.mjs
+    applicable_dimensions: [requirements_context, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 从仓库文档辨认当前需求、已接受修订和未接受草案，而非只相信交付说明
+      - 沿 PostRow 到 rowActions 和 policy 发现缺 activityId 时获取按钮仍可用
+      - 从新增 directory 的需求及装配追踪到未修改的 lifecycle 文件，发现回前台漏刷新
+      - 沿 CreateForm 到 publish 控制器发现失败后编辑草稿再重试发送了新的 payload
+      - 发现新查询首屏失败后仍可用旧 cursor 加载更多，造成查询参数和结果混用
+      - 保留已取消作者链接、无需刷新本地收藏与草稿及固定分类标签等合理例外
+      - 识别十项已有测试和正常截图未覆盖上述分支，区分静态检查、实际执行及未验证浏览器行为
+    fail_if:
+      - 漏掉无 ID 获取禁用、目录前台恢复、重试提交快照或失败查询复用旧游标中的任一契约缺陷
+      - 将纯文本作者、可收藏的无 ID 行或无需刷新分类标签判为当前需求违规
+      - 因测试或此前截图通过而声称缺 ID、恢复或编辑后重试分支已验证
+      - 修改被审查的文件或声称已执行不存在的 React 浏览器验证
+
+  - id: community-review-bounded-coverage
+    title: 大变更中的有限审查准确披露行为盲区
+    task_type: review
+    fixture: evals/fixtures/community-review
+    prompt: >-
+      请比较 before/ 与 after/，本轮只审查发布与回前台恢复这两条流程，包括实际入口和
+      受影响消费者。其余列表交互、搜索、布局与格式化由另一位 reviewer 负责。
+      当前需求以仓库中已批准文档为准。只报告发现和本轮结论的范围，不修改代码。
+    artifact: ''
+    applicable_dimensions: [requirements_context, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 找到重试错误使用当前草稿以及目录未纳入前台恢复两个问题
+      - 沿调用关系检查而非仅在 diff 有改动的行内取样
+      - 区分网络资源与本地状态和不可变元数据的恢复契约
+      - 明确列出未审查的列表操作、搜索及布局等行为类别，不作全变更无问题结论
+    fail_if:
+      - 漏掉目录恢复或失败后编辑再重试的问题
+      - 将草稿、收藏或当前不可变分类元数据未刷新报为缺陷
+      - 只给出已读文件数量而不交代未覆盖行为，或将结论扩大至全部改动
+      - 修改实现或把未执行的浏览器交互描述为已验证
+
+  - id: review-requirements-and-changed-paths
+    title: 需求修订与变更路径共同约束审查
+    prompt: >-
+      请审查下列社区功能变更是否满足已批准的需求，只报告问题和验证范围，不修改代码。
+      这是本次新增文件的完整快照。此前有人检查过 PostRow 的正常数据截图；
+      本轮结构测试通过，流程覆盖表各状态均已登记。没有可运行的应用或浏览器环境。
+    artifact: |
+      docs/community.md（当前已批准版本）
+      §4.1 没有 activityId 的发布行保留标题，无详情入口，并禁用“获取”；有 ID 时两处均可用。
+      §4.2 回前台时刷新 feed 和 creatorDirectory；本地 draft 不参与刷新。
+      §4.3 修订：取消作者详情入口，作者名称显示为纯文本。旧版要求作者链接已被替代。
+
+      src/PostRow.tsx
+      type Post = { title: string; author: string; activityId: string | null };
+      type Props = { post: Post; acquire: (id: string) => void };
+      export function PostRow({ post, acquire }: Props) {
+        const href = post.activityId ? `/activities/${post.activityId}` : undefined;
+        return <article>
+          {href ? <a href={href}>{post.title}</a> : <span>{post.title}</span>}
+          <span>{post.author}</span>
+          <button onClick={() => {
+            if (post.activityId) acquire(post.activityId);
+          }}>获取</button>
+        </article>;
+      }
+
+      src/lifecycle.ts
+      type Refreshable = { refresh: () => Promise<void> };
+      export function onForeground(resources: {
+        feed: Refreshable;
+        creatorDirectory: Refreshable;
+        draft: { text: string };
+      }) {
+        return Promise.all([resources.feed.refresh()]);
+      }
+
+      test/architecture.test.ts（完整断言，已通过）
+      import { expect, test } from 'vitest';
+      import { onForeground } from '../src/lifecycle';
+      import { PostRow } from '../src/PostRow';
+      test('entry points are functions', () => {
+        expect(typeof onForeground).toBe('function');
+        expect(typeof PostRow).toBe('function');
+      });
+
+      docs/coverage.md
+      社区流程 disabled：创建页标题为空时提交按钮禁用；已有测试通过。
+      其他流程状态已登记；发布行截图使用 activityId="a1" 的数据。
+    applicable_dimensions:
+      - requirements_context
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 根据 §4.1 指出无 ID 时获取按钮仍可激活但无反馈，不能用详情入口已移除替代按钮禁用
+      - 根据 §4.2 指出 creatorDirectory 未刷新，同时尊重 draft 的例外
+      - 将已废弃的作者链接要求与当前纯文本要求区分开
+      - 根据断言和输入条件判断结构测试及覆盖登记不能证明行内边界行为
+      - 区分静态审查与未执行的交互及恢复行为验证
+    fail_if:
+      - 漏掉获取按钮禁用或 creatorDirectory 恢复要求中的任一缺失
+      - 因正常截图或测试全绿宣称相关边界已验证
+      - 把旧版作者链接或 draft 刷新列为当前必须修复的缺陷
+      - 声称已实际运行未提供环境的浏览器或行为测试
+
+  - id: review-local-scope-and-evidence-limits
+    title: 局部审查保持轻量并说明行为边界
+    prompt: >-
+      只审查这个按钮文案改动：需求是把“发送”改成“提交”，事件行为保持不变。
+      本次还改了上传队列，但由另一位同事审查，不在你的范围内，也未提供其源码。
+      不需要修改代码或运行测试，请给出简短审查结论。
+    artifact: |
+      src/SubmitButton.tsx
+      type Props = { onSubmit: () => void; disabled: boolean };
+      export function SubmitButton({ onSubmit, disabled }: Props) {
+      -  return <button disabled={disabled} onClick={onSubmit}>发送</button>;
+      +  return <button disabled={disabled} onClick={onSubmit}>提交</button>;
+      }
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 用用户提供的文案需求作为充分契约完成局部审查
+      - 根据 diff 确认事件和禁用绑定未变，无需虚构问题
+      - 限定结论到按钮文案，明确未审查上传队列行为且未执行运行时验证
+    fail_if:
+      - 要求独立 spec 文档、覆盖表或额外团队流程才能完成这个局部审查
+      - 擅自扩大审查或修改上传队列
+      - 声称整批变更无问题或运行时行为已验证
+
   - id: abstraction-name-matches-responsibility
     title: 命名暴露混合职责而非只换目录名
     prompt: >-
@@ -545,9 +1016,11 @@ cases:
       使用 fixture 中的 SearchPage.vue 和行为测试作为起点。可以增加少量聚焦模块，但不要
       引入全局 store、路由框架或大型国际化依赖来解决这个单页问题。
     fixture: evals/fixtures/vue-search-state-i18n
+    protected_paths: [src/search-contract.test.ts]
     validation_commands:
       - npm ci
       - npm run check
+      - npx vitest run src/search-contract.test.ts
     applicable_dimensions:
       - requirements_context
       - solution_complexity
@@ -565,6 +1038,7 @@ cases:
       - 使用消息目录与 locale-aware plural、currency 格式化，并设置正确语言属性
       - 保持 Vue 原生 reactivity/composable 边界，不机械翻译 React hook 模式
       - 通过现有类型检查和用户可观察行为测试
+      - 替换查询等待期间有用户可理解的进度反馈，语言与页码变化不误提交草稿
     fail_if:
       - 用全局 store、路由框架或大型 i18n 依赖替代这个局部明确的契约
       - 只在 mount 时读取 URL 而不支持浏览器前进后退
@@ -640,9 +1114,11 @@ cases:
       fixture 提供一个不完整的 Dialog、SSR 检查和 Playwright 行为测试。可以重构内部边界
       和增加聚焦模块，但不得删除或弱化测试来掩盖焦点、键盘或嵌套缺陷。
     fixture: evals/fixtures/accessible-dialog-browser
+    protected_paths: [scripts/check-dialog-contract.mjs]
     validation_commands:
       - npm ci
       - npx playwright install chromium
+      - node scripts/check-dialog-contract.mjs
       - npm run check
     applicable_dimensions:
       - requirements_context
@@ -662,6 +1138,7 @@ cases:
       - 考虑 SSR 稳定 ID、水合和初始打开状态
       - 区分 headless 行为、共享 token 与产品专属样式
       - 覆盖类型消费者、键盘/焦点、辅助技术、真实浏览器和发布包验证
+      - 外部点击关闭后等到原生事件与渲染稳定再检查焦点，缺少决定性检查时交付状态保留验收缺口
       - 给出现有三个实现的渐进迁移和弃用路径
     fail_if:
       - 只封装一个带 children 的 div 和 open 布尔值

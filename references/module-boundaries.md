@@ -7,6 +7,26 @@ reviewing dependency direction.
 Use [runtime-and-delivery.md](runtime-and-delivery.md) instead when the dominant
 decision is workspace packaging, build graphs, or server/client placement.
 
+## Contents
+
+- [Establish ecosystem conventions first](#establish-ecosystem-conventions-first)
+- [Start with change and ownership](#start-with-change-and-ownership)
+- [Compare the two grouping strategies](#compare-the-two-grouping-strategies)
+- [Grouping by technical role](#grouping-by-technical-role)
+- [Grouping by feature or domain](#grouping-by-feature-or-domain)
+- [Use a hybrid default for product applications](#use-a-hybrid-default-for-product-applications)
+- [Refine boundaries at several scales](#refine-boundaries-at-several-scales)
+- [Divide a feature by owned responsibility](#divide-a-feature-by-owned-responsibility)
+- [Split implementation units for semantic reasons](#split-implementation-units-for-semantic-reasons)
+- [Hide complexity, not just code](#hide-complexity-not-just-code)
+- [Make internal dependency direction visible](#make-internal-dependency-direction-visible)
+- [Stop splitting at the right point](#stop-splitting-at-the-right-point)
+- [Classify code by responsibility](#classify-code-by-responsibility)
+- [Make names describe the boundary](#make-names-describe-the-boundary)
+- [Define module contracts](#define-module-contracts)
+- [Review a proposed structure](#review-a-proposed-structure)
+- [Influences](#influences)
+
 ## Establish ecosystem conventions first
 
 Inspect the framework, router, supported version, generated starter and existing

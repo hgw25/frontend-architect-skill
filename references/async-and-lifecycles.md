@@ -47,6 +47,13 @@ its promise resolves last. Define what dispose, navigation, replacement and
 resubmission do to pending completion. A retry normally uses the failed submitted
 input; editing a draft does not silently change the meaning of retry.
 
+Keep the submitted input distinct from the editable draft. Completion may clear
+the draft only if its owner and edit version still match the submitted operation;
+equal text does not prove there were no intervening edits (A -> B -> A). Reuse
+the form's existing revision or dirty lifecycle; add a local edit generation only
+when needed, including programmatic edits such as clear. Do not lock the whole
+editor to avoid an interaction the product must support.
+
 ## Keep errors actionable and owned
 
 Catch at the layer that can recover, translate an external error into its public

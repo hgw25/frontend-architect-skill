@@ -1,0 +1,7 @@
+# Field eligibility implementation task
+
+Repair `src/process-form.js`, retaining the exported async `processForm(fields, values, send)` API. No dependencies are needed; run `npm run check`. Do not change `package.json` or `test/`. You may add focused source modules.
+
+Each field has a unique string `name`, optional booleans `disabled` and `required`, and optional `validate(value, values)` returning a string error or undefined, synchronously or asynchronously. Disabled fields participate in neither validation nor submission: their validators must never run. Unknown properties in values must never be submitted.
+
+Required emptiness is exactly undefined, null, or the empty string. Zero, false, whitespace and empty arrays are legitimate values. A required error is exactly `Required`, and its custom validator must be skipped. Otherwise preserve the custom validator's returned error text. Wait for enabled validators before calling send. On errors return `{ errors: { [name]: message } }` and never send. On success call send once with only enabled declared fields and return its result. Validators and send may reject; propagate their rejection rather than misreporting success. Field names such as `__proto__` are valid and must appear as own keys. Do not mutate fields or values.

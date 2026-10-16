@@ -1,0 +1,148 @@
+diff --git a/index.html b/index.html
+index 2653139..d87b81b 100644
+--- a/index.html
++++ b/index.html
+@@ -1,7 +1,7 @@
+ <!doctype html>
+ <html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="/style.css"></head>
+ <body><main>
+-<label for="name">Name</label><div class="field"><input id="name" value="Draft"><button id="clear" aria-label="Clear name">×</button></div>
+-<button id="save">Save</button><p id="feedback" role="status"></p>
++<label for="name">Name</label><div class="field"><input id="name" value="Draft"><button id="clear" type="button" aria-label="Clear name">×</button></div>
++<button id="save" type="button">Save</button><p id="feedback" role="status"></p>
+ <div id="grid" data-ready="false"><table><tbody></tbody></table></div>
+ </main><script type="module" src="/app.mjs"></script></body></html>
+diff --git a/src/app.mjs b/src/app.mjs
+index b26b32f..0d7dc71 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -2,24 +2,88 @@ const input = document.querySelector('#name');
+ const feedback = document.querySelector('#feedback');
+ const save = document.querySelector('#save');
+ const grid = document.querySelector('#grid');
+-document.querySelector('#clear').onclick = () => { input.value = ''; };
+-save.onclick = async () => {
++const clear = document.querySelector('#clear');
++const body = document.querySelector('tbody');
++
++let draftRevision = 0;
++
++input.addEventListener('input', () => {
++  draftRevision += 1;
++});
++
++clear.addEventListener('click', () => {
++  if (input.value !== '') {
++    input.value = '';
++    draftRevision += 1;
++  }
++  input.focus();
++});
++
++save.addEventListener('click', async () => {
++  const submission = {
++    value: input.value,
++    draftRevision,
++  };
++
+   save.disabled = true;
+   feedback.textContent = 'Saving';
+   try {
+-    const response = await fetch('/save', { method: 'POST', body: input.value });
++    const response = await fetch('/save', { method: 'POST', body: submission.value });
+     if (!response.ok) throw new Error('Save failed');
+-    document.querySelector('td').textContent = input.value;
++
++    body.rows[0].cells[0].textContent = submission.value;
+     feedback.textContent = 'Saved';
+-  } catch { feedback.textContent = 'Save failed'; }
+-  finally { input.value = ''; save.disabled = false; }
+-};
+-const body = document.querySelector('tbody');
++
++    if (draftRevision === submission.draftRevision && input.value !== '') {
++      input.value = '';
++      draftRevision += 1;
++    }
++  } catch {
++    feedback.textContent = 'Save failed';
++  } finally {
++    save.disabled = false;
++  }
++});
++
+ for (let index = 0; index < 30; index++) {
+-  const row = body.insertRow(); row.dataset.row = String(index);
++  const row = body.insertRow();
++  row.dataset.row = String(index);
+   row.insertCell().textContent = 'Record ' + index;
+ }
+-if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+-  for (const row of [...body.rows].slice(0, 8)) row.animate({ opacity: [0, 1] }, { duration: 240 });
++
++function visibleRows() {
++  const gridBounds = grid.getBoundingClientRect();
++  const visibleBounds = {
++    top: Math.max(gridBounds.top, 0),
++    right: Math.min(gridBounds.right, window.innerWidth),
++    bottom: Math.min(gridBounds.bottom, window.innerHeight),
++    left: Math.max(gridBounds.left, 0),
++  };
++
++  return [...body.rows].filter((row) => {
++    const bounds = row.getBoundingClientRect();
++    return bounds.bottom > visibleBounds.top
++      && bounds.top < visibleBounds.bottom
++      && bounds.right > visibleBounds.left
++      && bounds.left < visibleBounds.right;
++  });
++}
++
++function revealGrid() {
++  grid.dataset.ready = 'true';
++
++  requestAnimationFrame(() => {
++    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
++
++    for (const row of visibleRows()) {
++      row.animate(
++        { opacity: [0, 1], transform: ['translateY(4px)', 'translateY(0)'] },
++        { duration: 240, easing: 'ease-out' },
++      );
++    }
++  });
+ }
+-setTimeout(() => { grid.dataset.ready = 'true'; }, Number(new URLSearchParams(location.search).get('delay') || 200));
++
++const requestedDelay = Number(new URLSearchParams(location.search).get('delay') ?? 200);
++const contentDelay = Number.isFinite(requestedDelay) ? Math.max(0, requestedDelay) : 200;
++setTimeout(revealGrid, contentDelay);
+diff --git a/src/style.css b/src/style.css
+index 101573d..e3d8ea9 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -1,10 +1,21 @@
+ * { box-sizing: border-box; }
+ body { font: 16px system-ui; margin: 16px; }
+ main { width: min(560px, 100%); }
+-.field { display: flex; width: 100%; height: 36px; }
++.field { display: flex; position: relative; width: 100%; height: 36px; }
+ .field input { flex: 1; min-width: 0; }
+-#clear { width: 28px; opacity: 0; pointer-events: none; }
+-.field:hover #clear, #clear:focus-visible { opacity: 1; pointer-events: auto; }
++#clear {
++  position: absolute;
++  inset-block: 0;
++  inset-inline-end: 0;
++  width: 28px;
++  opacity: 0;
++  pointer-events: none;
++}
++.field:hover #clear, #clear:focus-visible {
++  position: static;
++  opacity: 1;
++  pointer-events: auto;
++}
+ #feedback { min-height: 24px; }
+ #grid { height: 100px; overflow: hidden; }
+ #grid[data-ready='false'] { visibility: hidden; }

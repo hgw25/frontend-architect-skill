@@ -1,0 +1,764 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-10-15T03:27:26.400810+00:00",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "codex_version": "codex-cli 0.162.0-alpha.17.2",
+  "platform": "macOS-26.7.1-arm64-arm-64bit-Mach-O",
+  "cases": [
+    {
+      "id": "maintenance-reuse-existing-check",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-maintenance-reuse-existing-check-candidate-jls_04g2",
+      "fixture_base_commit": "94f49cde2c4cbb634d403a72b75c4cb980f90be5",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "前端包已经两次发布了缺失类型入口的产物。有人建议在 frontend-architect 的每轮 指导里加入“必须再检查一次 types”。请审查下面的执行链，给出最小修复与验证方案， 判断还需要怎样维护技能指导。现有 check-package 能暴露缺失 types，输出非零退出码； 不需要实际发布、安装依赖或引入新检查框架。",
+        "artifact": "package.json\n{\n  \"scripts\": {\n    \"build\": \"tsc -p tsconfig.build.json\",\n    \"check-package\": \"node scripts/check-package.mjs\",\n    \"check\": \"npm run build\"\n  }\n}\n\n.github/workflows/validate.yml\nsteps:\n  - run: npm ci\n  - run: npm run check\n\nCONTRIBUTING.md\n发布前运行 npm run check；包验收脚本为 scripts/check-package.mjs。\n",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "a9a0189395cf06982d4889f7b555aa50caacc7d72a7ae322d69cae528c242326",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 130.8
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "frontend-infrastructure.md",
+          "verification-and-review.md"
+        ],
+        "topic_count": 2,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-maintenance-reuse-existing-check-candidate-jls_04g2/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "maintenance-reuse-existing-check/candidate/response.md",
+      "diff": "maintenance-reuse-existing-check/candidate/changes.diff"
+    },
+    {
+      "id": "review-requirements-and-changed-paths",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-review-requirements-and-changed-paths-candidate-9ifcg7if",
+      "fixture_base_commit": "6550b1802fb48002108a710426479f9956c8d1ae",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "请审查下列社区功能变更是否满足已批准的需求，只报告问题和验证范围，不修改代码。 这是本次新增文件的完整快照。此前有人检查过 PostRow 的正常数据截图； 本轮结构测试通过，流程覆盖表各状态均已登记。没有可运行的应用或浏览器环境。",
+        "artifact": "docs/community.md（当前已批准版本）\n§4.1 没有 activityId 的发布行保留标题，无详情入口，并禁用“获取”；有 ID 时两处均可用。\n§4.2 回前台时刷新 feed 和 creatorDirectory；本地 draft 不参与刷新。\n§4.3 修订：取消作者详情入口，作者名称显示为纯文本。旧版要求作者链接已被替代。\n\nsrc/PostRow.tsx\ntype Post = { title: string; author: string; activityId: string | null };\ntype Props = { post: Post; acquire: (id: string) => void };\nexport function PostRow({ post, acquire }: Props) {\n  const href = post.activityId ? `/activities/${post.activityId}` : undefined;\n  return <article>\n    {href ? <a href={href}>{post.title}</a> : <span>{post.title}</span>}\n    <span>{post.author}</span>\n    <button onClick={() => {\n      if (post.activityId) acquire(post.activityId);\n    }}>获取</button>\n  </article>;\n}\n\nsrc/lifecycle.ts\ntype Refreshable = { refresh: () => Promise<void> };\nexport function onForeground(resources: {\n  feed: Refreshable;\n  creatorDirectory: Refreshable;\n  draft: { text: string };\n}) {\n  return Promise.all([resources.feed.refresh()]);\n}\n\ntest/architecture.test.ts（完整断言，已通过）\nimport { expect, test } from 'vitest';\nimport { onForeground } from '../src/lifecycle';\nimport { PostRow } from '../src/PostRow';\ntest('entry points are functions', () => {\n  expect(typeof onForeground).toBe('function');\n  expect(typeof PostRow).toBe('function');\n});\n\ndocs/coverage.md\n社区流程 disabled：创建页标题为空时提交按钮禁用；已有测试通过。\n其他流程状态已登记；发布行截图使用 activityId=\"a1\" 的数据。\n",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "e1bf9a5b3e9a8626f2a30e5a1d94a43f5039dc35da46da27d55d21469a78a503",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 91.098
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "verification-and-review.md"
+        ],
+        "topic_count": 1,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-review-requirements-and-changed-paths-candidate-9ifcg7if/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "review-requirements-and-changed-paths/candidate/response.md",
+      "diff": "review-requirements-and-changed-paths/candidate/changes.diff"
+    },
+    {
+      "id": "centralized-tests-follow-project-contract",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-centralized-tests-follow-project-contract-candidate-9_irqc4i",
+      "fixture_base_commit": "609582c0d45585e7df1b420d4019ddbde0aaba58",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "用户明确希望测试集中放在 tests 下。现有 Vitest 配置仅发现 src 下的测试， setup 在 src/test-setup.ts，工单测试散在 src 根目录和组件旁。 请说明迁移方案和验收方式，不新增业务功能。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "526760bdd61fd57a4abc4efe0ecb7489d4384cdb78ce2f4fad92e8f2a4519c90",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 96.589
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [],
+        "topic_count": 0,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-centralized-tests-follow-project-contract-candidate-9_irqc4i/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "centralized-tests-follow-project-contract/candidate/response.md",
+      "diff": "centralized-tests-follow-project-contract/candidate/changes.diff"
+    },
+    {
+      "id": "avoid-ceremonial-page-layers",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-avoid-ceremonial-page-layers-candidate-oej9wkla",
+      "fixture_base_commit": "b8040adaad6efcb41a032c27baa1ef3f9512ff21",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "现有单页应用采用 pages/orders，页面私有组件在其 components 下， 数据读写在 orderStorage.ts，状态所有权清楚。只需修改筛选按钮文案。 同事建议新增 features/orders、modules/orders 和通用存储仓库层。请完成判断。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "db55518becb32cb4edb55b7dbe1cd0a9447ec286b27b8e8461a20d2352666f9d",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 60.09
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [],
+        "topic_count": 0,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-avoid-ceremonial-page-layers-candidate-oej9wkla/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "avoid-ceremonial-page-layers/candidate/response.md",
+      "diff": "avoid-ceremonial-page-layers/candidate/changes.diff"
+    },
+    {
+      "id": "convenience-without-framework",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-convenience-without-framework-candidate-i_cquait",
+      "fixture_base_commit": "b16a0f8e3a7861390113436df5fb15db0a806ef5",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "项目的提示组件接收 tone、role、duration 三个参数。保存成功的调用都应采用 positive、status、3000，而其他提示有不同语义。现在已有两个保存按钮要接入， 请设计方便调用且仍能表达不同提示的接口，不需要完整组件实现。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "d85279d7caf7c389b2538006599c1c0a373be355e0172d39de2a76f3585cc83e",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 74.327
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "architecture-and-code.md"
+        ],
+        "topic_count": 1,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-convenience-without-framework-candidate-i_cquait/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "convenience-without-framework/candidate/response.md",
+      "diff": "convenience-without-framework/candidate/changes.diff"
+    },
+    {
+      "id": "reuse-existing-table-capability",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-reuse-existing-table-capability-candidate-4enlo6vd",
+      "fixture_base_commit": "8be283aeca92c1096781cef7bbb395fb15fc8e05",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "为现有前端表格增加多列排序和键盘导航，给出实现与验证方案。 项目已安装 TableKit 4（本评测虚构库），现有页面使用其 Table 组件。 下面是已核实与安装版本匹配的项目资料，无需联网。",
+        "artifact": "TableKit 4 supports controlled multi-column sorting via sortModel/onSortModelChange.\nThe existing project wrapper forwards both props and owns locale and keyboard navigation.\nExisting consumer tests cover focus after sorting and localized sort announcements.\nThe requested behavior matches that documented contract; no extra dependency is needed.\n",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "f288036765f0fcf87b332d75dc5213b3377f13bed0d81a12e56d6a280620325b",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 110.04
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "frontend-infrastructure.md",
+          "verification-and-review.md"
+        ],
+        "topic_count": 2,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-reuse-existing-table-capability-candidate-4enlo6vd/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "reuse-existing-table-capability/candidate/response.md",
+      "diff": "reuse-existing-table-capability/candidate/changes.diff"
+    },
+    {
+      "id": "group-by-api",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-group-by-api-candidate-x5yfnlzv",
+      "fixture_base_commit": "6da1c411a6d97ea5ad3efc40cf0871fc937224ce",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "请评审下面的 JavaScript groupBy 封装。判断它是否值得作为通用工具进入前端基础库， 指出实际正确性和 API 设计问题，并给出符合现代前端工程约束的建议。不要只改写循环语法。",
+        "artifact": "function groupBy(items, generateKey) {\n  if (typeof generateKey === 'string') {\n    const propertyName = generateKey\n    generateKey = (item) => item[propertyName]\n  }\n\n  const result = {}\n  let index = 0\n\n  for (const item of items) {\n    const key = generateKey(item, index++, items)\n    if (result[key]) result[key].push(item)\n    else result[key] = [item]\n  }\n\n  return result\n}\n",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "898b1bb55679dfd3433f412e0c8e0a757bef3146b1c862af41598da502c76384",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 182.794
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "architecture-and-code.md",
+          "frontend-infrastructure.md",
+          "verification-and-review.md"
+        ],
+        "topic_count": 3,
+        "breadth_ok": false,
+        "routing_policy_version": 2,
+        "breadth_review_required": true,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-group-by-api-candidate-x5yfnlzv/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "group-by-api/candidate/response.md",
+      "diff": "group-by-api/candidate/changes.diff"
+    },
+    {
+      "id": "feature-internal-decomposition",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-feature-internal-decomposition-candidate-odqpwo65",
+      "fixture_base_commit": "2ec6729019fb09bf96573ce933a222a84914e058",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "一个 React 结算功能已经集中到 features/checkout，但 CheckoutPage.tsx 接近 900 行： 它同时处理表单草稿、价格与优惠计算、优惠券请求、库存订阅、支付 SDK 生命周期、 提交竞态、错误提示和全部 JSX。团队准备机械拆成 components、hooks、services、utils。 请根据实际职责给出细致但不过度的内部模块划分，说明公开 API、状态与副作用所有权、 内部依赖方向、测试放置和停止继续拆分的条件。不要以文件行数作为主要理由。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "0228b149243498f7410749cf9b9a77fdf7ad8288f22dc558ff809d87dbb2cffa",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 210.47
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "architecture-and-code.md",
+          "async-and-lifecycles.md",
+          "module-boundaries.md"
+        ],
+        "topic_count": 3,
+        "breadth_ok": false,
+        "routing_policy_version": 2,
+        "breadth_review_required": true,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-feature-internal-decomposition-candidate-odqpwo65/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "feature-internal-decomposition/candidate/response.md",
+      "diff": "feature-internal-decomposition/candidate/changes.diff"
+    },
+    {
+      "id": "reorder-motion",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-reorder-motion-candidate-tug8qw31",
+      "fixture_base_commit": "ef2f9cd5ee95ca366a932de6ec18df774121eb2a",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "为支持拖拽排序的卡片列表设计重排动画。请先判断无动画、CSS transition、 View Transitions API、FLIP 或动画库中哪个层级适合，再描述实现边界和验证方案。 产品要求支持快速连续拖拽、滚动容器和 prefers-reduced-motion。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "fe39e4f81f8fc9e18bffbc79a6d8e86187b80060c886bd7171430067bf6316c6",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 183.671
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "interface-and-motion.md",
+          "verification-and-review.md"
+        ],
+        "topic_count": 2,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-reorder-motion-candidate-tug8qw31/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "reorder-motion/candidate/response.md",
+      "diff": "reorder-motion/candidate/changes.diff"
+    },
+    {
+      "id": "optimistic-profile-update",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-fdfo723q",
+      "fixture_base_commit": "057a336e0e83f25d5e739e35a0895c98371f58da",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "保持现有 React 和 TypeScript 技术栈，为下面的资料编辑功能给出可编译的最小修改。 用户保存后可以立即看到新名称；请求失败必须恢复权威值并显示可重试错误；快速重复 提交不能让旧响应覆盖新结果。同步更新类型、API 边界和最有价值的行为测试，不要留下 伪代码或 TODO。",
+        "artifact": "使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或 删除已有公开 API。",
+        "task_type": "implementation",
+        "fixture": "evals/fixtures/optimistic-profile",
+        "protected_paths": [],
+        "validation_commands": [
+          "npm ci",
+          "npm run check"
+        ],
+        "fixture_files": {
+          "package-lock.json": "96052e53186b19e072a4058b47c9d5e57be663af58b6ec8334986c6a1bd11971",
+          "package.json": "f52ae13534ff158a6bd660331adec99110d23b69cbb63eed86bd4dd8d4407ca6",
+          "src/ProfileForm.test.tsx": "1f9d51e3f98f65d4340da41833ac849d4c2bc340b989df19af08f0bb0be162f0",
+          "src/ProfileForm.tsx": "98003425c1ac2194630d350ff2915354cc087efaaa3383357b927b7f56e5fb4c",
+          "src/api.ts": "daa6dc4534cee2643c1354a8b8dc4d49d96ff532b1e0b3ab81fa0139f1d0be86",
+          "tsconfig.json": "5192bcbd285b72585d9ff7778f2a665d1ac330f4dc27b3c0445b5429df0957e4"
+        }
+      },
+      "events_sha256": "ae3df4f70301d92fc2f053de01963db69c15743f2910b3c305f28454d171dc13",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 274.532
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "architecture-and-code.md",
+          "async-and-lifecycles.md"
+        ],
+        "topic_count": 2,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-optimistic-profile-update-candidate-fdfo723q/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [
+        {
+          "command": "npm ci",
+          "exit_code": 0,
+          "duration_seconds": 3.659
+        },
+        {
+          "command": "npm run check",
+          "exit_code": 0,
+          "duration_seconds": 10.114
+        }
+      ],
+      "response": "optimistic-profile-update/candidate/response.md",
+      "diff": "optimistic-profile-update/candidate/changes.diff"
+    },
+    {
+      "id": "product-list-performance-contract",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-product-list-performance-contract-candidate-1b9diar1",
+      "fixture_base_commit": "13749e014bdc4012f3d2afc2b7ffd70e45945a6a",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "商品列表改版后，RUM 显示移动端 p75 LCP 从 2.2s 变为 3.1s、INP 从 170ms 变为 290ms、CLS 保持 0.04；实验室跟踪同时看到首路由 JS 增加 95KB gzip、一次新的字体 阻塞请求和筛选时 180ms 长任务。请提出最小的调查与修复顺序，并定义可执行的性能预算、 回归验证和发布门槛。不要把某个 Lighthouse 单次分数当作最终结论，也不要默认重写列表。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "d104f8550c6af6b7122d3c9864c75b362fe9dfa76adc62392b67d8c4baa78387",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 145.985
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "rendering-and-performance.md",
+          "rendering-web.md",
+          "runtime-and-delivery.md",
+          "verification-and-review.md"
+        ],
+        "topic_count": 3,
+        "breadth_ok": false,
+        "routing_policy_version": 2,
+        "breadth_review_required": true,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-product-list-performance-contract-candidate-1b9diar1/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "product-list-performance-contract/candidate/response.md",
+      "diff": "product-list-performance-contract/candidate/changes.diff"
+    },
+    {
+      "id": "browser-update-to-pixels",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-browser-update-to-pixels-candidate-647t7ju7",
+      "fixture_base_commit": "3a0cbe2983a95e6be008b4bb49982b5d35db47b2",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "一个 React 看板在拖动卡片时明显卡顿。指针位置被写入看板根组件 state，约 300 张卡片 都会参与更新；布局 Effect 遍历卡片，先修改 class，再立即读取 getBoundingClientRect， 最后写入 top。生产构建的 Chrome trace 显示交互期间有长任务，并反复出现 Style、Layout 和 Paint。请按最小改动顺序分析从状态更新到最终像素的成本，给出实现边界和验证方案； 不要默认给所有组件加 memo，也不要直接改用动画库。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "35e3a12d6ccd2390d6f55c7e2b90cec99bd446f0c02f7cd70ac9da8f07a6b43a",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 133.776
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "rendering-and-performance.md",
+          "rendering-web.md",
+          "verification-and-review.md"
+        ],
+        "topic_count": 2,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-browser-update-to-pixels-candidate-647t7ju7/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "browser-update-to-pixels/candidate/response.md",
+      "diff": "browser-update-to-pixels/candidate/changes.diff"
+    },
+    {
+      "id": "profile-domain-contract",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-profile-domain-contract-candidate-pb39_v91",
+      "fixture_base_commit": "9847b1daeb3da62703d7f2cb0c57abc57815f762",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "为已有 Vue 用户端设计个人主页的最小实施方案，视觉参考 GitHub。 用户与开发者是两个身份体系。GET /users/{userId} 返回 profile 和 applications， 服务端按查看者身份决定是否包含私有应用；旧生成注释仍写着 applications 仅公开。 产品负责人已确认当前接口会向本人返回公开和私有应用。作者署名只有 developerLogin， 没有 userId 映射。请说明路由、数据流、作者入口、实现顺序和验收方式。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "5500e0dacab810b604728643e283f74bf695f52b818b61a77f7dc2ac7f661983",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 104.35
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "architecture-and-code.md",
+          "runtime-and-delivery.md",
+          "verification-and-review.md"
+        ],
+        "topic_count": 3,
+        "breadth_ok": false,
+        "routing_policy_version": 2,
+        "breadth_review_required": true,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-profile-domain-contract-candidate-pb39_v91/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "profile-domain-contract/candidate/response.md",
+      "diff": "profile-domain-contract/candidate/changes.diff"
+    },
+    {
+      "id": "field-eligibility-consistency",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-field-eligibility-consistency-candidate-ttzir517",
+      "fixture_base_commit": "21447b231da5a1315102bf84bb5bd92e3f469b02",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "评审下面的表单处理逻辑。契约规定 disabled 字段不参与校验和提交。 不需要设计通用规则引擎，请指出实际缺陷，给出小范围修复和有意义的测试。",
+        "artifact": "async function processForm(fields, values, send) {\n  const errors = {};\n  for (const field of fields.filter(field => !field.disabled)) {\n    if (field.required && !values[field.name]) errors[field.name] = 'Required';\n  }\n  for (const field of fields.filter(field => field.validate)) {\n    const error = await field.validate(values[field.name], values);\n    if (error) errors[field.name] = error;\n  }\n  if (Object.keys(errors).length) return { errors };\n  const payload = Object.fromEntries(fields\n    .filter(field => !field.disabled)\n    .map(field => [field.name, values[field.name]]));\n  return send(payload);\n}\n",
+        "task_type": "implementation",
+        "fixture": null,
+        "protected_paths": [],
+        "validation_commands": [],
+        "fixture_files": {}
+      },
+      "events_sha256": "5127db2b94e27f99d59ebd09fa7c29a566c4c66a9738bf373149368dfded6341",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 110.882
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "verification-and-review.md"
+        ],
+        "topic_count": 1,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-field-eligibility-consistency-candidate-ttzir517/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [],
+      "response": "field-eligibility-consistency/candidate/response.md",
+      "diff": "field-eligibility-consistency/candidate/changes.diff"
+    },
+    {
+      "id": "search-request-lifecycle-executable",
+      "mode": "candidate",
+      "workspace": "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-search-request-lifecycle-executable-candidate-3xyo1j9l",
+      "fixture_base_commit": "d1c87b8c717d1c3ece254eeead46738300c9ceb2",
+      "capture_contract": {
+        "version": 1,
+        "prompt": "请直接修复 fixture 中 createSearch 的实现，按照 README.md 的公共契约维护草稿、 提交查询和结果。只有最新启动请求能发布结果、错误和结束状态；transport 不支持取消。 retry 必须使用已提交查询；dispose 后不再修改状态；API DTO 不进入公开 UI 数据。 运行 npm run check，不改受保护测试或 package.json，不增加框架或依赖。",
+        "artifact": "",
+        "task_type": "implementation",
+        "fixture": "evals/fixtures/search-request-lifecycle",
+        "protected_paths": [
+          "README.md",
+          "package-lock.json",
+          "package.json",
+          "test/search.test.js"
+        ],
+        "validation_commands": [
+          "npm ci",
+          "npm run check"
+        ],
+        "fixture_files": {
+          "README.md": "704c319e729ae54cd5eba2ede8253083bcf7102dd3587cf3aac94e4a0000e4f5",
+          "package-lock.json": "c95d2afff1f9aeae5f0136f89f400103b655dc5bcd8f51cbaa4bb6d0d4d8be7b",
+          "package.json": "ad41566d4efa559948addc06276779c8c481513cb98d46a921e7de56fce4186e",
+          "src/search.js": "7a301e2251806ecb9ef201a9485ce6786c51acc00be0bfb9839b6e7a359f654a",
+          "test/search.test.js": "a0cf5796924ff7c1922c5179c01659c66d01627badcff7558452cc9ffeaf69d4"
+        }
+      },
+      "events_sha256": "a24083fe57337970272c6209b4bd2a1e9d1cf38af69dcb94e1a7975d9b9a2e89",
+      "generation": {
+        "exit_code": 0,
+        "duration_seconds": 107.186
+      },
+      "reference_routing": {
+        "read_audit_version": 5,
+        "read_audit_status": "recognized",
+        "unknown_reads": [],
+        "files": [
+          "async-and-lifecycles.md"
+        ],
+        "topic_count": 1,
+        "breadth_ok": true,
+        "routing_policy_version": 2,
+        "breadth_review_required": false,
+        "rendering_common_ok": true,
+        "rendering_route_ok": true,
+        "skill_paths": [
+          "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-search-request-lifecycle-executable-candidate-3xyo1j9l/.frontend-architect/SKILL.md"
+        ],
+        "local_skill_read": true,
+        "skill_isolation_ok": true,
+        "isolation_ok": true,
+        "contaminated_files": [],
+        "contaminated_skill_paths": []
+      },
+      "validations": [
+        {
+          "command": "verify protected evaluation harness",
+          "exit_code": 0,
+          "duration_seconds": 0.0
+        },
+        {
+          "command": "npm ci",
+          "exit_code": 0,
+          "duration_seconds": 0.143
+        },
+        {
+          "command": "npm run check",
+          "exit_code": 0,
+          "duration_seconds": 0.165
+        }
+      ],
+      "response": "search-request-lifecycle-executable/candidate/response.md",
+      "diff": "search-request-lifecycle-executable/candidate/changes.diff"
+    }
+  ],
+  "completed_at": "2026-10-15T04:35:43.653264+00:00",
+  "updated_at": "2026-10-15T04:33:56.019291+00:00"
+}

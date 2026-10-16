@@ -1,0 +1,1871 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..52573e2
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,5 @@
++dist/
++node_modules/
++.npm-cache/
++playwright-report/
++test-results/
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..0f8c367
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,91 @@
++# Headless Dialog primitive
++
++This package owns the behavior shared by the three product dialogs: open state,
++modal semantics, portals, focus containment/restoration, Escape handling and
++nested-layer ordering. Product copy, actions, layout and visual tokens remain in
++the consuming product.
++
++## Public API
++
++```tsx
++import { Dialog } from 'headless-dialog-primitive-fixture'
++
++<Dialog.Root defaultOpen={false} onOpenChange={(open) => {}}>
++  <Dialog.Trigger className="productButton">Edit profile</Dialog.Trigger>
++  <Dialog.Portal>
++    <Dialog.Overlay className="productOverlay" />
++    <Dialog.Content className="productDialog">
++      <Dialog.Title>Edit profile</Dialog.Title>
++      <Dialog.Description>Update your public information.</Dialog.Description>
++      {/* Product fields and actions belong here. */}
++      <Dialog.Close className="productButton">Cancel</Dialog.Close>
++    </Dialog.Content>
++  </Dialog.Portal>
++</Dialog.Root>
++```
++
++`Root` supports uncontrolled state through `defaultOpen` and controlled state
++through `open` plus `onOpenChange`. `Content.initialFocusRef` selects a specific
++initial target; otherwise the first focusable descendant is used. Pass
++`aria-describedby={null}` when the dialog intentionally has no description.
++`Portal.container` can target a product-owned layer host. All DOM parts accept
++native attributes, `className`, `style`, event handlers and forwarded refs, and
++expose `data-state` without shipping visual CSS.
++
++Named exports (`DialogRoot`, `DialogContent`, and the other parts and prop types)
++are available from the same package entry for consumers that prefer direct
++imports. Internal focus/layer utilities are deliberately not exported.
++
++## Runtime boundaries and invariants
++
++- The root owns only open state and stable semantic IDs. Controlled state is
++  never mirrored into an independent state source.
++- The portal is absent on the server and on the client's first hydration render;
++  it mounts after hydration, so browser globals are not read during SSR.
++- One internal stack per `Document` owns Escape, Tab containment, background
++  `inert`/`aria-hidden`, scroll locking and cleanup. Only the top layer acts.
++- Closing a nested layer restores its own trigger. Closing the last layer
++  restores the outer trigger and the exact pre-existing body/ARIA state.
++- `Title` and `Description` provide the IDs used by `Content`. Consumer-provided
++  copy, buttons and styles never enter the primitive.
++
++The package ships ESM plus declarations from `dist/package`; React and React DOM
++are peer dependencies so all consumers share the host renderer.
++
++## Verification matrix
++
++| Contract | SSR test | Chromium behavior test | Type/build/package check |
++| --- | --- | --- | --- |
++| Closed and initially-open server render avoids browser globals | Yes | Hydrated example | Yes |
++| Controlled and uncontrolled open/close | Markup | Parent controlled; child uncontrolled | Public prop types |
++| Accessible name, description and modal state | IDs in markup | Role/name/description assertions | Declarations |
++| Initial focus, forward/reverse Tab loop and restoration | — | Yes | — |
++| Escape affects only the top nested dialog | — | Yes | — |
++| Background isolation and scroll cleanup | — | Yes | — |
++| Overlay dismissal does not treat content clicks as outside | — | Yes | — |
++| Consumer styling and refs/native props | — | Fixture classes | Exported DOM prop types |
++| Publish artifact and peer dependency boundary | — | — | Build plus dry-run pack |
++
++Before release, run `npm run check`. This fixture's supported browser proof is
++Chromium; add Firefox/WebKit jobs before claiming those browsers in a product
++support matrix.
++
++## Incremental migration
++
++1. Add this package beside each product's existing dialog and migrate one low-risk
++   dialog at a time. Keep that product's copy, actions and CSS unchanged.
++2. Replace its local state wrapper with `Root`, its opener with `Trigger`, and
++   move its existing overlay/content DOM into `Portal`, `Overlay` and `Content`.
++   Replace title/description/close elements with the corresponding parts.
++3. If the product already controls visibility, pass its current `open` value and
++   update callback. Otherwise use `defaultOpen`; do not keep both old and new
++   state owners.
++4. Remove that dialog's document key listeners, focus trap, body scroll lock and
++   portal code only after its keyboard, nested and close-path tests pass against
++   the primitive. A product can roll back independently until this step.
++5. Repeat for the other products. Retire the old shared/local implementations
++   only after all call sites and their product-specific visual checks migrate.
++
++A later requirement such as an alert dialog can be added as a separate semantic
++part or narrow `role` policy without changing the layer stack; animation can wrap
++the portal parts while preserving mount/focus ownership.
+diff --git a/node_modules b/node_modules
+new file mode 120000
+index 0000000..aba42fb
+--- /dev/null
++++ b/node_modules
+@@ -0,0 +1 @@
++../frontend-architect-optimistic-profile-update-candidate-uxq7iqn_/node_modules
+\ No newline at end of file
+diff --git a/package-lock.json b/package-lock.json
+index c19651f..5074c2f 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,305 +1,26 @@
+ {
+-  "name": "frontend-architect-dialog-browser-eval",
++  "name": "headless-dialog-primitive-fixture",
++  "version": "0.1.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+-      "name": "frontend-architect-dialog-browser-eval",
+-      "dependencies": {
+-        "react": "19.1.1",
+-        "react-dom": "19.1.1"
+-      },
++      "name": "headless-dialog-primitive-fixture",
++      "version": "0.1.0",
+       "devDependencies": {
+         "@playwright/test": "1.62.1",
+         "@types/node": "24.3.0",
+         "@types/react": "19.1.10",
+         "@types/react-dom": "19.1.7",
+-        "@vitejs/plugin-react": "5.0.2",
++        "react": "19.1.1",
++        "react-dom": "19.1.1",
+         "typescript": "5.9.2",
+         "vite": "7.3.6",
+         "vitest": "4.1.11"
+-      }
+-    },
+-    "node_modules/@babel/code-frame": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz",
+-      "integrity": "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-validator-identifier": "^7.29.7",
+-        "js-tokens": "^4.0.0",
+-        "picocolors": "^1.1.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/compat-data": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/compat-data/-/compat-data-7.29.7.tgz",
+-      "integrity": "sha512-locTkQyKvwIEgBzVrn8693ebc97F2U8ZHjbXwDXJ5Fn2TCpNwTlKcaKLkdHop5c/icOFE7qt7Q9JC5hnKNa6Gg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/core": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/core/-/core-7.29.7.tgz",
+-      "integrity": "sha512-RgHBCvtjbOK2gXSNBNIkNoEc9qoVEtau3hj8gEqKQuL3HZAibKarWFEI3Lfm6EYKkLalOh8eSrj9b+ch9H/VBA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/code-frame": "^7.29.7",
+-        "@babel/generator": "^7.29.7",
+-        "@babel/helper-compilation-targets": "^7.29.7",
+-        "@babel/helper-module-transforms": "^7.29.7",
+-        "@babel/helpers": "^7.29.7",
+-        "@babel/parser": "^7.29.7",
+-        "@babel/template": "^7.29.7",
+-        "@babel/traverse": "^7.29.7",
+-        "@babel/types": "^7.29.7",
+-        "@jridgewell/remapping": "^2.3.5",
+-        "convert-source-map": "^2.0.0",
+-        "debug": "^4.1.0",
+-        "gensync": "^1.0.0-beta.2",
+-        "json5": "^2.2.3",
+-        "semver": "^6.3.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      },
+-      "funding": {
+-        "type": "opencollective",
+-        "url": "https://opencollective.com/babel"
+-      }
+-    },
+-    "node_modules/@babel/generator": {
+-      "version": "7.29.8",
+-      "resolved": "https://registry.npmjs.org/@babel/generator/-/generator-7.29.8.tgz",
+-      "integrity": "sha512-gZbepsdh3WDtgZKWL+vTPh71LSBrm/Y4/QDZBVCcYfmeTEEuoOYwlSy+G1StfJg+/Zy550u/3TATbm7qDbbMtg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/parser": "^7.29.8",
+-        "@babel/types": "^7.29.8",
+-        "@jridgewell/gen-mapping": "^0.3.12",
+-        "@jridgewell/trace-mapping": "^0.3.28",
+-        "jsesc": "^3.0.2"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-compilation-targets": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-compilation-targets/-/helper-compilation-targets-7.29.7.tgz",
+-      "integrity": "sha512-wem6WaBj4NaVYVdNhLPPVacES6ZJ+KBBfSkTMD3YZxbP3rm3Di85tJU5ljaUNhaOynt+Aj0xruhYuzQBt8n71g==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/compat-data": "^7.29.7",
+-        "@babel/helper-validator-option": "^7.29.7",
+-        "browserslist": "^4.24.0",
+-        "lru-cache": "^5.1.1",
+-        "semver": "^6.3.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-globals": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-globals/-/helper-globals-7.29.7.tgz",
+-      "integrity": "sha512-3nQVUAtvkKH9zahfWgw96Jc/uFOmjACE1kQz82E2lqWmHBgjzbNlsC22nuQTfahmWeQtTq5nQ/4Nnd2A1wj4zA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-module-imports": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-module-imports/-/helper-module-imports-7.29.7.tgz",
+-      "integrity": "sha512-ejHwrQQYcm9xnTivShn2IDOlIzInN34AXskvq9QicvCtEzq1Vzclu/tKF8Jq1Cg8JG2GL6/EmjgsCT7lXepE3g==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/traverse": "^7.29.7",
+-        "@babel/types": "^7.29.7"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-module-transforms": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-module-transforms/-/helper-module-transforms-7.29.7.tgz",
+-      "integrity": "sha512-UPUVSyXbOh627KiCIGQSgwWzGeBKLkaJ9PJEdrngIwMSzxLR4jS4+f1f1jb7VzBbg8nFLaYotvVPFCTqdrmTAg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-module-imports": "^7.29.7",
+-        "@babel/helper-validator-identifier": "^7.29.7",
+-        "@babel/traverse": "^7.29.7"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+       },
+       "peerDependencies": {
+-        "@babel/core": "^7.0.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-plugin-utils": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-plugin-utils/-/helper-plugin-utils-7.29.7.tgz",
+-      "integrity": "sha512-G7sHYigPY17oO5SYWnfD/0MTBwVR781S/JI643e/JhUYgVgWE/61SoW3NH9KWUKyKq5LVh3npif99Wkt6j86Jw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-string-parser": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.29.7.tgz",
+-      "integrity": "sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-validator-identifier": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz",
+-      "integrity": "sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-validator-option": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-validator-option/-/helper-validator-option-7.29.7.tgz",
+-      "integrity": "sha512-N9ZErrD+yW5geCDtBqnOoxmR8+tNKiGuxKlDpuJxfsqpa2dFcexaziGAE/qoHLiDDreVNMupxGmSoNlyvsA3gw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helpers": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/helpers/-/helpers-7.29.7.tgz",
+-      "integrity": "sha512-1k2lAGRMfHTcwuNYcCNUmaUffmQv8KWMfh2iJUUeRlwlwH4FdNG7mfPI10NPfLHJFThE4Tyr4mv7kTNZOiPuBg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/template": "^7.29.7",
+-        "@babel/types": "^7.29.7"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/parser": {
+-      "version": "7.29.8",
+-      "resolved": "https://registry.npmjs.org/@babel/parser/-/parser-7.29.8.tgz",
+-      "integrity": "sha512-E8lTAYNB1KW+FH+VGJuZM1ioAx2E6oVlvQFRrf5P8ZZmsiJXYAD9vTFV7yyEURNzgh1dFqMZuO6tUwcARbqFCA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/types": "^7.29.8"
+-      },
+-      "bin": {
+-        "parser": "bin/babel-parser.js"
+-      },
+-      "engines": {
+-        "node": ">=6.0.0"
+-      }
+-    },
+-    "node_modules/@babel/plugin-transform-react-jsx-self": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-self/-/plugin-transform-react-jsx-self-7.29.7.tgz",
+-      "integrity": "sha512-TL0hMc9xzy86VD31nUiwzd5otRAcyEPcsegCxolO0PvcXuH1v0kECe/UIznYFihpkvU5wg/jk4v0TTEFfm53fw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-plugin-utils": "^7.29.7"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      },
+-      "peerDependencies": {
+-        "@babel/core": "^7.0.0-0"
+-      }
+-    },
+-    "node_modules/@babel/plugin-transform-react-jsx-source": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-source/-/plugin-transform-react-jsx-source-7.29.7.tgz",
+-      "integrity": "sha512-06IyK09H3wi4cGbhDBwp5gUGo0IKtnYa8tyTiephirPCK6fbobVGiXMMI5zLQ4aKEYP3wZ3ArU44o+8KMrSG/Q==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-plugin-utils": "^7.29.7"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      },
+-      "peerDependencies": {
+-        "@babel/core": "^7.0.0-0"
+-      }
+-    },
+-    "node_modules/@babel/template": {
+-      "version": "7.29.7",
+-      "resolved": "https://registry.npmjs.org/@babel/template/-/template-7.29.7.tgz",
+-      "integrity": "sha512-puq+Gf35oI24FeN11LkoUQFqv9uwNeWpxXZi/Ji3rRIoKAzKnxRaZ+Gkj0vKS9ZCiTESfng1N9LyOyXvo+m+Gg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/code-frame": "^7.29.7",
+-        "@babel/parser": "^7.29.7",
+-        "@babel/types": "^7.29.7"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/traverse": {
+-      "version": "7.29.8",
+-      "resolved": "https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.8.tgz",
+-      "integrity": "sha512-I5z7H3bf/41ktsNVLtpN0wAa336HkqIHQ5BuPLEhTkt1jVSyZpeNKIzTgEWmlxjdg81R0IgUCcaE+Ok3NvrfZg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/code-frame": "^7.29.7",
+-        "@babel/generator": "^7.29.8",
+-        "@babel/helper-globals": "^7.29.7",
+-        "@babel/parser": "^7.29.8",
+-        "@babel/template": "^7.29.7",
+-        "@babel/types": "^7.29.8",
+-        "debug": "^4.3.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/types": {
+-      "version": "7.29.8",
+-      "resolved": "https://registry.npmjs.org/@babel/types/-/types-7.29.8.tgz",
+-      "integrity": "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-string-parser": "^7.29.7",
+-        "@babel/helper-validator-identifier": "^7.29.7"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
++        "react": ">=18.3 <20",
++        "react-dom": ">=18.3 <20"
+       }
+     },
+     "node_modules/@esbuild/aix-ppc64": {
+@@ -744,38 +465,6 @@
+         "node": ">=18"
+       }
+     },
+-    "node_modules/@jridgewell/gen-mapping": {
+-      "version": "0.3.13",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/gen-mapping/-/gen-mapping-0.3.13.tgz",
+-      "integrity": "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@jridgewell/sourcemap-codec": "^1.5.0",
+-        "@jridgewell/trace-mapping": "^0.3.24"
+-      }
+-    },
+-    "node_modules/@jridgewell/remapping": {
+-      "version": "2.3.5",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/remapping/-/remapping-2.3.5.tgz",
+-      "integrity": "sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@jridgewell/gen-mapping": "^0.3.5",
+-        "@jridgewell/trace-mapping": "^0.3.24"
+-      }
+-    },
+-    "node_modules/@jridgewell/resolve-uri": {
+-      "version": "3.1.2",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz",
+-      "integrity": "sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.0.0"
+-      }
+-    },
+     "node_modules/@jridgewell/sourcemap-codec": {
+       "version": "1.5.5",
+       "resolved": "https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz",
+@@ -783,17 +472,6 @@
+       "dev": true,
+       "license": "MIT"
+     },
+-    "node_modules/@jridgewell/trace-mapping": {
+-      "version": "0.3.31",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz",
+-      "integrity": "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@jridgewell/resolve-uri": "^3.1.0",
+-        "@jridgewell/sourcemap-codec": "^1.4.14"
+-      }
+-    },
+     "node_modules/@napi-rs/lzma-linux-x64-gnu": {
+       "version": "1.5.1",
+       "resolved": "https://registry.npmjs.org/@napi-rs/lzma-linux-x64-gnu/-/lzma-linux-x64-gnu-1.5.1.tgz",
+@@ -827,13 +505,6 @@
+         "node": ">=20"
+       }
+     },
+-    "node_modules/@rolldown/pluginutils": {
+-      "version": "1.0.0-beta.34",
+-      "resolved": "https://registry.npmjs.org/@rolldown/pluginutils/-/pluginutils-1.0.0-beta.34.tgz",
+-      "integrity": "sha512-LyAREkZHP5pMom7c24meKmJCdhf2hEyvam2q0unr3or9ydwDL+DJ8chTF6Av/RFPb3rH8UFBdMzO5MxTZW97oA==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+     "node_modules/@rollup/rollup-android-arm-eabi": {
+       "version": "4.62.5",
+       "resolved": "https://registry.npmjs.org/@rollup/rollup-android-arm-eabi/-/rollup-android-arm-eabi-4.62.5.tgz",
+@@ -1191,51 +862,6 @@
+       "dev": true,
+       "license": "MIT"
+     },
+-    "node_modules/@types/babel__core": {
+-      "version": "7.20.5",
+-      "resolved": "https://registry.npmjs.org/@types/babel__core/-/babel__core-7.20.5.tgz",
+-      "integrity": "sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/parser": "^7.20.7",
+-        "@babel/types": "^7.20.7",
+-        "@types/babel__generator": "*",
+-        "@types/babel__template": "*",
+-        "@types/babel__traverse": "*"
+-      }
+-    },
+-    "node_modules/@types/babel__generator": {
+-      "version": "7.27.0",
+-      "resolved": "https://registry.npmjs.org/@types/babel__generator/-/babel__generator-7.27.0.tgz",
+-      "integrity": "sha512-ufFd2Xi92OAVPYsy+P4n7/U7e68fex0+Ee8gSG9KX7eo084CWiQ4sdxktvdl0bOPupXtVJPY19zk6EwWqUQ8lg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/types": "^7.0.0"
+-      }
+-    },
+-    "node_modules/@types/babel__template": {
+-      "version": "7.4.4",
+-      "resolved": "https://registry.npmjs.org/@types/babel__template/-/babel__template-7.4.4.tgz",
+-      "integrity": "sha512-h/NUaSyG5EyxBIp8YRxo4RMe2/qQgvyowRwVMzhYhBCONbW8PUsg4lkFMrhgZhUe5z3L3MiLDuvyJ/CaPa2A8A==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/parser": "^7.1.0",
+-        "@babel/types": "^7.0.0"
+-      }
+-    },
+-    "node_modules/@types/babel__traverse": {
+-      "version": "7.28.0",
+-      "resolved": "https://registry.npmjs.org/@types/babel__traverse/-/babel__traverse-7.28.0.tgz",
+-      "integrity": "sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/types": "^7.28.2"
+-      }
+-    },
+     "node_modules/@types/chai": {
+       "version": "5.2.3",
+       "resolved": "https://registry.npmjs.org/@types/chai/-/chai-5.2.3.tgz",
+@@ -1291,27 +917,6 @@
+         "@types/react": "^19.0.0"
+       }
+     },
+-    "node_modules/@vitejs/plugin-react": {
+-      "version": "5.0.2",
+-      "resolved": "https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-5.0.2.tgz",
+-      "integrity": "sha512-tmyFgixPZCx2+e6VO9TNITWcCQl8+Nl/E8YbAyPVv85QCc7/A3JrdfG2A8gIzvVhWuzMOVrFW1aReaNxrI6tbw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/core": "^7.28.3",
+-        "@babel/plugin-transform-react-jsx-self": "^7.27.1",
+-        "@babel/plugin-transform-react-jsx-source": "^7.27.1",
+-        "@rolldown/pluginutils": "1.0.0-beta.34",
+-        "@types/babel__core": "^7.20.5",
+-        "react-refresh": "^0.17.0"
+-      },
+-      "engines": {
+-        "node": "^20.19.0 || >=22.12.0"
+-      },
+-      "peerDependencies": {
+-        "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0"
+-      }
+-    },
+     "node_modules/@vitest/expect": {
+       "version": "4.1.11",
+       "resolved": "https://registry.npmjs.org/@vitest/expect/-/expect-4.1.11.tgz",
+@@ -1435,74 +1040,6 @@
+         "node": ">=12"
+       }
+     },
+-    "node_modules/baseline-browser-mapping": {
+-      "version": "2.11.16",
+-      "resolved": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.11.16.tgz",
+-      "integrity": "sha512-H/bNPUFHewJHyCTdjn1n3Pit5+2GmWT6mmeHImPX+8MA9NA6b67jO4gYmi4jTbCJb2otq34KMZnovndDPqJwhQ==",
+-      "dev": true,
+-      "license": "Apache-2.0",
+-      "bin": {
+-        "baseline-browser-mapping": "dist/cli.cjs"
+-      },
+-      "engines": {
+-        "node": ">=6.0.0"
+-      }
+-    },
+-    "node_modules/browserslist": {
+-      "version": "4.28.8",
+-      "resolved": "https://registry.npmjs.org/browserslist/-/browserslist-4.28.8.tgz",
+-      "integrity": "sha512-V2NpofLblG64mfOtSgDhOJESZEGogzDMBv/q+W6oc4LXWP/q75eOXoOaaOu1EOadB9U4Bwx/e0yzbvwKH8zalA==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "opencollective",
+-          "url": "https://opencollective.com/browserslist"
+-        },
+-        {
+-          "type": "tidelift",
+-          "url": "https://tidelift.com/funding/github/npm/browserslist"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "MIT",
+-      "dependencies": {
+-        "baseline-browser-mapping": "^2.11.12",
+-        "caniuse-lite": "^1.0.30001809",
+-        "electron-to-chromium": "^1.5.402",
+-        "node-releases": "^2.0.53",
+-        "update-browserslist-db": "^1.3.0"
+-      },
+-      "bin": {
+-        "browserslist": "cli.js"
+-      },
+-      "engines": {
+-        "node": "^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7"
+-      }
+-    },
+-    "node_modules/caniuse-lite": {
+-      "version": "1.0.30001809",
+-      "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001809.tgz",
+-      "integrity": "sha512-xxWVywk6a6Arlk+hymeycyn/VgqEfLDxupvhH/xiY5SJ/18kmi9o6MiO320DCUzypORHLtvh0I4i04tUhCNHNQ==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "opencollective",
+-          "url": "https://opencollective.com/browserslist"
+-        },
+-        {
+-          "type": "tidelift",
+-          "url": "https://tidelift.com/funding/github/npm/caniuse-lite"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "CC-BY-4.0"
+-    },
+     "node_modules/chai": {
+       "version": "6.2.2",
+       "resolved": "https://registry.npmjs.org/chai/-/chai-6.2.2.tgz",
+@@ -1527,31 +1064,6 @@
+       "dev": true,
+       "license": "MIT"
+     },
+-    "node_modules/debug": {
+-      "version": "4.4.3",
+-      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+-      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "ms": "^2.1.3"
+-      },
+-      "engines": {
+-        "node": ">=6.0"
+-      },
+-      "peerDependenciesMeta": {
+-        "supports-color": {
+-          "optional": true
+-        }
+-      }
+-    },
+-    "node_modules/electron-to-chromium": {
+-      "version": "1.5.412",
+-      "resolved": "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.412.tgz",
+-      "integrity": "sha512-z4rMe3esBzlzovKHj4gxJnsCGZRK5l4baUvm+gCGJBPE+gsyUMKsuU9tnEUtI1dOebXz1ytAPGjvXhmQ7rIPwA==",
+-      "dev": true,
+-      "license": "ISC"
+-    },
+     "node_modules/es-module-lexer": {
+       "version": "2.3.2",
+       "resolved": "https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-2.3.2.tgz",
+@@ -1601,16 +1113,6 @@
+         "@esbuild/win32-x64": "0.28.2"
+       }
+     },
+-    "node_modules/escalade": {
+-      "version": "3.2.0",
+-      "resolved": "https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz",
+-      "integrity": "sha512-WUj2qlxaQtO4g6Pq5c29GTcWGDyd8itL8zTlipgECz3JesAiiOKotd8JU6otB3PACgG6xkJUyVhboMS+bje/jA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6"
+-      }
+-    },
+     "node_modules/estree-walker": {
+       "version": "3.0.3",
+       "resolved": "https://registry.npmjs.org/estree-walker/-/estree-walker-3.0.3.tgz",
+@@ -1664,59 +1166,6 @@
+         "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+       }
+     },
+-    "node_modules/gensync": {
+-      "version": "1.0.0-beta.2",
+-      "resolved": "https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz",
+-      "integrity": "sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/js-tokens": {
+-      "version": "4.0.0",
+-      "resolved": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz",
+-      "integrity": "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/jsesc": {
+-      "version": "3.1.0",
+-      "resolved": "https://registry.npmjs.org/jsesc/-/jsesc-3.1.0.tgz",
+-      "integrity": "sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "bin": {
+-        "jsesc": "bin/jsesc"
+-      },
+-      "engines": {
+-        "node": ">=6"
+-      }
+-    },
+-    "node_modules/json5": {
+-      "version": "2.2.3",
+-      "resolved": "https://registry.npmjs.org/json5/-/json5-2.2.3.tgz",
+-      "integrity": "sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "bin": {
+-        "json5": "lib/cli.js"
+-      },
+-      "engines": {
+-        "node": ">=6"
+-      }
+-    },
+-    "node_modules/lru-cache": {
+-      "version": "5.1.1",
+-      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-5.1.1.tgz",
+-      "integrity": "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==",
+-      "dev": true,
+-      "license": "ISC",
+-      "dependencies": {
+-        "yallist": "^3.0.2"
+-      }
+-    },
+     "node_modules/magic-string": {
+       "version": "0.30.21",
+       "resolved": "https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz",
+@@ -1727,13 +1176,6 @@
+         "@jridgewell/sourcemap-codec": "^1.5.5"
+       }
+     },
+-    "node_modules/ms": {
+-      "version": "2.1.3",
+-      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+-      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+     "node_modules/nanoid": {
+       "version": "3.3.18",
+       "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.18.tgz",
+@@ -1753,16 +1195,6 @@
+         "node": "^10 || ^12 || ^13.7 || ^14 || >=15.0.1"
+       }
+     },
+-    "node_modules/node-releases": {
+-      "version": "2.0.53",
+-      "resolved": "https://registry.npmjs.org/node-releases/-/node-releases-2.0.53.tgz",
+-      "integrity": "sha512-D9UOmYG3UH1V+ENW56t5QXBwJw1YEY18ruVeus89Rw+SyIgjPkCO84bRzO3uNIYosJbNwiabWVn48o3uJLjxFQ==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+     "node_modules/obug": {
+       "version": "2.1.4",
+       "resolved": "https://registry.npmjs.org/obug/-/obug-2.1.4.tgz",
+@@ -1869,6 +1301,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react/-/react-19.1.1.tgz",
+       "integrity": "sha512-w8nqGImo45dmMIfljjMwOGtbmC/mk4CMYhWIicdSflH91J9TyCyczcPFXJzrZ/ZXcgGRFeP6BU0BEJTw6tZdfQ==",
++      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">=0.10.0"
+@@ -1878,6 +1311,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.1.1.tgz",
+       "integrity": "sha512-Dlq/5LAZgF0Gaz6yiqZCf6VCcZs1ghAJyrsu84Q/GT0gV+mCxbfmKNoGRKBYMJ8IEdGPqu49YWXD02GCknEDkw==",
++      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "scheduler": "^0.26.0"
+@@ -1886,16 +1320,6 @@
+         "react": "^19.1.1"
+       }
+     },
+-    "node_modules/react-refresh": {
+-      "version": "0.17.0",
+-      "resolved": "https://registry.npmjs.org/react-refresh/-/react-refresh-0.17.0.tgz",
+-      "integrity": "sha512-z6F7K9bV85EfseRCp2bzrpyQ0Gkw1uLoCel9XBVWPg/TjRj94SkJzUTGfOa4bs7iJvBWtQG0Wq7wnI0syw3EBQ==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=0.10.0"
+-      }
+-    },
+     "node_modules/rollup": {
+       "version": "4.62.5",
+       "resolved": "https://registry.npmjs.org/rollup/-/rollup-4.62.5.tgz",
+@@ -1946,17 +1370,8 @@
+       "version": "0.26.0",
+       "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.26.0.tgz",
+       "integrity": "sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA==",
+-      "license": "MIT"
+-    },
+-    "node_modules/semver": {
+-      "version": "6.3.1",
+-      "resolved": "https://registry.npmjs.org/semver/-/semver-6.3.1.tgz",
+-      "integrity": "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==",
+       "dev": true,
+-      "license": "ISC",
+-      "bin": {
+-        "semver": "bin/semver.js"
+-      }
++      "license": "MIT"
+     },
+     "node_modules/siginfo": {
+       "version": "2.0.0",
+@@ -2054,37 +1469,6 @@
+       "dev": true,
+       "license": "MIT"
+     },
+-    "node_modules/update-browserslist-db": {
+-      "version": "1.3.1",
+-      "resolved": "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.3.1.tgz",
+-      "integrity": "sha512-ZZ61DsRsOnakl74HAmp3oSN4aXUmEWXf+i/yv0h7tIBfICc3VdrFErQKUUKPgu3AMsTUMbcongALEN4l6GSUrQ==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "opencollective",
+-          "url": "https://opencollective.com/browserslist"
+-        },
+-        {
+-          "type": "tidelift",
+-          "url": "https://tidelift.com/funding/github/npm/browserslist"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "MIT",
+-      "dependencies": {
+-        "escalade": "^3.2.0",
+-        "picocolors": "^1.1.1"
+-      },
+-      "bin": {
+-        "update-browserslist-db": "cli.js"
+-      },
+-      "peerDependencies": {
+-        "browserslist": ">= 4.21.0"
+-      }
+-    },
+     "node_modules/vite": {
+       "version": "7.3.6",
+       "resolved": "https://registry.npmjs.org/vite/-/vite-7.3.6.tgz",
+@@ -2281,13 +1665,6 @@
+       "engines": {
+         "node": ">=8"
+       }
+-    },
+-    "node_modules/yallist": {
+-      "version": "3.1.1",
+-      "resolved": "https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz",
+-      "integrity": "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==",
+-      "dev": true,
+-      "license": "ISC"
+     }
+   }
+ }
+diff --git a/package.json b/package.json
+index e721197..bc9b12b 100644
+--- a/package.json
++++ b/package.json
+@@ -1,17 +1,37 @@
+ {
+-  "name": "frontend-architect-dialog-browser-eval",
+-  "private": true,
++  "name": "headless-dialog-primitive-fixture",
++  "version": "0.1.0",
+   "type": "module",
++  "files": [
++    "dist/package",
++    "README.md"
++  ],
++  "main": "./dist/package/dialog.js",
++  "types": "./dist/package/index.d.ts",
++  "exports": {
++    ".": {
++      "types": "./dist/package/index.d.ts",
++      "import": "./dist/package/dialog.js"
++    },
++    "./package.json": "./package.json"
++  },
++  "sideEffects": false,
++  "publishConfig": {
++    "access": "public"
++  },
+   "scripts": {
+-    "build": "vite build",
+-    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run build",
++    "build": "npm run build:example && npm run build:package",
++    "build:example": "vite build",
++    "build:package": "tsc -p tsconfig.build.json && vite build --config vite.lib.config.ts",
++    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run build && npm run test:package",
+     "test:browser": "playwright test",
++    "test:package": "test -f dist/package/dialog.js && test -f dist/package/index.d.ts && npm pack --dry-run --ignore-scripts --cache .npm-cache",
+     "test:ssr": "vitest run src/Dialog.ssr.test.tsx",
+     "typecheck": "tsc --noEmit"
+   },
+-  "dependencies": {
+-    "react": "19.1.1",
+-    "react-dom": "19.1.1"
++  "peerDependencies": {
++    "react": ">=18.3 <20",
++    "react-dom": ">=18.3 <20"
+   },
+   "devDependencies": {
+     "@playwright/test": "1.62.1",
+@@ -19,6 +39,8 @@
+     "@types/react": "19.1.10",
+     "@types/react-dom": "19.1.7",
+     "@vitejs/plugin-react": "5.0.2",
++    "react": "19.1.1",
++    "react-dom": "19.1.1",
+     "typescript": "5.9.2",
+     "vite": "7.3.6",
+     "vitest": "4.1.11"
+diff --git a/src/App.tsx b/src/App.tsx
+index f903b93..948cb14 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,27 +1,42 @@
+-import { Dialog } from './Dialog'
+-import './styles.css'
++import { useState } from 'react'
++
++import { Dialog } from './Dialog.tsx'
+ 
+ export function App() {
++  const [profileOpen, setProfileOpen] = useState(false)
++
+   return (
+     <main>
+       <a href="#background">Background link</a>
+-      <Dialog
+-        title="Edit profile"
+-        description="Update your public information."
+-        triggerLabel="Edit profile"
+-      >
+-        <label>
+-          Name
+-          <input name="name" defaultValue="Ada" />
+-        </label>
+-        <Dialog
+-          title="Permissions"
+-          description="Choose who can see this profile."
+-          triggerLabel="Open permissions"
+-        >
+-          <button type="button">Save permissions</button>
+-        </Dialog>
+-      </Dialog>
++      <Dialog.Root open={profileOpen} onOpenChange={setProfileOpen}>
++        <Dialog.Trigger>Edit profile</Dialog.Trigger>
++        <Dialog.Portal>
++          <Dialog.Overlay className="overlay" />
++          <Dialog.Content className="dialog">
++            <Dialog.Title>Edit profile</Dialog.Title>
++            <Dialog.Description>Update your public information.</Dialog.Description>
++            <label>
++              Name
++              <input name="name" defaultValue="Ada" />
++            </label>
++            <Dialog.Root>
++              <Dialog.Trigger>Open permissions</Dialog.Trigger>
++              <Dialog.Portal>
++                <Dialog.Overlay className="overlay" />
++                <Dialog.Content className="dialog">
++                  <Dialog.Title>Permissions</Dialog.Title>
++                  <Dialog.Description>
++                    Choose who can see this profile.
++                  </Dialog.Description>
++                  <button type="button">Save permissions</button>
++                  <Dialog.Close>Close</Dialog.Close>
++                </Dialog.Content>
++              </Dialog.Portal>
++            </Dialog.Root>
++            <Dialog.Close>Close</Dialog.Close>
++          </Dialog.Content>
++        </Dialog.Portal>
++      </Dialog.Root>
+     </main>
+   )
+ }
+diff --git a/src/Dialog.ssr.test.tsx b/src/Dialog.ssr.test.tsx
+index 9b76a14..83df12e 100644
+--- a/src/Dialog.ssr.test.tsx
++++ b/src/Dialog.ssr.test.tsx
+@@ -3,14 +3,39 @@
+ import { renderToString } from 'react-dom/server'
+ import { expect, test } from 'vitest'
+ 
+-import { Dialog } from './Dialog'
++import { Dialog } from './index'
+ 
+-test('renders the closed primitive without accessing browser globals', () => {
++test('renders stable closed trigger markup without accessing browser globals', () => {
+   const html = renderToString(
+-    <Dialog title="Example" description="Description" triggerLabel="Open">
+-      <button type="button">Action</button>
+-    </Dialog>,
++    <Dialog.Root>
++      <Dialog.Trigger>Open</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Content>
++          <Dialog.Title>Example</Dialog.Title>
++          <Dialog.Description>Description</Dialog.Description>
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>,
+   )
+ 
+   expect(html).toContain('Open')
++  expect(html).toContain('aria-expanded="false"')
++  expect(html).not.toContain('role="dialog"')
++})
++
++test('defers an initially open portal until hydration', () => {
++  const html = renderToString(
++    <Dialog.Root defaultOpen>
++      <Dialog.Trigger>Open</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Content>
++          <Dialog.Title>Example</Dialog.Title>
++          <Dialog.Description>Description</Dialog.Description>
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>,
++  )
++
++  expect(html).toContain('aria-expanded="true"')
++  expect(html).not.toContain('role="dialog"')
+ })
+diff --git a/src/Dialog.tsx b/src/Dialog.tsx
+index 55b30e8..08c9236 100644
+--- a/src/Dialog.tsx
++++ b/src/Dialog.tsx
+@@ -1,43 +1,303 @@
+-import { type ReactNode, useId, useState } from 'react'
++import {
++  createContext,
++  forwardRef,
++  type ComponentPropsWithoutRef,
++  type HTMLAttributes,
++  type MouseEvent as ReactMouseEvent,
++  type ReactNode,
++  type Ref,
++  type RefObject,
++  useCallback,
++  useContext,
++  useEffect,
++  useId,
++  useLayoutEffect,
++  useMemo,
++  useRef,
++  useState,
++} from 'react'
+ import { createPortal } from 'react-dom'
+ 
+-type DialogProps = {
++import { isTopDialog, registerDialogLayer } from './dialog-layer.ts'
++
++type OpenChangeHandler = (open: boolean) => void
++
++export type DialogRootProps = {
+   children: ReactNode
+-  description: string
+-  title: string
+-  triggerLabel: string
++  defaultOpen?: boolean
++  onOpenChange?: OpenChangeHandler
++  open?: boolean
++}
++
++type DialogContextValue = {
++  contentId: string
++  contentRef: RefObject<HTMLDivElement | null>
++  descriptionId: string
++  open: boolean
++  portalRef: RefObject<HTMLDivElement | null>
++  setOpen: OpenChangeHandler
++  titleId: string
++  triggerRef: RefObject<HTMLButtonElement | null>
++}
++
++const DialogContext = createContext<DialogContextValue | null>(null)
++
++function useDialogContext(componentName: string) {
++  const context = useContext(DialogContext)
++  if (!context) {
++    throw new Error(`${componentName} must be rendered inside Dialog.Root`)
++  }
++  return context
++}
++
++function setRefs<T>(value: T, ...refs: Array<Ref<T> | undefined>) {
++  for (const ref of refs) {
++    if (typeof ref === 'function') ref(value)
++    else if (ref) ref.current = value
++  }
+ }
+ 
+-export function Dialog({ children, description, title, triggerLabel }: DialogProps) {
+-  const [open, setOpen] = useState(false)
++function composeClickHandlers<T extends HTMLElement>(
++  consumerHandler: ((event: ReactMouseEvent<T>) => void) | undefined,
++  primitiveHandler: (event: ReactMouseEvent<T>) => void,
++) {
++  return (event: ReactMouseEvent<T>) => {
++    consumerHandler?.(event)
++    if (!event.defaultPrevented) primitiveHandler(event)
++  }
++}
++
++export function DialogRoot({
++  children,
++  defaultOpen = false,
++  onOpenChange,
++  open: controlledOpen,
++}: DialogRootProps) {
++  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
++  const uncontrolledOpenRef = useRef(uncontrolledOpen)
++  const isControlled = controlledOpen !== undefined
++  const open = isControlled ? controlledOpen : uncontrolledOpen
++  const triggerRef = useRef<HTMLButtonElement>(null)
++  const contentRef = useRef<HTMLDivElement>(null)
++  const portalRef = useRef<HTMLDivElement>(null)
++  const contentId = useId()
+   const titleId = useId()
+   const descriptionId = useId()
+ 
+-  return (
+-    <>
+-      <button type="button" onClick={() => setOpen(true)}>
+-        {triggerLabel}
+-      </button>
+-      {open &&
+-        createPortal(
+-          <div className="overlay" onClick={() => setOpen(false)}>
+-            <section
+-              aria-describedby={descriptionId}
+-              aria-labelledby={titleId}
+-              className="dialog"
+-              role="dialog"
+-              onClick={(event) => event.stopPropagation()}
+-            >
+-              <h2 id={titleId}>{title}</h2>
+-              <p id={descriptionId}>{description}</p>
+-              {children}
+-              <button type="button" onClick={() => setOpen(false)}>
+-                Close
+-              </button>
+-            </section>
+-          </div>,
+-          document.body,
+-        )}
+-    </>
++  uncontrolledOpenRef.current = uncontrolledOpen
++
++  const setOpen = useCallback<OpenChangeHandler>(
++    (nextOpen) => {
++      const currentOpen = isControlled ? controlledOpen : uncontrolledOpenRef.current
++      if (currentOpen === nextOpen) return
++
++      if (!isControlled) {
++        uncontrolledOpenRef.current = nextOpen
++        setUncontrolledOpen(nextOpen)
++      }
++      onOpenChange?.(nextOpen)
++    },
++    [controlledOpen, isControlled, onOpenChange],
++  )
++
++  const context = useMemo<DialogContextValue>(
++    () => ({
++      contentId,
++      contentRef,
++      descriptionId,
++      open,
++      portalRef,
++      setOpen,
++      titleId,
++      triggerRef,
++    }),
++    [contentId, descriptionId, open, setOpen, titleId],
+   )
++
++  return <DialogContext.Provider value={context}>{children}</DialogContext.Provider>
+ }
++
++export type DialogTriggerProps = ComponentPropsWithoutRef<'button'>
++
++export const DialogTrigger = forwardRef<HTMLButtonElement, DialogTriggerProps>(
++  function DialogTrigger({ onClick, type = 'button', ...props }, forwardedRef) {
++    const context = useDialogContext('Dialog.Trigger')
++
++    return (
++      <button
++        {...props}
++        ref={(node) => setRefs(node, forwardedRef, context.triggerRef)}
++        type={type}
++        aria-controls={context.contentId}
++        aria-expanded={context.open}
++        aria-haspopup="dialog"
++        data-state={context.open ? 'open' : 'closed'}
++        onClick={composeClickHandlers(onClick, () => context.setOpen(true))}
++      />
++    )
++  },
++)
++
++export type DialogPortalProps = HTMLAttributes<HTMLDivElement> & {
++  container?: HTMLElement | null
++}
++
++export const DialogPortal = forwardRef<HTMLDivElement, DialogPortalProps>(
++  function DialogPortal({ children, container, ...props }, forwardedRef) {
++    const context = useDialogContext('Dialog.Portal')
++    const [mounted, setMounted] = useState(false)
++
++    useEffect(() => setMounted(true), [])
++
++    if (!mounted || !context.open) return null
++
++    const portalContainer = container ?? document.body
++    return createPortal(
++      <div
++        {...props}
++        ref={(node) => setRefs(node, forwardedRef, context.portalRef)}
++        data-dialog-portal=""
++        data-state="open"
++      >
++        {children}
++      </div>,
++      portalContainer,
++    )
++  },
++)
++
++export type DialogOverlayProps = ComponentPropsWithoutRef<'div'>
++
++export const DialogOverlay = forwardRef<HTMLDivElement, DialogOverlayProps>(
++  function DialogOverlay({ onClick, ...props }, forwardedRef) {
++    const context = useDialogContext('Dialog.Overlay')
++    if (!context.open) return null
++
++    return (
++      <div
++        {...props}
++        ref={forwardedRef}
++        data-state={context.open ? 'open' : 'closed'}
++        onClick={composeClickHandlers(onClick, (event) => {
++          if (
++            event.target === event.currentTarget &&
++            isTopDialog(context.contentRef.current)
++          ) {
++            context.setOpen(false)
++          }
++        })}
++      />
++    )
++  },
++)
++
++export type DialogContentProps = Omit<
++  ComponentPropsWithoutRef<'div'>,
++  'aria-describedby' | 'id'
++> & {
++  'aria-describedby'?: string | null
++  initialFocusRef?: RefObject<HTMLElement | null>
++}
++
++export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(
++  function DialogContent(
++    {
++      'aria-describedby': ariaDescribedBy,
++      'aria-label': ariaLabel,
++      'aria-labelledby': ariaLabelledBy,
++      initialFocusRef,
++      role = 'dialog',
++      tabIndex = -1,
++      ...props
++    },
++    forwardedRef,
++  ) {
++    const context = useDialogContext('Dialog.Content')
++    const dismissRef = useRef(() => context.setOpen(false))
++    dismissRef.current = () => context.setOpen(false)
++
++    useLayoutEffect(() => {
++      if (!context.open) return
++
++      const content = context.contentRef.current
++      if (!content) return
++
++      const activeElement = content.ownerDocument.activeElement
++      const restoreFocus =
++        context.triggerRef.current ??
++        (activeElement instanceof HTMLElement ? activeElement : null)
++
++      return registerDialogLayer({
++        content,
++        dismiss: () => dismissRef.current(),
++        initialFocus: initialFocusRef?.current ?? null,
++        restoreFocus,
++      })
++    }, [context.contentRef, context.open, context.triggerRef, initialFocusRef])
++
++    if (!context.open) return null
++
++    return (
++      <div
++        {...props}
++        ref={(node) => setRefs(node, forwardedRef, context.contentRef)}
++        id={context.contentId}
++        role={role}
++        tabIndex={tabIndex}
++        aria-label={ariaLabel}
++        aria-describedby={
++          ariaDescribedBy === null ? undefined : ariaDescribedBy ?? context.descriptionId
++        }
++        aria-labelledby={ariaLabelledBy ?? (ariaLabel ? undefined : context.titleId)}
++        aria-modal="true"
++        data-state={context.open ? 'open' : 'closed'}
++      />
++    )
++  },
++)
++
++export type DialogTitleProps = Omit<ComponentPropsWithoutRef<'h2'>, 'id'>
++
++export const DialogTitle = forwardRef<HTMLHeadingElement, DialogTitleProps>(
++  function DialogTitle(props, forwardedRef) {
++    const context = useDialogContext('Dialog.Title')
++    return <h2 {...props} ref={forwardedRef} id={context.titleId} />
++  },
++)
++
++export type DialogDescriptionProps = Omit<ComponentPropsWithoutRef<'p'>, 'id'>
++
++export const DialogDescription = forwardRef<HTMLParagraphElement, DialogDescriptionProps>(
++  function DialogDescription(props, forwardedRef) {
++    const context = useDialogContext('Dialog.Description')
++    return <p {...props} ref={forwardedRef} id={context.descriptionId} />
++  },
++)
++
++export type DialogCloseProps = ComponentPropsWithoutRef<'button'>
++
++export const DialogClose = forwardRef<HTMLButtonElement, DialogCloseProps>(
++  function DialogClose({ onClick, type = 'button', ...props }, forwardedRef) {
++    const context = useDialogContext('Dialog.Close')
++
++    return (
++      <button
++        {...props}
++        ref={forwardedRef}
++        type={type}
++        onClick={composeClickHandlers(onClick, () => context.setOpen(false))}
++      />
++    )
++  },
++)
++
++export const Dialog = {
++  Close: DialogClose,
++  Content: DialogContent,
++  Description: DialogDescription,
++  Overlay: DialogOverlay,
++  Portal: DialogPortal,
++  Root: DialogRoot,
++  Title: DialogTitle,
++  Trigger: DialogTrigger,
++} as const
+diff --git a/src/dialog-layer.ts b/src/dialog-layer.ts
+new file mode 100644
+index 0000000..5c0c342
+--- /dev/null
++++ b/src/dialog-layer.ts
+@@ -0,0 +1,230 @@
++type ElementSnapshot = {
++  ariaHidden: string | null
++  inert: boolean
++}
++
++export type DialogLayer = {
++  content: HTMLElement
++  dismiss: () => void
++  initialFocus: HTMLElement | null
++  restoreFocus: HTMLElement | null
++}
++
++type DocumentState = {
++  hiddenElements: Map<HTMLElement, ElementSnapshot>
++  layers: DialogLayer[]
++  originalBodyOverflow: string
++  onFocusIn: (event: FocusEvent) => void
++  onKeyDown: (event: KeyboardEvent) => void
++}
++
++const documentStates = new WeakMap<Document, DocumentState>()
++
++const focusableSelector = [
++  'a[href]',
++  'area[href]',
++  'button:not([disabled])',
++  'input:not([disabled]):not([type="hidden"])',
++  'select:not([disabled])',
++  'textarea:not([disabled])',
++  'iframe',
++  'object',
++  'embed',
++  '[contenteditable]:not([contenteditable="false"])',
++  '[tabindex]:not([tabindex="-1"])',
++].join(',')
++
++function isVisible(element: HTMLElement) {
++  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
++
++  return (
++    !element.hidden &&
++    !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
++    style?.display !== 'none' &&
++    style?.visibility !== 'hidden' &&
++    element.getClientRects().length > 0
++  )
++}
++
++function getFocusableElements(content: HTMLElement) {
++  return Array.from(content.querySelectorAll<HTMLElement>(focusableSelector)).filter(
++    (element) => element.tabIndex >= 0 && isVisible(element),
++  )
++}
++
++function focusFirst(layer: DialogLayer, backwards = false) {
++  const focusable = getFocusableElements(layer.content)
++  const target = backwards ? focusable.at(-1) : focusable[0]
++  ;(target ?? layer.content).focus()
++}
++
++function topLayer(state: DocumentState | undefined) {
++  return state?.layers.at(-1)
++}
++
++function restoreIsolation(state: DocumentState) {
++  for (const [element, snapshot] of state.hiddenElements) {
++    if (snapshot.ariaHidden === null) {
++      element.removeAttribute('aria-hidden')
++    } else {
++      element.setAttribute('aria-hidden', snapshot.ariaHidden)
++    }
++    element.inert = snapshot.inert
++  }
++  state.hiddenElements.clear()
++}
++
++function directBodyChild(element: HTMLElement) {
++  const body = element.ownerDocument.body
++  let current = element
++
++  while (current.parentElement && current.parentElement !== body) {
++    current = current.parentElement
++  }
++
++  return current.parentElement === body ? current : null
++}
++
++function applyIsolation(document: Document, state: DocumentState) {
++  restoreIsolation(state)
++
++  const top = topLayer(state)
++  if (!top) return
++
++  const visibleRoot = directBodyChild(top.content)
++  for (const child of document.body.children) {
++    if (!(child instanceof HTMLElement) || child === visibleRoot) continue
++
++    state.hiddenElements.set(child, {
++      ariaHidden: child.getAttribute('aria-hidden'),
++      inert: child.inert,
++    })
++    child.setAttribute('aria-hidden', 'true')
++    child.inert = true
++  }
++}
++
++function trapTab(event: KeyboardEvent, layer: DialogLayer) {
++  const focusable = getFocusableElements(layer.content)
++  const activeElement = layer.content.ownerDocument.activeElement
++
++  if (focusable.length === 0) {
++    event.preventDefault()
++    layer.content.focus()
++    return
++  }
++
++  const first = focusable[0]
++  const last = focusable[focusable.length - 1]
++  const focusIsInside = activeElement instanceof Node && layer.content.contains(activeElement)
++
++  if (!focusIsInside || activeElement === layer.content) {
++    event.preventDefault()
++    ;(event.shiftKey ? last : first).focus()
++  } else if (event.shiftKey && activeElement === first) {
++    event.preventDefault()
++    last.focus()
++  } else if (!event.shiftKey && activeElement === last) {
++    event.preventDefault()
++    first.focus()
++  }
++}
++
++function createDocumentState(document: Document): DocumentState {
++  const state: DocumentState = {
++    hiddenElements: new Map(),
++    layers: [],
++    originalBodyOverflow: document.body.style.overflow,
++    onFocusIn: () => undefined,
++    onKeyDown: () => undefined,
++  }
++
++  state.onKeyDown = (event) => {
++    const layer = topLayer(state)
++    if (!layer) return
++
++    if (event.key === 'Escape') {
++      event.preventDefault()
++      event.stopPropagation()
++      layer.dismiss()
++    } else if (event.key === 'Tab') {
++      trapTab(event, layer)
++    }
++  }
++
++  state.onFocusIn = (event) => {
++    const layer = topLayer(state)
++    const target = event.target
++    if (!layer || !(target instanceof Node) || layer.content.contains(target)) return
++
++    focusFirst(layer)
++  }
++
++  document.addEventListener('keydown', state.onKeyDown)
++  document.addEventListener('focusin', state.onFocusIn)
++  document.body.style.overflow = 'hidden'
++  documentStates.set(document, state)
++  return state
++}
++
++function destroyDocumentState(document: Document, state: DocumentState) {
++  restoreIsolation(state)
++  document.removeEventListener('keydown', state.onKeyDown)
++  document.removeEventListener('focusin', state.onFocusIn)
++  document.body.style.overflow = state.originalBodyOverflow
++  documentStates.delete(document)
++}
++
++export function registerDialogLayer(layer: DialogLayer) {
++  const document = layer.content.ownerDocument
++  const state = documentStates.get(document) ?? createDocumentState(document)
++
++  state.layers.push(layer)
++  applyIsolation(document, state)
++
++  queueMicrotask(() => {
++    if (topLayer(state) !== layer || !layer.content.isConnected) return
++
++    const initialFocus = layer.initialFocus
++    if (initialFocus && layer.content.contains(initialFocus) && isVisible(initialFocus)) {
++      initialFocus.focus()
++    } else {
++      focusFirst(layer)
++    }
++  })
++
++  return () => {
++    const index = state.layers.indexOf(layer)
++    if (index === -1) return
++
++    state.layers.splice(index, 1)
++    applyIsolation(document, state)
++
++    const remainingTopLayer = topLayer(state)
++    if (!remainingTopLayer) {
++      destroyDocumentState(document, state)
++    }
++
++    queueMicrotask(() => {
++      if (state.layers.includes(layer)) return
++
++      const restoreTarget = layer.restoreFocus
++      const activeLayer = topLayer(state)
++      if (
++        restoreTarget?.isConnected &&
++        (!activeLayer || activeLayer.content.contains(restoreTarget))
++      ) {
++        restoreTarget.focus()
++      } else if (activeLayer?.content.isConnected) {
++        focusFirst(activeLayer)
++      }
++    })
++  }
++}
++
++export function isTopDialog(content: HTMLElement | null) {
++  if (!content) return false
++
++  const state = documentStates.get(content.ownerDocument)
++  return topLayer(state)?.content === content
++}
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..93b9691
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,22 @@
++export {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogRoot,
++  DialogTitle,
++  DialogTrigger,
++} from './Dialog'
++
++export type {
++  DialogCloseProps,
++  DialogContentProps,
++  DialogDescriptionProps,
++  DialogOverlayProps,
++  DialogPortalProps,
++  DialogRootProps,
++  DialogTitleProps,
++  DialogTriggerProps,
++} from './Dialog'
+diff --git a/src/main.tsx b/src/main.tsx
+index 5922f3e..8be5688 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -1,9 +1,11 @@
+ import { StrictMode } from 'react'
+-import { createRoot } from 'react-dom/client'
++import { hydrateRoot } from 'react-dom/client'
+ 
+ import { App } from './App'
++import './styles.css'
+ 
+-createRoot(document.getElementById('root')!).render(
++hydrateRoot(
++  document.getElementById('root')!,
+   <StrictMode>
+     <App />
+   </StrictMode>,
+diff --git a/src/styles.css b/src/styles.css
+index 34b9121..54989f0 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -1,10 +1,8 @@
+ .overlay {
+-  align-items: center;
+   background: rgb(0 0 0 / 55%);
+-  display: flex;
+   inset: 0;
+-  justify-content: center;
+   position: fixed;
++  z-index: 1;
+ }
+ 
+ .dialog {
+@@ -12,6 +10,12 @@
+   color: black;
+   display: grid;
+   gap: 1rem;
++  inset-block-start: 50%;
++  inset-inline-start: 50%;
+   max-width: 28rem;
+   padding: 2rem;
++  position: fixed;
++  transform: translate(-50%, -50%);
++  width: min(28rem, calc(100vw - 4rem));
++  z-index: 2;
+ }
+diff --git a/tests/dialog.spec.ts b/tests/dialog.spec.ts
+index 5beb5a4..db73a02 100644
+--- a/tests/dialog.spec.ts
++++ b/tests/dialog.spec.ts
+@@ -1,12 +1,22 @@
+ import { expect, test } from '@playwright/test'
+ 
+ test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
++  const consoleErrors: string[] = []
++  page.on('console', (message) => {
++    if (message.type() === 'error') consoleErrors.push(message.text())
++  })
++
+   await page.goto('/')
+-  const trigger = page.getByRole('button', { name: 'Edit profile' })
++  const trigger = page.locator('main > button').filter({ hasText: 'Edit profile' })
++  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+   await trigger.click()
+ 
+   const dialog = page.getByRole('dialog', { name: 'Edit profile' })
+   await expect(dialog).toBeVisible()
++  await expect(dialog).toHaveAttribute('aria-modal', 'true')
++  await expect(dialog).toHaveAccessibleDescription('Update your public information.')
++  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
++  await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true')
+   await expect(dialog.getByLabel('Name')).toBeFocused()
+ 
+   await page.keyboard.press('Shift+Tab')
+@@ -17,6 +27,9 @@ test('traps focus, closes with Escape, and restores the trigger', async ({ page
+   await page.keyboard.press('Escape')
+   await expect(dialog).toBeHidden()
+   await expect(trigger).toBeFocused()
++  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
++  await expect(page.locator('#root')).not.toHaveAttribute('aria-hidden', 'true')
++  expect(consoleErrors).toEqual([])
+ })
+ 
+ test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
+@@ -28,13 +41,36 @@ test('only the top nested dialog handles Escape and restores local focus', async
+ 
+   const child = page.getByRole('dialog', { name: 'Permissions' })
+   await expect(child).toBeVisible()
++  await expect(page.locator('[data-dialog-portal]').first()).toHaveAttribute(
++    'aria-hidden',
++    'true',
++  )
++  await expect(child.getByRole('button', { name: 'Save permissions' })).toBeFocused()
++
++  await page.keyboard.press('Shift+Tab')
++  await expect(child.getByRole('button', { name: 'Close' })).toBeFocused()
++  await page.keyboard.press('Tab')
+   await expect(child.getByRole('button', { name: 'Save permissions' })).toBeFocused()
+ 
+   await page.keyboard.press('Escape')
+   await expect(child).toBeHidden()
+   await expect(parent).toBeVisible()
++  await expect(page.locator('[data-dialog-portal]')).toHaveCount(1)
+   await expect(nestedTrigger).toBeFocused()
+ 
+   await page.keyboard.press('Escape')
+   await expect(parent).toBeHidden()
+ })
++
++test('the top overlay dismisses without treating dialog clicks as outside clicks', async ({ page }) => {
++  await page.goto('/')
++  await page.getByRole('button', { name: 'Edit profile' }).click()
++
++  const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  await dialog.getByLabel('Name').click()
++  await expect(dialog).toBeVisible()
++
++  await page.locator('.overlay').click({ position: { x: 4, y: 4 } })
++  await expect(dialog).toBeHidden()
++  await expect(page.getByRole('button', { name: 'Edit profile' })).toBeFocused()
++})
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+new file mode 100644
+index 0000000..1fb4bc1
+--- /dev/null
++++ b/tsconfig.build.json
+@@ -0,0 +1,12 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "allowImportingTsExtensions": true,
++    "declaration": true,
++    "emitDeclarationOnly": true,
++    "noEmit": false,
++    "outDir": "dist/package",
++    "types": ["react", "react-dom"]
++  },
++  "include": ["src/Dialog.tsx", "src/dialog-layer.ts", "src/index.ts"]
++}
+diff --git a/vite.config.ts b/vite.config.ts
+index 80316f3..9abeb39 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,4 +1,21 @@
++import { createElement } from 'react'
++import { renderToString } from 'react-dom/server'
+ import react from '@vitejs/plugin-react'
+ import { defineConfig } from 'vite'
+ 
+-export default defineConfig({ plugins: [react()] })
++import { App } from './src/App.tsx'
++
++export default defineConfig({
++  plugins: [
++    react(),
++    {
++      name: 'ssr-example-shell',
++      transformIndexHtml(html) {
++        return html.replace(
++          '<div id="root"></div>',
++          `<div id="root">${renderToString(createElement(App))}</div>`,
++        )
++      },
++    },
++  ],
++})
+diff --git a/vite.lib.config.ts b/vite.lib.config.ts
+new file mode 100644
+index 0000000..504e999
+--- /dev/null
++++ b/vite.lib.config.ts
+@@ -0,0 +1,16 @@
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  build: {
++    emptyOutDir: false,
++    lib: {
++      entry: 'src/index.ts',
++      fileName: 'dialog',
++      formats: ['es'],
++    },
++    outDir: 'dist/package',
++    rollupOptions: {
++      external: ['react', 'react-dom'],
++    },
++  },
++})

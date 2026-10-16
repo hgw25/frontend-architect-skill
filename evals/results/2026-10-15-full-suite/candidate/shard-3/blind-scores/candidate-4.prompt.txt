@@ -1,0 +1,497 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+# Behavioral Evaluation Rubric
+
+每个用例只评分 `cases.yaml` 声明的 `applicable_dimensions`。其他维度记为 `N/A`，
+不按 0 分处理。不要要求固定标题、措辞或唯一代码实现。
+
+评分时沿同一条证据链检查：用户行为 → 事实与契约 → 不变量和所有权 → 模块边界 →
+实际实现 → 验证结果。只评价任务中可观察的环节；局部修改不要求展示完整设计过程。
+不能因为回答提到了类型、状态机、分层和测试等术语，就认定这些环节已经相互一致。
+命名评价以职责、内容及调用是否一致为依据，不以术语是否高级评分；测试布局评价遵循项目约定、可定位性及执行完整性，不固定要求集中或就近放置。
+对结构设计，用任务支持的现实变化检查修改位置是否符合所有权；允许为领域常见变化预留适度边界，不要求重复已经发生；不奖励无依据的通用机制。
+
+| 维度键 | 0 分 | 1 分 | 2 分 |
+| --- | --- | --- | --- |
+| `requirements_context` | 直接套方案 | 识别部分约束 | 明确目标、现状、规模、兼容性和项目规则 |
+| `solution_complexity` | 默认新增抽象或依赖 | 提到简化但未比较 | 比较现有契约、平台能力及集成维护成本，选择维护成本相称的完整方案，允许便利接口与适度前瞻，不绕过已有策略再造一套 |
+| `module_boundaries` | 机械套目录或把业务堆在入口 | 有目录分类但状态归属或组件职责含糊 | 遵循框架与项目约定，用可导航的文件表达页面、布局、组件及数据职责；真实变化的修改范围符合所有权，避免不足与过度拆分 |
+| `paradigm_choice` | FP/OOP 阵营化 | 能列出一般优缺点 | 按转换、状态、身份、生命周期和副作用分配范式 |
+| `runtime_delivery` | 忽略运行环境、缓存或交付边界 | 识别 server/client 或缓存中的一部分 | 明确执行位置、序列化、缓存作用域与失效、Bundle、迁移和回滚边界 |
+| `rendering_performance` | 套用与目标平台无关的优化技巧，或把减少 render 次数直接等同于用户性能 | 能识别重渲染、线程、布局或帧问题中的一部分，但缺少完整成本链或目标运行时证据 | 根据目标平台映射状态更新、调度、跨层传输、宿主更新、布局、绘制/栅格化与呈现边界，并用对应运行时的真实测量定位和验证 |
+| `security_trust` | 遗漏真实边界或因假想风险堆叠防御机制 | 识别风险但重复设防或泛泛提醒 | 追踪实际信任边界、复用已有保障，保留必要授权与秘密保护，内部按契约工作且防护成本与威胁相称 |
+| `implementation_integrity` | 只有片段、占位或相互冲突的修改 | 主路径基本完整但遗漏契约或失败路径 | 实际代码、类型、调用方、状态、错误和测试形成可编译、可验证的一致变更，调用者能看清操作语义与执行顺序 |
+| `infrastructure_design` | 把单点需求包装成基建或只写局部封装 | 有公共 API 但消费者、边界或产物不完整 | 依据真实消费者设计窄公共契约、内部边界、产物、扩展点和验证矩阵 |
+| `developer_experience` | 配置、类型和错误让消费者猜测 | 有类型或错误提示但缺少修复上下文 | 常见路径清楚，类型推断稳定，诊断可执行，文档和示例覆盖非显然契约 |
+| `compatibility_evolution` | 任意破坏消费者或承诺无限兼容 | 提到 SemVer 或迁移 | 明确支持矩阵、破坏面、弃用、迁移、发布验证和回滚策略 |
+| `operability` | 上线后不可诊断或回滚 | 提到日志、监控或灰度 | 信号对应用户风险，控制隐私与成本，并定义灰度、恢复或回滚策略 |
+| `correctness_boundary` | 忽略异常和竞态 | 覆盖常见错误 | 识别与任务相关的状态、键、身份、竞态和清理 |
+| `user_experience` | 只看正常视觉状态 | 提到部分状态 | 覆盖相关语义、键盘、焦点、错误、慢速和用户偏好 |
+| `verification_evidence` | 无验证、泛泛而谈或用模拟层冒充真实边界 | 建议运行工具但没有结果、环境或阈值 | 验证对应真实风险，记录实际结果与环境，并说明未验证部分；浏览器、宿主、产物或字段结论使用其真实边界证据 |
+| `communication_quality` | 堆砌原则 | 结论清楚但取舍弱 | 结果优先，理由、取舍、风险和范围明确 |
+
+## 归一化
+
+```text
+normalized_score = earned_score / (applicable_dimension_count * 2) * 16
+```
+
+- **13–16 分：** 达到 Skill 的目标。
+- **9–12.99 分：** 基本可用，但仍有教条化、边界遗漏或验证不足。
+- **0–8.99 分：** Skill 未明显改善工程决策。
+
+记录每个维度的原始分数和理由，最终分数保留两位小数。不要为了提高分数而给不适用
+维度计分。分数区间只在没有一票失败项时决定 verdict；触发失败项后 verdict 必须为
+`fail`，不得保留 `target` 或 `basic`。
+
+## 一票失败项
+
+先应用用例自己的 `fail_if`，再检查以下全局失败项。出现任一项，即使分数较高也判定
+失败：
+
+- 违反用户明确技术选择或项目规则；
+- 无依据扩大到全仓重构；
+- 将某个参考架构当作强制目录模板；
+- 宣称 FP 或 OOP 在所有前端场景绝对更优；
+- 把客户端隐藏、禁用或路由守卫当作权威授权；
+- 将秘密或私有数据带入浏览器 Bundle、公开环境变量或遥测；
+- 对用户专属数据使用未区分用户或租户的共享缓存；
+- 将源码内部测试通过等同于已验证发布包、构建插件或公共组件基建；
+- 破坏公共契约却不识别受影响消费者、版本和迁移路径；
+- 对未运行的测试、性能或兼容性验证作肯定声明。
+- 用 DOM 模拟器证明真实浏览器焦点、水合、布局或视觉行为，或用单次实验室分数证明真实用户性能。
+- 把浏览器渲染管线、旧版跨端 Bridge、固定 16ms 帧预算或某个小程序宿主限制当作所有平台和版本的通用事实。
+
+
+CASE
+id: profile-domain-contract
+request: 为已有 Vue 用户端设计个人主页的最小实施方案，视觉参考 GitHub。 用户与开发者是两个身份体系。GET /users/{userId} 返回 profile 和 applications， 服务端按查看者身份决定是否包含私有应用；旧生成注释仍写着 applications 仅公开。 产品负责人已确认当前接口会向本人返回公开和私有应用。作者署名只有 developerLogin， 没有 userId 映射。请说明路由、数据流、作者入口、实现顺序和验收方式。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+建议采用一条明确的用户域链路：`userId` 负责用户主页，`developerLogin` 只负责开发者署名。两者没有映射时，绝不能通过字符串猜测或拼接跳转。
+
+## 最小页面方案
+
+路由定义为：
+
+```text
+/users/:userId
+```
+
+- 路由参数始终是 `userId`。
+- 账户菜单中的“个人主页”使用当前登录态提供的 `userId`。
+- 若当前登录态没有 `userId`，这是接口契约缺口，需要认证响应补充该字段或提供明确的当前用户接口，不能拿用户名或 `developerLogin` 代替。
+- GitHub 只作为视觉参考：桌面端左侧 profile、右侧 applications；窄屏改为单列。只展示现有响应字段，不为了模仿 GitHub 新造关注数、贡献图等产品能力。
+- 沿用项目已有组件、颜色和断点；不引入新的 UI 或数据依赖。
+
+## 数据流
+
+```text
+route.params.userId
+  → 用户主页的数据查询边界
+  → GET /users/{userId}（携带现有登录凭证）
+  → { profile, applications }
+  → profile 区域 + applications 列表
+```
+
+关键规则：
+
+1. 页面只请求这个聚合接口，不再分别拉取 profile 和 applications。
+2. `applications` 是服务端根据查看者授权后返回的完整可见集合。前端不得根据旧注释再次过滤，也不得用 `isSelf` 推断权限。
+3. `isSelf = routeUserId === sessionUserId` 只能用于文案或本人操作的展示，不能承担授权。
+4. 应用列表直接呈现服务端结果；只有现有响应确实包含可见性字段时，才显示“私有”标记。
+5. 页面覆盖 loading、失败/重试、空列表和成功状态；切换 `userId` 时不能让旧请求覆盖新页面。
+
+由于同一 URL 对不同查看者可能返回不同数据，缓存必须按身份隔离。优先复用项目现有查询层：
+
+```text
+query key = user-profile + userId + viewerKey
+viewerKey = 当前 userId 或 anonymous
+```
+
+不要把 token 放入 key。如果项目在登录、退出和切换账号时会整体清空查询缓存，也可以沿用该机制。必须验收“本人看过私有应用后退出或切换账号”的场景，避免私有结果从缓存泄漏给下一位查看者。
+
+旧生成注释应在 OpenAPI/接口描述源头改为类似：
+
+> applications 包含当前查看者有权查看的应用；本人可包含公开和私有应用。
+
+随后走项目原有生成流程。不要只手改生成文件。产品负责人确认的当前行为高于旧生成注释，前端实现不应继续采用“仅公开”的旧语义。
+
+## 作者入口
+
+`developerLogin` 不能用于 `/users/:userId`。
+
+当前最小处理是：
+
+- 若项目已有以 `developerLogin` 为键的开发者详情页，则作者名链接到那个开发者域路由。
+- 若没有，则作者名显示为普通文本，不提供用户主页链接。
+- 不新增客户端搜索、逐作者请求或字符串匹配来猜测用户身份。
+
+如果产品以后要求“从作者进入用户主页”，服务端需要提供显式、可空的关联，例如 `author.userId`。因为用户和开发者是两个身份体系，该映射应由服务端领域契约拥有。
+
+## 实现顺序
+
+1. 确认并修正接口描述源，重新生成类型；保留 `profile`、`applications` 的原字段名。
+2. 在现有 API/query 层增加 `getUserProfile(userId)`，明确查看者相关缓存策略和路由切换时的旧结果处理。
+3. 注册 `/users/:userId`，先接通“路由—请求—基本渲染”的完整链路。
+4. 完成 GitHub 风格的 profile 与 applications 布局，以及 loading、error、empty 状态。
+5. 从账户菜单增加本人主页入口；按上述规则处理 `developerLogin` 作者署名。
+6. 添加身份矩阵测试并进行浏览器验收。
+
+不建议在第一版加入编辑资料、分页、筛选、关注关系或作者—用户解析服务。
+
+## 验收方式
+
+接口与页面联合验收：
+
+| 场景 | 预期 |
+|---|---|
+| 本人访问自己的 `userId` | 页面完整显示接口返回的公开和私有应用，不被前端过滤 |
+| 其他登录用户访问同一 `userId` | 只显示服务端返回的可见应用 |
+| 匿名访问（若接口允许） | 只显示服务端允许的内容；若接口要求登录，则按既有 401 流程处理 |
+| 本人访问后退出或切换账号 | 相同路由不会复用包含私有应用的旧缓存 |
+| 快速从用户 A 切换到用户 B | A 的迟到响应不会覆盖 B 的页面 |
+| 点击账户菜单“个人主页” | URL 和请求使用同一个当前用户 `userId` |
+| 点击或查看作者署名 | 不会把 `developerLogin` 当作 `userId`；无开发者路由时不可点击 |
+| 应用为空、请求失败、用户不存在 | 分别出现明确空状态、可重试错误和项目既有的不存在页面 |
+| 响应式与可访问性 | 手机单列、长文本不溢出；链接可键盘访问、焦点可见、头像有合适替代文本 |
+
+自动化测试至少覆盖查询身份隔离、本人/他人两种响应渲染、路由快速切换和作者不误跳用户主页；再用真实浏览器检查直达 URL、刷新、后退/前进、窄屏布局及退出后的缓存行为。
+
+当前工作区的 Git 树为空，除 `.frontend-architect` 外没有 Vue 源码、依赖或测试配置，因此本次只能给出实施决策，无法据实指定现有文件路径、组件名或执行项目测试，也没有修改任何文件。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: field-eligibility-consistency
+request: 评审下面的表单处理逻辑。契约规定 disabled 字段不参与校验和提交。 不需要设计通用规则引擎，请指出实际缺陷，给出小范围修复和有意义的测试。
+artifact: async function processForm(fields, values, send) {
+  const errors = {};
+  for (const field of fields.filter(field => !field.disabled)) {
+    if (field.required && !values[field.name]) errors[field.name] = 'Required';
+  }
+  for (const field of fields.filter(field => field.validate)) {
+    const error = await field.validate(values[field.name], values);
+    if (error) errors[field.name] = error;
+  }
+  if (Object.keys(errors).length) return { errors };
+  const payload = Object.fromEntries(fields
+    .filter(field => !field.disabled)
+    .map(field => [field.name, values[field.name]]));
+  return send(payload);
+}
+
+applicable_dimensions: ["solution_complexity", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+## 评审结论
+
+**中等严重度：disabled 字段仍会执行自定义校验。**
+
+第二个循环只判断了 `field.validate`：
+
+```js
+fields.filter(field => field.validate)
+```
+
+因此 disabled 字段的校验器仍会运行。它返回错误或抛出异常时，会阻止 `send`，直接违反“disabled 字段不参与校验和提交”的契约。
+
+建议只派生一次可用字段，供所有相关路径复用：
+
+```js
+async function processForm(fields, values, send) {
+  const enabledFields = fields.filter(field => !field.disabled);
+  const errors = {};
+
+  for (const field of enabledFields) {
+    if (field.required && !values[field.name]) {
+      errors[field.name] = 'Required';
+    }
+  }
+
+  for (const field of enabledFields) {
+    if (!field.validate) continue;
+
+    const error = await field.validate(values[field.name], values);
+    if (error) errors[field.name] = error;
+  }
+
+  if (Object.keys(errors).length) return { errors };
+
+  const payload = Object.fromEntries(
+    enabledFields.map(field => [field.name, values[field.name]])
+  );
+
+  return send(payload);
+}
+```
+
+这不是规则引擎，只是让必填校验、自定义校验和提交共享同一个资格判断。保留传给校验器的完整 `values`，避免未经契约支持就改变现有跨字段校验接口。
+
+建议增加两个回归测试：
+
+```js
+it('skips validation and submission for disabled fields', async () => {
+  const validateDisabled = vi.fn(() => 'Invalid');
+  const send = vi.fn(payload => payload);
+
+  const result = await processForm(
+    [
+      {
+        name: 'archived',
+        disabled: true,
+        required: true,
+        validate: validateDisabled,
+      },
+      { name: 'email', required: true },
+    ],
+    {
+      archived: 'stale',
+      email: 'a@example.com',
+    },
+    send,
+  );
+
+  expect(validateDisabled).not.toHaveBeenCalled();
+  expect(send).toHaveBeenCalledWith({ email: 'a@example.com' });
+  expect(result).toEqual({ email: 'a@example.com' });
+});
+
+it('still validates enabled fields and blocks submission', async () => {
+  const validate = vi.fn(() => 'Invalid email');
+  const send = vi.fn();
+
+  const result = await processForm(
+    [{ name: 'email', validate }],
+    { email: 'bad' },
+    send,
+  );
+
+  expect(validate).toHaveBeenCalledWith('bad', { email: 'bad' });
+  expect(result).toEqual({ errors: { email: 'Invalid email' } });
+  expect(send).not.toHaveBeenCalled();
+});
+```
+
+没有足够契约证明 `!values[field.name]` 对 `0` 或 `false` 的处理有误，因此不建议在本次修复中顺手改变。
+
+工作区没有业务源码或测试配置，只有不可修改的 Skill 文件，所以未落盘修改。已用 Node 断言复现：原逻辑会运行 disabled 校验器并阻止提交；上述修复会跳过它并只提交 enabled 字段。
+
+DIFF:
+
+
+VALIDATIONS:
+No executable fixture for this case.
+
+CASE
+id: search-request-lifecycle-executable
+request: 请直接修复 fixture 中 createSearch 的实现，按照 README.md 的公共契约维护草稿、 提交查询和结果。只有最新启动请求能发布结果、错误和结束状态；transport 不支持取消。 retry 必须使用已提交查询；dispose 后不再修改状态；API DTO 不进入公开 UI 数据。 运行 npm run check，不改受保护测试或 package.json，不增加框架或依赖。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "correctness_boundary", "implementation_integrity", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+已修复 [src/search.js](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-search-request-lifecycle-executable-candidate-3xyo1j9l/src/search.js)。
+
+实现包括：
+
+- 使用请求 ID 保证只有最新启动的请求能更新结果、错误和结束状态。
+- `retry()` 固定使用最近一次已提交查询，不受 draft 修改影响。
+- 保留加载和失败前的成功结果。
+- DTO 在发布前转换为 `{ id, label }`。
+- `dispose()` 后冻结状态并阻止后续请求与状态更新。
+- 空白提交、首次提交前 retry 均为无操作。
+- `getState()` 返回独立快照。
+
+验证结果：
+
+- `npm run check`：8/8 通过。
+- `git diff --check`：通过。
+- 仅修改了 `src/search.js`；受保护文件及 `.frontend-architect` 均未改动。
+
+DIFF:
+diff --git a/src/search.js b/src/search.js
+index 97267aa..d15a8bf 100644
+--- a/src/search.js
++++ b/src/search.js
+@@ -1,22 +1,82 @@
+ export function createSearch(fetchUsers) {
+-  let state = { draft: '', submitted: '', status: 'idle', items: [], error: null };
+-  async function submit() {
+-    state.submitted = state.draft.trim();
+-    state.status = 'loading'; state.error = null;
++  let state = {
++    draft: '',
++    submitted: '',
++    status: 'idle',
++    items: [],
++    error: null,
++  };
++  let latestRequestId = 0;
++  let disposed = false;
++
++  const isCurrent = requestId =>
++    !disposed && requestId === latestRequestId;
++
++  async function startRequest(query) {
++    const requestId = ++latestRequestId;
++    state = {
++      ...state,
++      submitted: query,
++      status: 'loading',
++      error: null,
++    };
++
+     try {
+-      state.items = await fetchUsers(state.submitted);
+-      state.status = 'success';
++      const users = await fetchUsers(query);
++      if (!isCurrent(requestId)) return;
++
++      state = {
++        ...state,
++        status: 'success',
++        items: users.map(user => ({
++          id: user.user_id,
++          label: user.display_name,
++        })),
++      };
+     } catch (error) {
+-      state.error = error.message; state.status = 'error';
+-    } finally {
+-      if (state.status === 'loading') state.status = 'idle';
++      if (!isCurrent(requestId)) return;
++
++      state = {
++        ...state,
++        status: 'error',
++        error: error instanceof Error ? error.message : String(error),
++      };
+     }
+   }
++
++  async function submit() {
++    if (disposed) return;
++
++    const query = state.draft.trim();
++    if (!query) return;
++
++    await startRequest(query);
++  }
++
++  async function retry() {
++    if (disposed || !state.submitted) return;
++
++    await startRequest(state.submitted);
++  }
++
+   return {
+-    setDraft(value) { state.draft = value; },
++    setDraft(value) {
++      if (disposed) return;
++      state = { ...state, draft: value };
++    },
+     submit,
+-    retry: submit,
+-    getState() { return structuredClone(state); },
+-    dispose() {},
++    retry,
++    getState() {
++      return {
++        draft: state.draft,
++        submitted: state.submitted,
++        status: state.status,
++        items: state.items.map(item => ({ ...item })),
++        error: state.error,
++      };
++    },
++    dispose() {
++      disposed = true;
++    },
+   };
+ }
+
+
+VALIDATIONS:
+COMMAND verify protected evaluation harness EXIT 0
+
+COMMAND npm ci EXIT 0
+
+up to date, audited 1 package in 91ms
+
+found 0 vulnerabilities
+
+COMMAND npm run check EXIT 0
+
+> check
+> node --test
+
+TAP version 13
+# Subtest: draft submission and DTO boundary produce independent UI snapshots
+ok 1 - draft submission and DTO boundary produce independent UI snapshots
+  ---
+  duration_ms: 1.082625
+  type: 'test'
+  ...
+# Subtest: older success cannot finish the newer loading request or replace retained results
+ok 2 - older success cannot finish the newer loading request or replace retained results
+  ---
+  duration_ms: 1.183917
+  type: 'test'
+  ...
+# Subtest: older failure and cleanup cannot clear newer loading state or publish error
+ok 3 - older failure and cleanup cannot clear newer loading state or publish error
+  ---
+  duration_ms: 0.129667
+  type: 'test'
+  ...
+# Subtest: older success cannot overwrite latest failure
+ok 4 - older success cannot overwrite latest failure
+  ---
+  duration_ms: 0.102583
+  type: 'test'
+  ...
+# Subtest: older failure cannot overwrite latest success, including repeated identical queries
+ok 5 - older failure cannot overwrite latest success, including repeated identical queries
+  ---
+  duration_ms: 0.131834
+  type: 'test'
+  ...
+# Subtest: retry uses submitted query and retains results until retry succeeds
+ok 6 - retry uses submitted query and retains results until retry succeeds
+  ---
+  duration_ms: 0.095292
+  type: 'test'
+  ...
+# Subtest: empty submit and retry before any submit are no-ops
+ok 7 - empty submit and retry before any submit are no-ops
+  ---
+  duration_ms: 0.088959
+  type: 'test'
+  ...
+# Subtest: dispose freezes state against pending completion and future commands
+ok 8 - dispose freezes state against pending completion and future commands
+  ---
+  duration_ms: 0.121417
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 46.322292

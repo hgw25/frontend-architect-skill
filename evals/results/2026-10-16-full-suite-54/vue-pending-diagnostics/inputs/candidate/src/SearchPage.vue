@@ -1,0 +1,234 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+
+type SearchResult = {
+  id: string
+  name: string
+  price: number
+}
+
+type SearchResponse = {
+  items: SearchResult[]
+  total: number
+}
+
+const supportedLocales = ['en-US', 'fr-FR'] as const
+type SupportedLocale = (typeof supportedLocales)[number]
+
+type SearchState = {
+  query: string
+  page: number
+  locale: SupportedLocale
+}
+
+type Messages = {
+  title: string
+  searchLabel: string
+  submit: string
+  failure: string
+  resultCount: {
+    one: string
+    other: string
+  }
+}
+
+const messagesByLocale: Record<SupportedLocale, Messages> = {
+  'en-US': {
+    title: 'Product search',
+    searchLabel: 'Search',
+    submit: 'Search',
+    failure: 'Search failed',
+    resultCount: {
+      one: '{count} result',
+      other: '{count} results',
+    },
+  },
+  'fr-FR': {
+    title: 'Recherche de produits',
+    searchLabel: 'Rechercher',
+    submit: 'Rechercher',
+    failure: 'La recherche a échoué',
+    resultCount: {
+      one: '{count} résultat',
+      other: '{count} résultats',
+    },
+  },
+}
+
+const localeFormats: Record<
+  SupportedLocale,
+  {
+    count: Intl.NumberFormat
+    currency: Intl.NumberFormat
+    plural: Intl.PluralRules
+  }
+> = {
+  'en-US': {
+    count: new Intl.NumberFormat('en-US'),
+    currency: new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }),
+    plural: new Intl.PluralRules('en-US'),
+  },
+  'fr-FR': {
+    count: new Intl.NumberFormat('fr-FR'),
+    currency: new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'EUR',
+    }),
+    plural: new Intl.PluralRules('fr-FR'),
+  },
+}
+
+function isSupportedLocale(value: string | null): value is SupportedLocale {
+  return supportedLocales.some((locale) => locale === value)
+}
+
+function readSearchState(): SearchState {
+  const parameters = new URLSearchParams(window.location.search)
+  const requestedPage = Number(parameters.get('page'))
+  const requestedLocale = parameters.get('locale')
+
+  return {
+    query: parameters.get('q') ?? '',
+    page:
+      Number.isSafeInteger(requestedPage) && requestedPage > 0
+        ? requestedPage
+        : 1,
+    locale: isSupportedLocale(requestedLocale) ? requestedLocale : 'en-US',
+  }
+}
+
+function pushSearchState(state: SearchState) {
+  const url = new URL(window.location.href)
+  url.searchParams.set('q', state.query)
+  url.searchParams.set('page', String(state.page))
+  url.searchParams.set('locale', state.locale)
+  window.history.pushState(
+    window.history.state,
+    '',
+    `${url.pathname}${url.search}${url.hash}`,
+  )
+}
+
+const initialState = readSearchState()
+const query = ref(initialState.query)
+const page = ref(initialState.page)
+const locale = ref<SupportedLocale>(initialState.locale)
+const results = ref<SearchResult[]>([])
+const total = ref(0)
+const error = ref('')
+
+const messages = computed(() => messagesByLocale[locale.value])
+const resultCount = computed(() => {
+  const format = localeFormats[locale.value]
+  const category = format.plural.select(total.value) === 'one' ? 'one' : 'other'
+
+  return messages.value.resultCount[category].replace(
+    '{count}',
+    format.count.format(total.value),
+  )
+})
+
+let activeRequest = 0
+let activeController: AbortController | undefined
+let previousDocumentLanguage: string | null = null
+
+function formatPrice(price: number) {
+  return localeFormats[locale.value].currency.format(price)
+}
+
+async function fetchResults(state: SearchState) {
+  const request = ++activeRequest
+  activeController?.abort()
+  const controller = new AbortController()
+  activeController = controller
+  error.value = ''
+
+  try {
+    const parameters = new URLSearchParams({
+      q: state.query,
+      page: String(state.page),
+    })
+    const response = await fetch(`/api/search?${parameters.toString()}`, {
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`Search request failed with status ${response.status}`)
+    }
+
+    const payload = (await response.json()) as SearchResponse
+    if (request !== activeRequest) return
+
+    results.value = payload.items
+    total.value = payload.total
+  } catch {
+    if (request !== activeRequest || controller.signal.aborted) return
+    error.value = messagesByLocale[state.locale].failure
+  } finally {
+    if (request === activeRequest) activeController = undefined
+  }
+}
+
+function submitSearch() {
+  const state: SearchState = {
+    query: query.value,
+    page: 1,
+    locale: locale.value,
+  }
+  page.value = state.page
+  pushSearchState(state)
+  void fetchResults(state)
+}
+
+function restoreSearchState() {
+  const state = readSearchState()
+  query.value = state.query
+  page.value = state.page
+  locale.value = state.locale
+  document.documentElement.lang = state.locale
+  void fetchResults(state)
+}
+
+onMounted(() => {
+  previousDocumentLanguage = document.documentElement.getAttribute('lang')
+  document.documentElement.lang = locale.value
+  window.addEventListener('popstate', restoreSearchState)
+  void fetchResults(initialState)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', restoreSearchState)
+  activeRequest += 1
+  activeController?.abort()
+
+  if (previousDocumentLanguage === null) {
+    document.documentElement.removeAttribute('lang')
+  } else {
+    document.documentElement.lang = previousDocumentLanguage
+  }
+})
+</script>
+
+<template>
+  <main :lang="locale">
+    <h1>{{ messages.title }}</h1>
+    <form @submit.prevent="submitSearch">
+      <label>
+        {{ messages.searchLabel }}
+        <input v-model="query" name="query" />
+      </label>
+      <button type="submit">{{ messages.submit }}</button>
+    </form>
+
+    <p v-if="error" role="alert">{{ error }}</p>
+    <p aria-live="polite">{{ resultCount }}</p>
+    <ul>
+      <li v-for="result in results" :key="result.id">
+        {{ result.name }} — {{ formatPrice(result.price) }}
+      </li>
+    </ul>
+  </main>
+</template>

@@ -1,0 +1,1 @@
+Keep public profile and customer models distinct; isolate API clients and test identity, permissions and failures. No application was supplied.

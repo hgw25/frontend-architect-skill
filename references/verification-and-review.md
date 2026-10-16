@@ -1,18 +1,23 @@
 # Verification and Review
 
-Use this reference when implementing or reviewing frontend changes, choosing
-tests, validating performance, or judging whether code is production-ready.
+Use the relevant sections for a requested review, an unresolved verification
+decision, causal investigation, performance evidence or a lasting acceptance
+claim. An ordinary proportionate check does not require loading this reference.
 
 ## Contents
 
-- Verify risk, not ceremony
-- Test observable contracts
-- Review architecture and implementation
-- Review interfaces
-- Check adversarial boundaries
-- Validate performance claims
-- Report findings and evidence
-- Influences
+- [Verify risk, not ceremony](#verify-risk-not-ceremony)
+- [Keep test organization predictable](#keep-test-organization-predictable)
+- [Test observable contracts](#test-observable-contracts)
+- [Distinguish cause from recovery](#distinguish-cause-from-recovery)
+- [Establish review scope and coverage](#establish-review-scope-and-coverage)
+- [Review architecture and implementation](#review-architecture-and-implementation)
+- [Review interfaces](#review-interfaces)
+- [Check adversarial boundaries](#check-adversarial-boundaries)
+- [Validate performance claims](#validate-performance-claims)
+- [Keep evidence reproducible](#keep-evidence-reproducible)
+- [Report findings and evidence](#report-findings-and-evidence)
+- [Influences](#influences)
 
 ## Verify risk, not ceremony
 
@@ -41,14 +46,26 @@ supported contract and risk; do not run every browser for every local change.
 For visual snapshots, pin browser, fonts, viewport, locale, timezone, animations,
 and data so environmental variance is not mistaken for a product regression.
 
-Choose evidence that could falsify the reported symptom. For layout, inspect
-actual bounds, overlap, clipping, and scroll reachability with representative
-content; a positioning class does not prove those outcomes. For hover or focus,
-exercise actual hit testing and focus movement rather than dispatching events
-directly to a possibly covered element. For resize or animation, include the
-return transition and interruption when stale measurements are plausible.
-Keep these checks targeted; a small spacing edit does not require a new test
-framework or a full application suite unless the project requires it.
+Exercise the claimed control and condition through its settled consumer state.
+Hold work pending, accept the result, and observe feedback, failure/retry and
+cleanup where those transitions matter. Include the variant likely to break the
+connection: delayed content, native event defaults, layout settling or repeated
+input during completion. Handler execution, mounting and test counts do not show
+that the final focus, navigation, data or usable region is correct.
+
+When a sandbox blocks a decisive check, reuse an available authorized host or CI
+runner and bring its actual failure back to the implementation before closing
+acceptance. Keep the first result and the repair distinct; a later pass supports
+the repaired state, not an earlier readiness claim. If no such runner is available,
+finish the independent work and name the blocked acceptance boundary. Environment
+adaptation belongs in test setup unless the product itself needs that behavior.
+
+For layout, inspect actual available content space, overlap, clipping and scroll
+reachability; hiding an icon is not evidence that text recovered its space.
+For hover/focus, use real hit testing and focus movement. Include return and
+interruption when measurements can become stale. Select variants by changed
+policy and failure risk, not every control/platform combination. Small spacing
+edits need proportionate inspection, not a new framework or full application suite.
 
 ## Keep test organization predictable
 
@@ -93,6 +110,57 @@ weaken the check to match the implementation. If the harness is wrong, correct
 it while retaining the original acceptance condition and explain the evidence.
 Distinguish tests actually selected by a command from the intended subset.
 
+## Distinguish cause from recovery
+
+For a state that fails to converge, trace the authoritative event or response
+through decoding, identity association, persistence and the consumer transition,
+using only the boundaries that exist. Find where the expected fact stops being
+applied; compare a known-good path or a controlled event order when useful.
+Prefer a check through that main path with incidental recovery disabled or
+unavailable. If the original conditions fail and the same check passes after a
+local correction, that supports the demonstrated mechanism. It does not prove
+the cause of an earlier incident whose event history is missing.
+
+Reconciliation, retry and polling can be necessary for documented signal loss
+or uncertain outcomes. Verify that recovery separately, including ownership and
+termination; its success alone does not justify adding a new background system
+or replacing an established abstraction. Use existing guarantees first. Withdraw
+experiments that the evidence rejects, preserving shared recovery still needed
+by other paths. If decisive reproduction is unavailable, report the remaining
+hypotheses and continue independent authorized work without claiming a fix.
+
+## Establish review scope and coverage
+
+For a requested review, establish two complementary views before drawing a
+conclusion: what the change is required to do, and what the changed code actually
+does. Keep this lightweight for a local edit; use the supplied request as its
+contract when sufficient. Do not edit the implementation unless requested.
+
+- Establish the comparison baseline or supplied snapshot and inventory the
+  changed files and behaviors. Follow affected consumers and shared policies
+  beyond diff hunks when needed. Choose depth from change and risk; familiarity,
+  authorship, or an earlier passing check is not a reason to skip changed behavior.
+- Identify authoritative requirements from the request, applicable spec and
+  accepted revisions, alongside repository contracts. Walk each applicable
+  requirement in scope to its implementation and supporting evidence, including
+  omissions that have no diff hunk. Distinguish implemented, missing or partial,
+  and unresolved requirements. Cite the source for a claimed requirement mismatch;
+  flag conflicting or unavailable requirements instead of inferring intent from
+  the implementation. Continue checks that do not depend on the missing source.
+- Inspect changed behavior for correctness and maintainability independently of
+  requirement matching. Trace shared rules through affected entry points and
+  meaningful branches; include local controls and boundary states when a
+  page-level check cannot expose their failures. Use the questions below and load
+  further guidance only for concrete unresolved decisions.
+- Track which requirements and affected paths were inspected and which remain
+  unchecked. If sampling is necessary, report the omitted behavior categories
+  and resulting uncertainty, not only file or line counts. Distinguish code
+  inspection from executed checks; a clean sample is not a whole-change verdict.
+
+Keep this working coverage account in review notes or existing project artifacts;
+a separate document, exhaustive report of passing items, or fixed team structure
+is not required. Respect an explicitly limited review scope and name its limits.
+
 ## Review architecture and implementation
 
 Review the changed system, not isolated clever lines. Ask:
@@ -101,7 +169,9 @@ Review the changed system, not isolated clever lines. Ask:
 - Is there a simpler platform or project-native capability?
 - Is each fact owned once, or are state and caches duplicated?
 - Are dependencies and side effects pointing in a clear direction?
-- Do components and modules have coherent responsibilities?
+- Do functions, components and modules have coherent responsibilities? Can an
+  operation's callers understand its inputs, outcome and effects without knowing
+  a private preparation sequence or mutable context fields?
 - Is a new abstraction supported by stable common semantics?
 - Has convenience added overload, configuration, or generic complexity?
 - Are errors, cancellation, races, retries, and cleanup handled where relevant?
@@ -117,6 +187,14 @@ Treat code clarity as the time required for a future maintainer to predict the
 effect of a change. Shorter code is not automatically clearer; more layers are
 not automatically more architectural.
 
+For code-quality claims, follow important changed operations through their real
+callers and callees. Use [readable operation construction](architecture-and-code.md#construct-a-readable-operation)
+when the function body or call contract is unclear. Ground a maintenance finding
+in the rule, ordering or internal detail that callers must understand, or a
+realistic change that spreads into unrelated responsibilities. Distinguish this
+from a correctness bug; a different loop style or several purposeful private
+helpers alone is not a finding.
+
 For architecture claims, inspect the actual tree, imports and state owners,
 not just a proposed diagram or passing functional tests. Trace a realistic UI
 interaction change and, where applicable, an independent data-format change:
@@ -128,17 +206,11 @@ functional success alone does not prove architecture quality or skill improvemen
 
 ## Review interfaces
 
-For user-facing changes, inspect:
-
-- loading, empty, partial, error, permission, success, and retry states;
-- semantic elements, labels, names, roles, and announcements;
-- keyboard navigation, focus visibility, trapping, and restoration;
-- narrow screens, large screens, zoom, long text, and localization;
-- touch targets and repeated activation;
-- visual hierarchy and consistency with the existing product;
-- reduced motion and animation interruption;
-- slow network and delayed content behavior;
-- absence of layout jumps or hidden actionable content.
+Apply the journey and layout checks above to relevant loading, empty, partial,
+error, permission, success and retry states. Inspect semantics, labels and
+announcements; keyboard navigation, focus visibility/trapping/restoration; touch
+targets; narrow/wide screens, zoom, long text and localization. Include visual
+consistency, reduced motion and interruption where those policies changed.
 
 Automated accessibility tools catch only part of the problem. Exercise the
 interaction model directly for complex controls.
@@ -179,6 +251,30 @@ render counts, one synthetic score, a simulator, or a microbenchmark as proof of
 production impact. Use the rendering or runtime reference only when the review
 needs its platform or delivery model.
 
+For new shared interaction work, inspect preparation and steady-state work at
+the supported collection size before calling it complete, even when the task
+was not phrased as performance optimization. Repeated layout reads, per-cell
+effects, cloning and idle subscriptions can dominate before animation starts.
+Use representative measurements to choose a small workload boundary; reuse
+existing performance checks. A deterministic work-count check can protect that
+boundary without turning a noisy timing sample into a universal CI threshold.
+
+## Keep evidence reproducible
+
+Persist evidence when it supports a lasting acceptance, performance or release
+claim. Use the existing verification record and artifact storage; do not create
+a new archive process for every edit. Record the tested revision or dirty-tree
+snapshot, relevant runtime/Skill inputs, exact commands and selected checks,
+representative conditions, actual results and unresolved limits.
+
+Keep the decisive raw sample or a retrievable artifact reference with the record,
+using a checksum when identity could otherwise be confused. A temporary path,
+ignored build directory or summary table alone is not durable evidence. Retain
+only useful, appropriately redacted material; full traces need not enter Git.
+If originals are missing or another task changed the files, distinguish historical
+claims from fresh verification and bind new results to the tested snapshot.
+Do not silently promote repaired/repeated runs to first-attempt success.
+
 ## Report findings and evidence
 
 For code review:
@@ -186,9 +282,11 @@ For code review:
 1. Report concrete, actionable findings first, ordered by severity.
 2. Identify the affected behavior and conditions that trigger it.
 3. Cite the tightest relevant file and line when available.
-4. Distinguish correctness defects from maintainability suggestions.
+4. Distinguish correctness defects, evidenced requirement mismatches, and
+   maintainability suggestions; do not count heuristics as confirmed bugs.
 5. Say explicitly when no actionable defect was found, while noting residual
-   testing or environment gaps.
+   testing or environment gaps. Summarize the reviewed scope, requirement sources,
+   and concrete unchecked behaviors; limit the conclusion to that evidence.
 
 For completed implementation:
 

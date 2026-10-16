@@ -1,0 +1,342 @@
+diff --git a/src/SearchPage.vue b/src/SearchPage.vue
+index 8ced088..4488380 100644
+--- a/src/SearchPage.vue
++++ b/src/SearchPage.vue
+@@ -1,5 +1,5 @@
+ <script setup lang="ts">
+-import { onMounted, ref } from 'vue'
++import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+ 
+ type SearchResult = {
+   id: string
+@@ -7,50 +7,298 @@ type SearchResult = {
+   price: number
+ }
+ 
+-const query = ref('')
+-const page = ref(1)
+-const locale = ref('en-US')
+-const results = ref<SearchResult[]>([])
+-const total = ref(0)
+-const error = ref('')
++type SearchPayload = {
++  items: SearchResult[]
++  total: number
++}
++
++const supportedLocales = ['en-US', 'fr-FR'] as const
++type Locale = (typeof supportedLocales)[number]
++
++type SearchState = {
++  query: string
++  page: number
++  locale: Locale
++}
++
++type RequestState =
++  | { status: 'loading' }
++  | { status: 'success'; payload: SearchPayload }
++  | { status: 'error' }
++
++const messages = {
++  'en-US': {
++    title: 'Product search',
++    queryLabel: 'Search',
++    localeLabel: 'Language',
++    localeName: 'English (United States)',
++    search: 'Search',
++    searching: 'Searching…',
++    searchFailed: 'Search failed. Please try again.',
++    resultCount: { one: '{count} result', other: '{count} results' },
++    page: 'Page {page}',
++    previous: 'Previous',
++    next: 'Next',
++  },
++  'fr-FR': {
++    title: 'Recherche de produits',
++    queryLabel: 'Rechercher',
++    localeLabel: 'Langue',
++    localeName: 'Français (France)',
++    search: 'Rechercher',
++    searching: 'Recherche…',
++    searchFailed: 'La recherche a échoué. Veuillez réessayer.',
++    resultCount: { one: '{count} résultat', other: '{count} résultats' },
++    page: 'Page {page}',
++    previous: 'Précédent',
++    next: 'Suivant',
++  },
++} as const
++
++const formats: Record<
++  Locale,
++  {
++    count: Intl.NumberFormat
++    currency: Intl.NumberFormat
++    plural: Intl.PluralRules
++  }
++> = {
++  'en-US': {
++    count: new Intl.NumberFormat('en-US'),
++    currency: new Intl.NumberFormat('en-US', {
++      style: 'currency',
++      currency: 'USD',
++    }),
++    plural: new Intl.PluralRules('en-US'),
++  },
++  'fr-FR': {
++    count: new Intl.NumberFormat('fr-FR'),
++    currency: new Intl.NumberFormat('fr-FR', {
++      style: 'currency',
++      currency: 'EUR',
++    }),
++    plural: new Intl.PluralRules('fr-FR'),
++  },
++}
++
++function isLocale(value: string | null): value is Locale {
++  return supportedLocales.includes(value as Locale)
++}
++
++function parseSearchState(url: URL): SearchState {
++  const pageValue = Number(url.searchParams.get('page'))
++  const localeValue = url.searchParams.get('locale')
++
++  return {
++    query: url.searchParams.get('q') ?? '',
++    page: Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1,
++    locale: isLocale(localeValue) ? localeValue : 'en-US',
++  }
++}
++
++function serializeSearchState(state: SearchState): string {
++  const params = new URLSearchParams({
++    q: state.query,
++    page: String(state.page),
++    locale: state.locale,
++  })
++  return `${window.location.pathname}?${params.toString()}${window.location.hash}`
++}
++
++function isSearchResult(value: unknown): value is SearchResult {
++  if (!value || typeof value !== 'object') return false
++
++  const result = value as Partial<SearchResult>
++  return (
++    typeof result.id === 'string' &&
++    typeof result.name === 'string' &&
++    typeof result.price === 'number' &&
++    Number.isFinite(result.price)
++  )
++}
++
++function isSearchPayload(value: unknown): value is SearchPayload {
++  if (!value || typeof value !== 'object') return false
++
++  const payload = value as Partial<SearchPayload>
++  return (
++    Array.isArray(payload.items) &&
++    payload.items.every(isSearchResult) &&
++    typeof payload.total === 'number' &&
++    Number.isSafeInteger(payload.total) &&
++    payload.total >= 0
++  )
++}
++
++const state = ref(parseSearchState(new URL(window.location.href)))
++const draftQuery = ref(state.value.query)
++const requestState = ref<RequestState>({ status: 'loading' })
++const originalDocumentLanguage = document.documentElement.lang
++
++let activeRequest = 0
++let activeController: AbortController | undefined
++
++const copy = computed(() => messages[state.value.locale])
++const resultCount = computed(() => {
++  if (requestState.value.status !== 'success') return ''
++
++  const { locale } = state.value
++  const { total } = requestState.value.payload
++  const form = formats[locale].plural.select(total) === 'one' ? 'one' : 'other'
++  return copy.value.resultCount[form].replace(
++    '{count}',
++    formats[locale].count.format(total),
++  )
++})
++
++function formatPrice(price: number): string {
++  return formats[state.value.locale].currency.format(price)
++}
++
++function pageLabel(page: number): string {
++  return copy.value.page.replace(
++    '{page}',
++    formats[state.value.locale].count.format(page),
++  )
++}
++
++function setDocumentLanguage(locale: Locale) {
++  document.documentElement.lang = locale
++}
++
++async function loadResults(search: SearchState) {
++  const request = ++activeRequest
++  activeController?.abort()
++  const controller = new AbortController()
++  activeController = controller
++  requestState.value = { status: 'loading' }
+ 
+-async function search() {
+-  error.value = ''
+   try {
+-    const response = await fetch(
+-      `/api/search?q=${encodeURIComponent(query.value)}&page=${page.value}`,
+-    )
+-    const payload = (await response.json()) as {
+-      items: SearchResult[]
+-      total: number
+-    }
+-    results.value = payload.items
+-    total.value = payload.total
++    const params = new URLSearchParams({
++      q: search.query,
++      page: String(search.page),
++    })
++    const response = await fetch(`/api/search?${params.toString()}`, {
++      signal: controller.signal,
++    })
++    if (!response.ok) throw new Error(`Search failed with status ${response.status}`)
++
++    const payload: unknown = await response.json()
++    if (!isSearchPayload(payload)) throw new Error('Invalid search response')
++    if (request !== activeRequest) return
++
++    requestState.value = { status: 'success', payload }
+   } catch {
+-    error.value = 'Search failed'
++    if (request !== activeRequest || controller.signal.aborted) return
++    requestState.value = { status: 'error' }
+   }
+ }
+ 
+-onMounted(search)
++function applyNavigation(next: SearchState, load: boolean) {
++  state.value = next
++  draftQuery.value = next.query
++  setDocumentLanguage(next.locale)
++  if (load) void loadResults(next)
++}
++
++function pushNavigation(next: SearchState, load: boolean) {
++  window.history.pushState(null, '', serializeSearchState(next))
++  applyNavigation(next, load)
++}
++
++function submitSearch() {
++  pushNavigation(
++    { query: draftQuery.value, page: 1, locale: state.value.locale },
++    true,
++  )
++}
++
++function goToPage(page: number) {
++  if (page < 1 || page === state.value.page) return
++  pushNavigation({ ...state.value, page }, true)
++}
++
++function changeLocale(event: Event) {
++  const locale = (event.target as HTMLSelectElement).value
++  if (!isLocale(locale) || locale === state.value.locale) return
++  pushNavigation({ ...state.value, locale }, false)
++}
++
++function restoreFromHistory() {
++  const next = parseSearchState(new URL(window.location.href))
++  const searchChanged =
++    next.query !== state.value.query || next.page !== state.value.page
++  applyNavigation(next, searchChanged)
++}
++
++onMounted(() => {
++  setDocumentLanguage(state.value.locale)
++  window.addEventListener('popstate', restoreFromHistory)
++  void loadResults(state.value)
++})
++
++onBeforeUnmount(() => {
++  activeRequest += 1
++  activeController?.abort()
++  window.removeEventListener('popstate', restoreFromHistory)
++  if (document.documentElement.lang === state.value.locale) {
++    document.documentElement.lang = originalDocumentLanguage
++  }
++})
+ </script>
+ 
+ <template>
+-  <main>
+-    <h1>Product search</h1>
+-    <form @submit.prevent="search">
++  <main :lang="state.locale">
++    <h1>{{ copy.title }}</h1>
++    <form @submit.prevent="submitSearch">
+       <label>
+-        Search
+-        <input v-model="query" name="query" />
++        {{ copy.queryLabel }}
++        <input v-model="draftQuery" name="query" type="search" />
+       </label>
+-      <button type="submit">Search</button>
++      <button type="submit">{{ copy.search }}</button>
+     </form>
+ 
+-    <p v-if="error" role="alert">{{ error }}</p>
+-    <p aria-live="polite">{{ total }} results</p>
+-    <ul>
+-      <li v-for="result in results" :key="result.id">
+-        {{ result.name }} — ${{ result.price }}
+-      </li>
+-    </ul>
++    <label>
++      {{ copy.localeLabel }}
++      <select name="locale" :value="state.locale" @change="changeLocale">
++        <option
++          v-for="supportedLocale in supportedLocales"
++          :key="supportedLocale"
++          :value="supportedLocale"
++        >
++          {{ messages[supportedLocale].localeName }}
++        </option>
++      </select>
++    </label>
++
++    <p v-if="requestState.status === 'error'" role="alert">
++      {{ copy.searchFailed }}
++    </p>
++    <p v-else-if="requestState.status === 'loading'" aria-live="polite">
++      {{ copy.searching }}
++    </p>
++    <template v-else>
++      <p aria-live="polite">{{ resultCount }}</p>
++      <ul>
++        <li v-for="result in requestState.payload.items" :key="result.id">
++          <span>{{ result.name }}</span>
++          <span>{{ formatPrice(result.price) }}</span>
++        </li>
++      </ul>
++    </template>
++
++    <nav :aria-label="pageLabel(state.page)">
++      <button
++        type="button"
++        :disabled="state.page === 1"
++        @click="goToPage(state.page - 1)"
++      >
++        {{ copy.previous }}
++      </button>
++      <span>{{ pageLabel(state.page) }}</span>
++      <button type="button" @click="goToPage(state.page + 1)">
++        {{ copy.next }}
++      </button>
++    </nav>
+   </main>
+ </template>

@@ -1,0 +1,90 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Match evidence requirements to the request: a plan-only task can establish a sound verification design without executing an absent application; do not impose release/rollout work outside scope.
+The RESPONSE predates HOST VALIDATIONS. Generator self-checks ran during generation in its sandbox; host checks ran afterwards and may have different browser/network permissions. Distinguish these origins rather than treating different results as automatically contradictory.
+Judge unresolved failures and false claims against their actual phase evidence; a later host pass does not make an earlier false self-test claim true, and a correctly reported sandbox failure does not contradict a later host pass.
+Treat a failed validation command as direct evidence against implementation_integrity and verification_evidence.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+[missing]
+
+CASE
+id: justified-recovery-after-signal-loss
+request: 移动客户端从后台恢复后有时仍显示上传处理中。协议明确推送不补发，服务端任务查询是权威状态， 没有可恢复游标。trace 已确认：客户端后台期间服务端完成，推送未交付；主链路在推送到达时正确。 项目已有按账号和任务查询状态的生命周期管理器，返回前台时会核对一次。 长任务在前台也可能错过最后通知。请给出相称的修复与验证方案，不需要实现完整应用。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "correctness_boundary", "operability", "verification_evidence"]
+
+RESPONSE:
+结论：保留推送主链路，把现有生命周期管理器扩展成“前台期间对非终态任务进行低频权威对账”。不新增事件游标、推送补偿协议、后台常驻轮询或第二套任务状态。
+
+需要先区分两个时间线：
+
+1. 服务端在恢复前已完成，前台核对仍未更新  
+   这说明现有 `恢复 → 强制网络查询 → 状态发布 → UI` 链路还有缺陷，可能涉及缓存策略、账号/任务身份匹配或旧请求覆盖。应直接修复该链路，轮询不能掩盖它。
+
+2. 恢复时查询仍为处理中，随后服务端完成，但最后推送再次丢失  
+   一次性核对天然覆盖不了这个窗口。这正是需要增加前台对账循环的原因，也同时覆盖“长任务在前台错过最终通知”。
+
+### 修复设计
+
+由现有生命周期管理器继续唯一拥有查询和定时器：
+
+- 应用进入前台时，立即强制查询当前账号下已跟踪的非终态任务。
+- 只要应用在前台且仍有非终态任务，继续低频查询。可先采用 5 秒间隔；具体值集中为一个策略常量，后续按产品时效和服务端成本调整。
+- 推送到达时仍走现有低延迟主链路；终态应用成功后立即停止对应任务的轮询。
+- 查询得到终态时走同一状态更新入口，不在页面组件内额外维护 `processing`。
+- 进入后台、退出账号、任务终态、取消跟踪或管理器销毁时停止定时器和在途结果发布。
+- 网络失败不伪造终态，也不清空已有状态；前台期间按有限退避重试，例如 5/10/15 秒封顶。长任务本身不设置固定总超时，否则仍可能永久卡住。
+- 复用项目已有查询 key、缓存和请求去重能力；恢复查询必须真正触达权威接口，不能仅返回仍在有效期内的本地缓存。
+
+需要守住三个竞态规则：
+
+- 查询身份至少包含账号和任务；若协议存在 attempt/version，也应纳入。
+- 账号切换、任务替换或生命周期代次变化后，旧请求不得发布结果。
+- 同一任务执行已进入终态后，较早请求返回的 `processing` 不得把它改回非终态。可通过请求代次加“终态不回退”规则实现。
+
+概念上的执行链应保持简单：
+
+```text
+进入前台 ─┐
+轮询时钟 ─┼─> 现有任务查询 ─> 现有状态更新入口 ─> UI
+推送到达 ─┘                         │
+                                 终态时停止轮询
+```
+
+### 验证方案
+
+使用可控请求、虚拟时钟和可控应用生命周期，避免真实等待：
+
+| 场景 | 操作顺序 | 必须证明 |
+|---|---|---|
+| 已确认事故路径 | processing → 后台 → 服务端完成 → 丢弃推送 → 返回前台 | 立即发起网络查询，UI显示终态 |
+| 一次核对的时间窗 | 后台 → 返回前台查询得到 processing → 服务端完成 → 丢弃推送 → 推进轮询时钟 | 下一次查询后收敛到终态 |
+| 前台长任务漏通知 | 前台 processing → 服务端完成但无推送 | 最迟在一个轮询周期加请求耗时内显示终态 |
+| 正常推送路径 | processing → 推送终态 | 原有路径仍立即更新，并停止后续轮询 |
+| 请求乱序 | 旧查询挂起 → 新查询返回终态 → 旧查询返回 processing | UI不回退 |
+| 账号切换 | 账号 A 查询挂起 → 切换账号 B → A 返回 | A 的结果不得写入 B |
+| 生命周期清理 | 有非终态任务时进入后台或销毁管理器 | 不再发起轮询，旧请求不得发布 |
+| 查询失败恢复 | 查询失败 → 退避 → 后续查询成功 | 不假装完成，成功后正常收敛并停止 |
+
+再补一个真实设备或集成测试：在测试传输层明确丢弃完成推送，实际切换后台/前台，观察权威查询发生、页面收敛以及终态后无额外请求。验收标准是：
+
+- 前台恢复立即核对；
+- 前台漏推送时最终收敛；
+- 后台和终态没有持续查询；
+- 旧账号、旧请求不能覆盖当前状态；
+- 推送正常路径没有退化。
+
+当前仓库 `HEAD` 没有应用源码或测试文件，只有指定的 `.frontend-architect` 指导目录，因此没有可安全落到具体文件的实现；该目录保持未修改。
+
+DIFF:
+
+
+GENERATOR SELF-CHECKS (during generation; output tails, not a full command audit):
+[]
+
+HOST VALIDATIONS (after RESPONSE, by the capture runner):
+No executable fixture for this case.

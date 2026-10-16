@@ -1,0 +1,97 @@
+diff --git a/index.html b/index.html
+index 2653139..995c2c8 100644
+--- a/index.html
++++ b/index.html
+@@ -1,7 +1,7 @@
+ <!doctype html>
+ <html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="/style.css"></head>
+ <body><main>
+-<label for="name">Name</label><div class="field"><input id="name" value="Draft"><button id="clear" aria-label="Clear name">×</button></div>
++<label for="name">Name</label><div class="field"><input id="name" value="Draft"><button id="clear" type="button" aria-label="Clear name">×</button></div>
+ <button id="save">Save</button><p id="feedback" role="status"></p>
+ <div id="grid" data-ready="false"><table><tbody></tbody></table></div>
+ </main><script type="module" src="/app.mjs"></script></body></html>
+diff --git a/src/app.mjs b/src/app.mjs
+index b26b32f..d36ebc0 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -2,24 +2,56 @@ const input = document.querySelector('#name');
+ const feedback = document.querySelector('#feedback');
+ const save = document.querySelector('#save');
+ const grid = document.querySelector('#grid');
+-document.querySelector('#clear').onclick = () => { input.value = ''; };
++document.querySelector('#clear').onclick = () => {
++  input.value = '';
++  input.focus();
++};
++
+ save.onclick = async () => {
++  const submittedValue = input.value;
+   save.disabled = true;
+   feedback.textContent = 'Saving';
++
+   try {
+-    const response = await fetch('/save', { method: 'POST', body: input.value });
++    const response = await fetch('/save', { method: 'POST', body: submittedValue });
+     if (!response.ok) throw new Error('Save failed');
+-    document.querySelector('td').textContent = input.value;
++
++    document.querySelector('td').textContent = submittedValue;
+     feedback.textContent = 'Saved';
+-  } catch { feedback.textContent = 'Save failed'; }
+-  finally { input.value = ''; save.disabled = false; }
++    if (input.value === submittedValue) input.value = '';
++  } catch {
++    feedback.textContent = 'Save failed';
++  } finally {
++    save.disabled = false;
++  }
+ };
++
+ const body = document.querySelector('tbody');
+ for (let index = 0; index < 30; index++) {
+   const row = body.insertRow(); row.dataset.row = String(index);
+   row.insertCell().textContent = 'Record ' + index;
+ }
+-if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+-  for (const row of [...body.rows].slice(0, 8)) row.animate({ opacity: [0, 1] }, { duration: 240 });
++
++function animateVisibleRows() {
++  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
++
++  const clip = grid.getBoundingClientRect();
++  const visibleTop = Math.max(clip.top, 0);
++  const visibleBottom = Math.min(clip.bottom, window.innerHeight);
++  const visibleRows = [...body.rows].filter((row) => {
++    const bounds = row.getBoundingClientRect();
++    return bounds.bottom > visibleTop && bounds.top < visibleBottom;
++  });
++
++  for (const row of visibleRows) {
++    row.animate({ opacity: [0, 1] }, { duration: 240 });
++  }
+ }
+-setTimeout(() => { grid.dataset.ready = 'true'; }, Number(new URLSearchParams(location.search).get('delay') || 200));
++
++const params = new URLSearchParams(location.search);
++const requestedDelay = params.has('delay') ? Number(params.get('delay')) : 200;
++const contentDelay = Number.isFinite(requestedDelay) && requestedDelay >= 0 ? requestedDelay : 200;
++setTimeout(() => {
++  grid.dataset.ready = 'true';
++  requestAnimationFrame(animateVisibleRows);
++}, contentDelay);
+diff --git a/src/style.css b/src/style.css
+index 101573d..94f2a93 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -3,8 +3,8 @@ body { font: 16px system-ui; margin: 16px; }
+ main { width: min(560px, 100%); }
+ .field { display: flex; width: 100%; height: 36px; }
+ .field input { flex: 1; min-width: 0; }
+-#clear { width: 28px; opacity: 0; pointer-events: none; }
+-.field:hover #clear, #clear:focus-visible { opacity: 1; pointer-events: auto; }
++#clear { display: none; width: 28px; }
++.field:hover #clear, .field:focus-within #clear { display: inline-block; }
+ #feedback { min-height: 24px; }
+ #grid { height: 100px; overflow: hidden; }
+ #grid[data-ready='false'] { visibility: hidden; }

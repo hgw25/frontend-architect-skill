@@ -1,0 +1,90 @@
+diff --git a/SKILL.md b/SKILL.md
+index c895e8f..bdff3be 100644
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -115,7 +115,7 @@ Apply the core reasoning to the requested work, without expanding its scope:
+ | Refactor or simplification | Identify preserved contracts and removed requirements, change incrementally, remove obsolete mechanisms and verify surviving behavior |
+ | Shared foundation | Identify consumers and a narrow public contract; complete applicable types, diagnostics, artifacts, compatibility and consumer checks |
+ | Migration | Establish an incremental seam, compatibility and recovery, move consumers in reviewable steps, retire the old path only after evidence |
+-| Review only | Inspect implementation and evidence against the core model; report actionable findings without silently implementing a redesign |
++| Review only | Establish the review scope and requirement sources; check applicable requirements, changed behavior and affected paths using the review reference; report findings and concrete coverage gaps |
+ 
+ Resolve consequential ambiguity about actors, identifiers, permissions, and
+ server guarantees before committing to routes or state ownership. Investigate
+diff --git a/references/verification-and-review.md b/references/verification-and-review.md
+index f78bec6..bd5387c 100644
+--- a/references/verification-and-review.md
++++ b/references/verification-and-review.md
+@@ -7,6 +7,7 @@ tests, validating performance, or judging whether code is production-ready.
+ 
+ - Verify risk, not ceremony
+ - Test observable contracts
++- Establish review scope and coverage
+ - Review architecture and implementation
+ - Review interfaces
+ - Check adversarial boundaries
+@@ -34,6 +35,11 @@ Run project-prescribed checks. If the full suite is disproportionate or cannot
+ run, execute the strongest relevant subset and state what remains unverified.
+ Passing tools does not substitute for reasoning about missing behavior.
+ 
++A coverage entry must exercise the claimed control or path under the relevant
++condition. A disabled button elsewhere does not cover this interaction's
++eligibility rule. Inspect assertions and execution paths; neither a test count
++nor the absence of an identifier in test source establishes behavioral coverage.
++
+ Use a real browser when claiming browser behavior: focus movement, keyboard
+ event ordering, hydration, layout, scrolling, pointer interaction, and visual
+ output are not proven by a DOM emulator alone. Select a browser matrix from the
+@@ -93,6 +99,38 @@ weaken the check to match the implementation. If the harness is wrong, correct
+ it while retaining the original acceptance condition and explain the evidence.
+ Distinguish tests actually selected by a command from the intended subset.
+ 
++## Establish review scope and coverage
++
++For a requested review, establish two complementary views before drawing a
++conclusion: what the change is required to do, and what the changed code actually
++does. Keep this lightweight for a local edit; use the supplied request as its
++contract when sufficient. Do not edit the implementation unless requested.
++
++- Establish the comparison baseline or supplied snapshot and inventory the
++  changed files and behaviors. Follow affected consumers and shared policies
++  beyond diff hunks when needed. Choose depth from change and risk; familiarity,
++  authorship, or an earlier passing check is not a reason to skip changed behavior.
++- Identify authoritative requirements from the request, applicable spec and
++  accepted revisions, alongside repository contracts. Walk each applicable
++  requirement in scope to its implementation and supporting evidence, including
++  omissions that have no diff hunk. Distinguish implemented, missing or partial,
++  and unresolved requirements. Cite the source for a claimed requirement mismatch;
++  flag conflicting or unavailable requirements instead of inferring intent from
++  the implementation. Continue checks that do not depend on the missing source.
++- Inspect changed behavior for correctness and maintainability independently of
++  requirement matching. Trace shared rules through affected entry points and
++  meaningful branches; include local controls and boundary states when a
++  page-level check cannot expose their failures. Use the questions below and load
++  further guidance only for concrete unresolved decisions.
++- Track which requirements and affected paths were inspected and which remain
++  unchecked. If sampling is necessary, report the omitted behavior categories
++  and resulting uncertainty, not only file or line counts. Distinguish code
++  inspection from executed checks; a clean sample is not a whole-change verdict.
++
++Keep this working coverage account in review notes or existing project artifacts;
++a separate document, exhaustive report of passing items, or fixed team structure
++is not required. Respect an explicitly limited review scope and name its limits.
++
+ ## Review architecture and implementation
+ 
+ Review the changed system, not isolated clever lines. Ask:
+@@ -186,9 +224,11 @@ For code review:
+ 1. Report concrete, actionable findings first, ordered by severity.
+ 2. Identify the affected behavior and conditions that trigger it.
+ 3. Cite the tightest relevant file and line when available.
+-4. Distinguish correctness defects from maintainability suggestions.
++4. Distinguish correctness defects, evidenced requirement mismatches, and
++   maintainability suggestions; do not count heuristics as confirmed bugs.
+ 5. Say explicitly when no actionable defect was found, while noting residual
+-   testing or environment gaps.
++   testing or environment gaps. Summarize the reviewed scope, requirement sources,
++   and concrete unchecked behaviors; limit the conclusion to that evidence.
+ 
+ For completed implementation:
+ 

@@ -1,0 +1,165 @@
+已完成方案设计，但没有修改文件：工作区中除 `.frontend-architect` 外没有应用源码、`package.json` 或已跟踪文件，因此无法确认 Next.js 版本、现有路由、Shopify 客户端和测试命令。以下方案不会假设这些仓库事实；实施时先做版本与既有契约核对。
+
+## 目标结构
+
+核心原则是：商品内容、SEO、价格查询留在服务端；只有规格选择、货币切换控件和购物车反馈进入客户端。App Router 的 `page` 默认为 Server Component，而传给 Client Component 的属性必须可序列化。[Next.js 官方说明](https://nextjs.org/docs/app/getting-started/server-and-client-components)
+
+| 职责 | 组件/模块 | 运行环境 |
+|---|---|---|
+| 解析商品 handle、市场、语言，组合页面 | `page.tsx` | Server Component |
+| 标题、描述、canonical、Open Graph | `generateMetadata` | Server |
+| Shopify GraphQL、私有令牌、响应映射 | `shopify.server.ts` | Server only |
+| 标题、描述、图片、结构化数据 | `ProductDetails` | Server Component |
+| 规格选择、数量、可售状态、按钮反馈 | `ProductConfigurator.client.tsx` | Client Component |
+| 加入购物车、设置市场 | 独立 Server Actions | Server |
+| 推荐商品查询和卡片列表 | `Recommendations` | Server Component |
+| 路由级异常恢复 | `error.tsx` | Client error boundary |
+| 商品不存在 | `not-found.tsx` / `notFound()` | Server |
+
+这些是职责名称，不是对空仓库强加的目录；应映射到项目现有商品功能目录，不移动或转换无关页面。
+
+## 渐进式迁移
+
+### 1. 先建立服务端安全边界，不立刻拆完整 UI
+
+- 把 Shopify 请求集中到带 `import 'server-only'` 的模块。
+- 私有令牌只读取非 `NEXT_PUBLIC_*` 环境变量，不出现在 props、日志、错误对象或浏览器请求中。
+- 将当前整页客户端组件保留下来，改成接收 `initialProduct`、`initialRecommendations` 和市场上下文。
+- 新建 Server `page.tsx`，在服务端取数后渲染这个旧组件。
+- 同一步增加 `generateMetadata`。Metadata API 只能从 Server Component 导出。[Next.js Metadata 文档](https://nextjs.org/docs/app/getting-started/metadata-and-og-images)
+
+这样第一批变更已经消除浏览器 fetch 瀑布、恢复首屏 HTML 和 SEO，并封住凭据泄露，同时 UI 行为基本不变，易于回滚。
+
+Shopify 私有 Storefront Token 应通过服务端的 `Shopify-Storefront-Private-Token` 请求头使用。买家流量请求还应从可信代理链获得并转发买家 IP，而不是接受客户端自报的任意 IP。[Shopify Storefront API](https://shopify.dev/docs/api/storefront/2026-04)
+
+### 2. 再缩小 Client Component 边界
+
+把静态内容移回 Server Components，只留下规格交互岛：
+
+```ts
+type MoneyDTO = {
+  amount: string
+  currencyCode: string
+  formatted: string
+}
+
+type VariantDTO = {
+  id: string
+  optionValues: Record<string, string>
+  availableForSale: boolean
+  price: MoneyDTO
+}
+
+type ProductConfiguratorDTO = {
+  productId: string
+  options: Array<{
+    name: string
+    values: string[]
+  }>
+  variants: VariantDTO[]
+  initialVariantId: string | null
+  locale: string
+}
+```
+
+边界规则：
+
+- 金额保持十进制字符串，不能先转成可能损失精度的 `number`。
+- 只传普通对象、数组、字符串、布尔值和 `null`。
+- 不传 Shopify SDK 对象、GraphQL Error、Headers、Date、Map、函数或私有字段。
+- Client 只保存“已选 option values、数量、提交状态”；当前 variant、价格和可售状态从这些状态与 `variants` 派生。
+- 服务端决定初始 variant，客户端不得在 hydration 时根据浏览器环境重新选择。
+- 价格格式化使用显式传入的 locale/currency，不能依赖服务器和浏览器可能不同的默认 locale。
+- 变体数量很大时，先测量 RSC payload；只有确有体积问题才改成按选择服务端查询，不能预先引入第二套状态系统。
+
+### 3. 最后独立推荐商品和加载策略
+
+主商品是页面身份和 404 判定依据，应先完成：
+
+1. 解析并验证 handle、country、language。
+2. 查询主商品。
+3. 不存在或在该市场未发布时，在开始流式响应前调用 `notFound()`。
+4. 渲染主内容和规格交互。
+5. 推荐商品放入局部 `<Suspense>`，其失败或延迟不阻塞主商品。
+
+```tsx
+<ProductDetails product={product} />
+<ProductConfigurator product={product.configurator} />
+
+<Suspense fallback={<RecommendationsSkeleton />}>
+  <Recommendations productId={product.id} market={market} />
+</Suspense>
+```
+
+`loading.tsx` 会包围整个路由段；局部 `<Suspense>` 更适合推荐商品这种独立、非关键内容。[Next.js 数据获取与 Streaming](https://nextjs.org/docs/app/getting-started/fetching-data) 在确认无效商品仍返回真实 404 之前，不新增页面级 `loading.tsx`，避免响应已开始后只能返回流内错误。
+
+## 货币与 Shopify 市场
+
+不能只把基础价格换一个货币符号。商品查询必须使用 Shopify `@inContext(country: ...)`，以取得该市场实际的金额、币种、可售性和固定本地价格。[Shopify contextual queries](https://shopify.dev/docs/storefronts/headless/building-with-the-storefront-api/in-context)
+
+市场来源应复用现有契约；若项目没有，最小方案是：
+
+- 服务端维护一个经过允许列表验证的 country cookie。
+- 无 cookie 时使用商店默认市场；不依据 `Accept-Language` 猜货币。
+- 用户切换市场后由 Server Action 设置 cookie，再刷新当前 RSC 页面。
+- 创建或更新 Shopify cart 时同步 `buyerIdentity.countryCode`，否则商品页和购物车可能采用不同定价上下文。[Shopify CartBuyerIdentity](https://shopify.dev/docs/api/storefront/latest/objects/CartBuyerIdentity)
+
+若业务要求“不同市场分别被搜索引擎索引”，cookie 不够，应另立后续任务设计带 country/locale 的稳定 URL、canonical 和 hreflang。此次商品页重构不应顺带改写全站路由。
+
+## 缓存作用域与失效
+
+先检查安装版本和现有配置，不为了单页迁移启用全局 Cache Components。
+
+| 数据 | 缓存键与作用域 | 建议策略 | 失效 |
+|---|---|---|---|
+| 匿名商品、变体、市场价格 | `shop + handle/id + country + language`，公共 | 5 分钟安全 TTL，允许短暂 stale | 产品、库存、价格 webhook；TTL 兜底 |
+| 推荐商品 | `productId + country + language`，公共 | 15 分钟 | 产品相关 webhook；TTL |
+| B2B/登录用户专属价格 | buyer/company + country，用户或请求级 | 禁止进入公共缓存 | 登录、公司地点、会话变化 |
+| Cart | cart/session 级 | `no-store` | 每次 mutation 返回权威 cart |
+| Metadata | 复用商品 accessor | 不建第二份缓存 | 跟随商品失效 |
+
+具体 API 按版本选择：
+
+- Next.js 16 且项目已启用 `cacheComponents`：`use cache`、`cacheLife`、`cacheTag`。
+- 未启用时：对原生 `fetch` 显式使用 `cache: 'force-cache'` 和 `next: { revalidate, tags }`。
+- 不依赖默认 fetch 行为，因为版本间默认策略不同。官方也把 Cache Components 和旧模型分开说明：[Cache Components revalidation](https://nextjs.org/docs/app/getting-started/revalidating)、[旧缓存模型](https://nextjs.org/docs/app/guides/caching-without-cache-components)。
+- cookie/headers 必须在缓存函数外读取，归一化后的 country/language 作为参数进入缓存键。
+- `generateMetadata` 与页面使用同一个商品读取函数，避免独立缓存和不一致的标题/库存状态。
+
+Shopify webhook handler 必须先验证原始 body 的 HMAC，并按 delivery ID 去重，再执行精确 tag 失效；Shopify 不保证 webhook 顺序，因此不要让旧事件覆盖更新状态。[Shopify webhook 验证](https://shopify.dev/docs/apps/build/webhooks/verify-deliveries)
+
+## 加入购物车与错误恢复
+
+Server Action 只接受 `{ variantId, quantity }` 等最小输入，并在服务端：
+
+- 校验类型、数量边界和 Shopify ID 格式。
+- 从 HttpOnly 会话/cookie 取得 cart 身份，不能相信客户端提交的用户或价格。
+- 使用与商品页一致的 country/buyer context。
+- 返回可序列化的判别联合，例如成功 cart 摘要，或 `OUT_OF_STOCK`、`INVALID_VARIANT`、`CART_EXPIRED`。
+- 对预期错误返回状态，由客户端就地展示并保留规格选择；未知异常抛给路由错误边界。
+- 提交期间禁用重复提交。除非服务端支持真正的幂等键，否则不要把按钮禁用描述为服务端幂等。
+
+恢复策略：
+
+- 商品不存在/未发布：`notFound()`。
+- Shopify 主商品请求超时或 5xx：抛出，由商品路由 `error.tsx` 提供重试；使用该 Next.js 版本提供的恢复回调。[Next.js 错误处理](https://nextjs.org/docs/app/getting-started/error-handling)
+- 推荐请求的已知暂时失败：返回显式结果联合，只替换推荐区，并允许刷新重试；不要让推荐拖垮商品主体，也不要把错误永久缓存。
+- 加购库存变化：展示 Shopify 的权威结果，刷新商品/cart 状态，不静默保留虚假成功。
+- Shopify 富文本若非必要，优先取纯文本；必须渲染 HTML 时，在单一服务端边界采用维护中的允许列表 sanitizer。
+
+## 验证与发布门槛
+
+实施时按仓库实际脚本执行，至少覆盖：
+
+- `typecheck`、lint、生产 build，确认 Server-only 模块没有进入客户端依赖图。
+- 检查构建后的静态资源和 source map，不包含私有令牌值、私有环境变量名或 Shopify 私有请求头。
+- 在禁用 JavaScript的初始 HTML 中验证商品标题、描述、主图、当前价格、canonical、Open Graph 和 Product JSON-LD。
+- 用两个独立浏览器会话访问同一商品的不同市场，确认金额、币种、可售性和推荐不会跨市场串缓存。
+- 慢速推荐查询时，主商品和规格区域先出现；推荐失败后主体仍可用。
+- 有效商品返回 200，无效或未发布商品返回真实 404。
+- 规格键盘操作、不可售组合、价格更新、快速重复加购、购物车过期和 Shopify 拒绝 mutation。
+- 浏览器网络面板中不存在直连 Shopify 的私有凭据请求。
+- webhook HMAC 无效、重复 delivery、产品更新后缓存失效。
+- 比较迁移前后的首屏请求瀑布、LCP 和商品路由客户端 JavaScript 体积；不预设没有基线的性能结论。
+
+发布按三个可独立回滚的提交进行：服务端取数与 Metadata、缩小交互岛、推荐 Suspense 与缓存失效。这样整个改动只触及商品路由及其直接数据边界，不要求为了 Server Components 重写其他页面。

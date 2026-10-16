@@ -1,0 +1,13 @@
+1. **[P1] Retry 会发布编辑后的草稿，而不是失败时提交的内容。**
+   位置：[publish.mjs:26](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-bounded-coverage-candidate-j0b5zve5/after/src/community/controllers/publish.mjs:26)。[已批准需求第 5 节](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-bounded-coverage-candidate-j0b5zve5/after/docs/community.md:25)明确区分 Retry 与普通 Submit：前者必须重复失败的 title/category，后者使用当前草稿。实际路径是 CreateForm 的 Retry → publish.retry() → send(draft.snapshot)；虽然 catch 保存了 failedPayload，重试只用它判断是否可重试。提交 A/general 失败，编辑成 B/tools，再点击 Retry，就会发布 B/tools，可能意外发布尚未准备好的草稿。清空标题后点击仍启用的 Retry 还会发送空标题。应让 Retry 使用已保存的失败载荷，普通 Submit 继续读取当前草稿，并补充“失败后编辑标题和分类再重试”的断言。独立控制器复现已确认第二次载荷实际为 B/tools；现有 publish.test.mjs 未编辑草稿且不检查载荷，无法发现此问题。
+
+2. **[P2] 回前台实际入口没有刷新创作者目录。**
+   位置：[lifecycle.mjs:2](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-bounded-coverage-candidate-j0b5zve5/after/src/community/lifecycle.mjs:2)，关联新增资源接入点 [index.mjs:16](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-bounded-coverage-candidate-j0b5zve5/after/src/community/index.mjs:16)。[已批准需求第 4 节](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-community-review-bounded-coverage-candidate-j0b5zve5/after/docs/community.md:20)要求同时刷新 feed 和 creator directory。createCommunity 已创建目录并传给 lifecycle，但未变化的 onForeground 仍只调用 feed.refresh()。目录先加载旧数据、后台资料发生变化、再调用 workspace.onForeground() 时，creators 请求次数仍为 1，CreatorDirectory 消费的姓名、头像和摘要保持旧值；既有目录错误也不会因回前台自动恢复。应将 creatorDirectory.refresh() 接入该入口并通过入口级检查确认更新，同时保留草稿、收藏和分类快照。现有目录测试只直接调用 directory.refresh()，结构测试也只检查函数及路由存在，均未覆盖这条接线。
+
+本轮结论仅覆盖**发布与回前台恢复**，这两条流程尚不符合全部已批准需求。依据为 after/docs/community.md 修订 2、README 的需求优先级约定及 accepted decisions 017/018；019 明确为草案，分类仍在会话内不可变，因此不把“不刷新分类”列为缺陷。交付说明和检查记录仅作为已有证据线索，不作为需求或本次验证结果。
+
+已沿 createCommunity → publish/draft → CreateForm、createApi，以及 createCommunity.onForeground → lifecycle → feed/creatorDirectory → Feed/CreatorDirectory 检查实际模块入口和快照消费者，同时检查恢复涉及的本地收藏、分类及 dispose 边界。静态检查显示发布启动时复制草稿、pending 防重复、成功清错且不清除新草稿；回前台列表刷新保留本地资源。独立运行检查确认这些对应分支，并确认较晚完成的旧回前台失败不会覆盖新列表结果。
+
+验证执行：仓库规定的 `node --test test/*.test.mjs` 因 `node: command not found` 未启动，不能声称原套件通过。使用现有 Bun 执行夹具外的 [bounded-checks.mjs](/tmp/frontend-architect-eval-20261010/bounded-checks.mjs)，6 项针对公开控制器入口的检查中，2 项失败对应上述发现，4 项通过覆盖 pending/载荷快照/新草稿保留、普通 Submit、恢复成功和失败时本地状态保留、旧恢复错误隔离。此执行不替代项目指定 Node 环境验证，也不证明浏览器交互正确。
+
+未验证宿主应用的前台事件订阅、控制器快照到 React props 的更新、实际点击/键盘行为或真实网络；仓库未提供运行中的宿主和浏览器测试环境。列表详情/获取/收藏操作规则、搜索及 URL、独立分页交互、布局、格式化和其他展示行为按委托范围交由另一位 reviewer，本轮没有对这些行为给出通过结论。恢复后的行级交互规则也未独立验证；这里检查的是恢复数据和本地状态如何交给消费者，不能据此认定整个列表正确。未修改任何 before/ 或 after/ 文件。

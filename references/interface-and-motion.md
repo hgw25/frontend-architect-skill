@@ -9,16 +9,16 @@ rasterization, frame, list, image, or memory cost rather than interface behavior
 
 ## Contents
 
-- Build the semantic and resilient layer first
-- Design layout from content and constraints
-- Choose component-system boundaries
-- Control styles and internationalized content
-- Specify interaction as behavior
-- Use motion to explain change
-- Choose the lightest transition mechanism
-- Apply FLIP deliberately
-- Protect accessibility and performance
-- Influences
+- [Build the semantic and resilient layer first](#build-the-semantic-and-resilient-layer-first)
+- [Design layout from content and constraints](#design-layout-from-content-and-constraints)
+- [Choose component-system boundaries](#choose-component-system-boundaries)
+- [Control styles and internationalized content](#control-styles-and-internationalized-content)
+- [Specify interaction as behavior](#specify-interaction-as-behavior)
+- [Use motion to explain change](#use-motion-to-explain-change)
+- [Choose the lightest transition mechanism](#choose-the-lightest-transition-mechanism)
+- [Apply FLIP deliberately](#apply-flip-deliberately)
+- [Protect accessibility and performance](#protect-accessibility-and-performance)
+- [Influences](#influences)
 
 ## Build the semantic and resilient layer first
 
@@ -111,6 +111,12 @@ For each interactive element, define:
 Use established accessible patterns for dialogs, menus, listboxes, tabs,
 tooltips, comboboxes, and disclosures. ARIA does not repair incorrect interaction
 behavior; prefer native semantics and verified patterns.
+
+For interactions that close, unmount or transfer focus, observe the result after
+native defaults and rendering have settled. Restoring focus in a callback can
+still be undone later in the same pointer sequence. Fix the responsible event
+or lifecycle boundary while preserving consumer cancellation; do not globally
+cancel pointer defaults to make a single check pass.
 
 ## Use motion to explain change
 

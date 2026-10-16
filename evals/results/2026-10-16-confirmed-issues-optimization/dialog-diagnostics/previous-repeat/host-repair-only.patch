@@ -1,0 +1,142 @@
+--- src/Dialog.tsx
++++ src/Dialog.tsx
+@@ -2,6 +2,7 @@
+   createContext,
+   forwardRef,
+   type ComponentPropsWithoutRef,
++  type KeyboardEvent as ReactKeyboardEvent,
+   type MouseEvent as ReactMouseEvent,
+   type ReactNode,
+   type Ref,
+@@ -156,16 +157,53 @@
+   return createPortal(children, container ?? document.body)
+ }
+ 
+-const focusableSelector = [
+-  '[autofocus]',
++const tabbableSelector = [
+   'a[href]',
++  'area[href]',
+   'button:not([disabled])',
+   'input:not([disabled]):not([type="hidden"])',
+   'select:not([disabled])',
+   'textarea:not([disabled])',
+-  '[contenteditable="true"]',
+-  '[tabindex]:not([tabindex="-1"])',
++  'audio[controls]',
++  'video[controls]',
++  '[contenteditable]:not([contenteditable="false"])',
++  '[tabindex]',
+ ].join(',')
++
++function getTabbableElements(dialog: HTMLDialogElement) {
++  const view = dialog.ownerDocument.defaultView
++
++  return Array.from(dialog.querySelectorAll<HTMLElement>(tabbableSelector))
++    .map((element, documentOrder) => ({ documentOrder, element }))
++    .filter(({ element }) => {
++      if (
++        element.tabIndex < 0 ||
++        element.matches(':disabled') ||
++        element.closest('[hidden], [inert]') ||
++        element.getClientRects().length === 0
++      ) {
++        return false
++      }
++
++      return view?.getComputedStyle(element).visibility !== 'hidden'
++    })
++    .sort((left, right) => {
++      const leftTabIndex = left.element.tabIndex
++      const rightTabIndex = right.element.tabIndex
++
++      if (leftTabIndex === rightTabIndex) {
++        return left.documentOrder - right.documentOrder
++      }
++      if (leftTabIndex === 0) {
++        return 1
++      }
++      if (rightTabIndex === 0) {
++        return -1
++      }
++      return leftTabIndex - rightTabIndex
++    })
++    .map(({ element }) => element)
++}
+ 
+ function focusInitialElement(dialog: HTMLDialogElement, initialFocus?: RefObject<HTMLElement | null>) {
+   const requestedElement = initialFocus?.current
+@@ -178,7 +216,53 @@
+     return
+   }
+ 
+-  dialog.querySelector<HTMLElement>(focusableSelector)?.focus()
++  const firstTabbableElement = getTabbableElements(dialog)[0]
++  if (firstTabbableElement) {
++    firstTabbableElement.focus()
++  } else {
++    dialog.focus()
++  }
++}
++
++function keepTabFocusInsideDialog(
++  event: ReactKeyboardEvent<HTMLDialogElement>,
++  dialog: HTMLDialogElement,
++) {
++  if (
++    event.key !== 'Tab' ||
++    event.altKey ||
++    event.ctrlKey ||
++    event.metaKey ||
++    event.defaultPrevented
++  ) {
++    return
++  }
++
++  const tabbableElements = getTabbableElements(dialog)
++  const firstElement = tabbableElements[0]
++  const lastElement = tabbableElements.at(-1)
++  const activeElement = dialog.ownerDocument.activeElement
++
++  if (!firstElement || !lastElement) {
++    event.preventDefault()
++    dialog.focus()
++    return
++  }
++
++  const focusHasEscaped = !dialog.contains(activeElement)
++  if (
++    event.shiftKey &&
++    (activeElement === firstElement || focusHasEscaped || activeElement === dialog)
++  ) {
++    event.preventDefault()
++    lastElement.focus()
++  } else if (
++    !event.shiftKey &&
++    (activeElement === lastElement || focusHasEscaped || activeElement === dialog)
++  ) {
++    event.preventDefault()
++    firstElement.focus()
++  }
+ }
+ 
+ export type DialogContentProps = Omit<
+@@ -199,6 +283,7 @@
+       initialFocus,
+       onCancel,
+       onClick,
++      onKeyDown,
+       restoreFocus = true,
+       ...props
+     },
+@@ -286,6 +371,10 @@
+             requestOpenChange(false, 'outside-press')
+           }
+         }}
++        onKeyDown={(event) => {
++          onKeyDown?.(event)
++          keepTabFocusInsideDialog(event, event.currentTarget)
++        }}
+         ref={(node) => setRefs(node, dialogRef, forwardedRef)}
+         role="dialog"
+       >

@@ -1,8 +1,8 @@
 # Architecture and Code Decisions
 
-Use this reference for frontend architecture, state and data flow, component
-boundaries, hooks/composables, utilities, TypeScript, API design, refactoring,
-and dependency choices.
+Use this reference for domain concepts and lasting decisions, frontend architecture,
+state and data flow, component boundaries, hooks/composables, utilities, TypeScript,
+API design, refactoring and dependency choices.
 
 Use [module-boundaries.md](module-boundaries.md) instead when project or feature
 organization is the dominant decision, [programming-paradigms.md](programming-paradigms.md)
@@ -11,19 +11,20 @@ for execution, placement, cache, or delivery boundaries.
 
 ## Contents
 
-- Understand before changing
-- Construct a readable operation
-- Choose data representations
-- Model data and state
-- Model forms and navigation state
-- Place behavior by ownership
-- Design components and APIs
-- Abstract at the right time
-- Design utilities defensively
-- Route asynchronous decisions
-- Use types to encode constraints
-- Adapt across frameworks
-- Influences
+- [Understand before changing](#understand-before-changing)
+- [Preserve domain knowledge and decisions](#preserve-domain-knowledge-and-decisions)
+- [Construct a readable operation](#construct-a-readable-operation)
+- [Choose data representations](#choose-data-representations)
+- [Model data and state](#model-data-and-state)
+- [Model forms and navigation state](#model-forms-and-navigation-state)
+- [Place behavior by ownership](#place-behavior-by-ownership)
+- [Design components and APIs](#design-components-and-apis)
+- [Abstract at the right time](#abstract-at-the-right-time)
+- [Design utilities around explicit contracts](#design-utilities-around-explicit-contracts)
+- [Route asynchronous decisions](#route-asynchronous-decisions)
+- [Use types to encode constraints](#use-types-to-encode-constraints)
+- [Adapt across frameworks](#adapt-across-frameworks)
+- [Influences](#influences)
 
 ## Understand before changing
 
@@ -48,6 +49,46 @@ client-side joins, or guessed IDs. Reconcile generated types, documentation,
 explicit product requirements, and available response evidence; report a missing
 contract precisely and complete independent work. A missing author-to-user
 mapping, for example, must remain an explicit incomplete navigation path.
+
+## Preserve domain knowledge and decisions
+
+Use the project's existing language and decision records in the affected area,
+including context-specific definitions when present. Compare definitions with
+the request, accepted revisions, authoritative interfaces and actual code. An old
+record is evidence of a prior contract, not permission to override a confirmed
+change. Distinguish a known stale record from an unresolved contradiction; ask
+only when that contradiction changes the implementation and available evidence
+cannot settle it. Continue independent work while it remains open.
+
+When a concept is resolved and later callers or maintainers will need it, update
+its owned record during the work rather than leaving it in chat history. Keep
+three kinds of information distinct:
+
+| Information | What belongs in its record |
+| --- | --- |
+| Domain definition | What the concept means, identity and relationships, and ambiguous aliases worth distinguishing |
+| Consequential decision | Context, chosen alternative, reason and non-obvious consequences; link an earlier decision when replacing it |
+| Implementation plan | Acceptance conditions, affected contracts and implementation/verification steps |
+
+A domain definition should let another maintainer distinguish such concepts as
+a seller profile, organization and signed-in user; their identifiers do not
+become interchangeable because they are all strings. Keep external field names
+stable while making their meaning clear. Use precise project terminology in
+code, tests and documentation without replacing established component, service
+or API vocabulary with a new universal glossary.
+
+Reuse the existing source of truth and link to it from the relevant consumer
+documentation when discovery needs help. A new short record earns its place when
+a recurring concept or a consequential, non-obvious tradeoff would otherwise
+need rediscovery. Use the project's documentation location and format; create
+only what there is meaningful knowledge to record. A settled local edit needs no
+glossary, ADR, setup session or documentation approval. In a review-only task,
+report stale definitions or missing rationale without editing project records.
+
+Keep unresolved assumptions visibly unresolved. Update or supersede stale
+material when the confirmed contract changes, preserving useful rationale and
+project history conventions. Check one plausible later use: can a new maintainer
+find the definition or decision and apply it without the original conversation?
 
 ## Construct a readable operation
 

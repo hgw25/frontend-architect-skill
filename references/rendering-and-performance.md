@@ -12,15 +12,14 @@ semantics, CSS, accessibility, and motion design.
 
 ## Contents
 
-- Model the path from update to display
-- Define the performance contract
-- Control invalidation and transfer
-- Select platform guidance
-- Handle lists, media, and resource lifetime
-- Optimize the measured stage
-- Verify on the real runtime
-- Review smells
-- Platform extensions and sources
+- [Model the path from update to display](#model-the-path-from-update-to-display)
+- [Define the performance contract](#define-the-performance-contract)
+- [Control invalidation and transfer](#control-invalidation-and-transfer)
+- [Select platform guidance](#select-platform-guidance)
+- [Handle lists, media, and resource lifetime](#handle-lists-media-and-resource-lifetime)
+- [Optimize the measured stage](#optimize-the-measured-stage)
+- [Verify on the real runtime](#verify-on-the-real-runtime)
+- [Review smells](#review-smells)
 
 ## Model the path from update to display
 

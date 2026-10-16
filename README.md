@@ -4,7 +4,7 @@
 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
-当前发布版本：[v0.4.2](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.4.2)。
+当前发布版本：[v0.5.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.5.0)。
 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 它解决什么问题
@@ -75,8 +75,9 @@ frontend-architect-skill/
 └── README.md
 ```
 
-`SKILL.md` 只保存核心工作方式和专题路由。代理仅在任务需要时读取对应
-`references/`，避免每次加载完整的前端知识库。
+`SKILL.md` 保存共同工程标准、核心工作方式和条件路由。明确局部任务可以只用入口；
+遇到未解决的判断时，先读取对应专题的相关章节，依据实际缺口扩读并及时停止。
+专题目录提供章节链接，避免为一个函数问题读取整篇前端知识；运行校验会检查本地章节链接。
 
 ### 跨项目工程原则：用 AGENTS.md 承载
 
@@ -134,7 +135,7 @@ frontend-architect Skill。
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo hgw25/frontend-architect-skill \
   --path . \
-  --ref v0.4.2 \
+  --ref v0.5.0 \
   --name frontend-architect
 ```
 
@@ -154,7 +155,7 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 ```bash
 set -euo pipefail
 
-skill_release="v0.4.2"
+skill_release="v0.5.0"
 skill_stage_dir="$(mktemp -d)"
 skill_backup_root="$HOME/.codex/skill-backups"
 skill_backup_dir="$skill_backup_root/frontend-architect-$(date +%Y%m%d-%H%M%S)"
@@ -211,6 +212,11 @@ Skill 按四个部分组织：入口中的核心判断体系和任务执行方�
 直接实现，边界清楚的方案在对话中简述；只有需要跨阶段或协作保留的重要决定才落成
 简短文档。文档不是默认审批门槛。
 
+领域概念和重要决策优先沉淀到项目已有说明：定义保存概念、身份和关系，决策记录保留
+选择与理由，实施方案保存验收和后续步骤。已确认的修订及时更新原记录；未解决的
+契约冲突保持明确，不猜测身份映射。按需创建有后续用途的简短记录，小改动无需先建
+词汇表、ADR 或初始化会话。详见[领域知识与决策指导](references/architecture-and-code.md#preserve-domain-knowledge-and-decisions)。
+
 ### 模块化
 
 对于具有明确业务能力的中大型产品应用，通常以功能或领域作为上层边界，再在功能
@@ -228,15 +234,17 @@ Skill 按四个部分组织：入口中的核心判断体系和任务执行方�
 
 ### 抽象
 
-先证明问题，再支付抽象成本。相似语法不代表相同语义；少量重复通常比错误抽象更
-容易纠正。
+抽象应减少调用者需要理解的细节，把共同变化的规则和状态交给合适的所有者；允许为
+领域常见变化预留适度边界，但应对当前调用或维护已有收益。相似语法不代表相同语义。
+实现与 review 使用同一质量标准：检查真实函数、调用链、输入输出和副作用，区分功能
+正确与结构好维护，不用文件数、函数数、行数或全绿测试代替判断。
 
 代码构造指导覆盖主流程与辅助函数、数据归一化与草稿/权威值的区别，以及真实调用方
 需要理解的契约。异步专题区分过期结果、取消、排队、去重、幂等和乐观回滚，优先复用
 已有数据层。平台 API 不自动优于已承担兼容性和生命周期策略的项目封装。
 
-专题默认读取一至两个；出现明确的新决策缺口时可以继续按需读取并说明理由。
-评测将额外读取交给独立审查，不以数量直接判错，也不无条件认可大范围加载。
+按任务的未决问题读取所需章节；标题发现与正文消费分开记录，不设主题配额或逐文件旁白。
+任务或已检查证据能建立扩读理由，读取数量本身不代表必要或过量。
 
 ### 前端基建
 
@@ -304,8 +312,12 @@ python3 scripts/run_behavior_evals.py \
 
 该脚本关闭插件发现，并审计实际 reference 读取：baseline 必须保持零 Skill 引用，
 candidate 只能加载隔离工作区中的 `SKILL.md` 与按需 reference；读取全局副本或修改
-受保护验收脚本会使运行失败。超出默认路由宽度则必须通过独立的必要性审查。它不会替代盲评；运行后仍需按照
-rubric 在看不到另一组结果的上下文中评分。
+受保护验收脚本会使运行失败。正文读取按任务相关性和实际范围独立审查，标题发现不算正文；
+既不以数量直接判错，也不因只读一份就免于相关性判断。运行后仍需按照 rubric 盲评。
+
+实现型诊断可加 `--host-feedback`：真实宿主检查失败后最多交回一次修复，首次交付和修复
+分别保留并校验。无效捕获、保护文件被改、只读 review 和无夹具任务不进入该环节。
+已有生成必须另建结果目录；`--append` 只追加新案例。
 
 生成完成后，可在与生成会话分离的上下文中执行两阶段评测。脚本先在隐藏
 `must_observe`、`fail_if` 和另一条件的情况下盲评分，再为同一匿名条件单独执行
@@ -323,19 +335,65 @@ python3 scripts/score_behavior_evals.py \
 python3 scripts/test_score_behavior_evals.py
 ```
 
+评分会拒绝执行失败、隔离证据不足或原始产物缺失的样本，将其记录为 `invalid`。
+两阶段缓存跟随实际输入失效；追加案例评分会保留旧案例并加入新结果。历史采集若没有
+当前阅读审计字段，需要重跑，不能用旧的路径匹配记录证明已读取或隔离通过。
+评分还会核验原始执行日志及冻结的验证契约；补加测试或修改夹具后需要重新采集。
+选中案例在评分开始前撤销旧结论，评分服务失败或中断不会保留未完成案例的旧通过结果。
+可用 `--model` 指定当前账户支持的模型；脚本默认模型不可用时应更换配置并使用新结果目录。
+
+新增多文件只读审查案例使用 `before/` 与 `after/` 仓库快照，要求代理自己定位有效需求和
+受影响路径。维护者侧的缺陷检查与 reviewer 输入隔离。完整回归检查需要 Python 和 Node：
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_*.py'
+```
+
+运行有效性、缓存和审查快照的详细约定见 [评测协议](evals/cases.md)。
+
+[2026-10-15 精简前后完整回归](evals/results/2026-10-15-full-suite/report.md) 保存 45 例
+主对照、12 组成对复测、评分证据复核与未验证范围。额外复测仍发现一例候选验证链
+失败，原始失败与诊断结果均保留，具体结论见报告。
+
+[2026-10-15 真实使用复查](evals/results/2026-10-15-real-usage-review/report.md) 结合 6 个
+近期对话和 4 个项目，记录代码问题、已纠正的判断失误、216 项定向复跑与证据限制。
+真实任务加载的已安装旧版与仓库候选版不同，不能替代精简版的实际使用验证。
+
+[2026-10-15 真实问题优化与本地验证](evals/results/2026-10-15-real-usage-optimization/report.md)
+记录根因判断、完整交互和证据维护改动，新增 6 例、定向成对评测、发现的草稿竞态与补强验证。
+原始失败、测量修复及本地快照安装回执分别保留，不用后续成功覆盖首次结果。
+
+[2026-10-15 函数与调用边界验证](evals/results/2026-10-15-code-quality-contract/report.md)
+回溯原始工程要求，统一实现与 review 的代码质量标准；通过全绿代码和内部异步变更检查，
+分别评价功能正确、函数内聚、调用耦合及后续修改成本。
+
+[2026-10-15 渐进式披露优化](evals/results/2026-10-15-progressive-disclosure-optimization/report.md)
+记录入口合并、章节路由、实际读取范围与六类任务的成对验证；结果与验证限制分别保存。
+
+[2026-10-16 完整 54 例对照](evals/results/2026-10-16-full-suite-54/report.md)
+保存精简前后全部案例、独立评分、单独归档的恢复和复测，以及 Dialog 的环境、测试构建与
+实现缺陷诊断。首轮差异、评分分歧和未验证范围分别记录，不用后续成功覆盖原始失败。
+
+[2026-10-16 已确认问题优化](evals/results/2026-10-16-confirmed-issues-optimization/report.md)
+区分指导、实现与评测契约的责任，记录正文相关性审计、稳定交互结果、交付状态和
+有界宿主反馈的回归证据；本轮定向对照与历史完整 54 例分别保存。
+
 ## 贡献原则
 
 请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。新增规则需要说明它改变了什么决策、
 适用边界是什么，并增加或更新至少一个行为评测场景。避免因单个失败案例不断累加
 全局禁令。
 
+维护时先定位已确认的失败：产品问题修负责的源码；机械约束复用 validator、测试或
+构建检查；检查没接通则修命令或 CI；难以发现的概念补原文档和导航；取舍判断问题
+才修改 Skill 指导。精简按修改前后的行为与实际产物验证，文本变短本身不代表改进。
+
 ## 发布说明
 
 该目录已具备独立 GitHub 仓库结构，并已保存首版 baseline/candidate
 [行为评测结果](evals/results/2026-08-20-gpt-5.4/summary.md)。目标仓库为
 `hgw25/frontend-architect-skill`。当前版本由 [VERSION](VERSION) 和对应的不可变 Git
-tag 标识，发布变化记录在 [CHANGELOG.md](CHANGELOG.md)。仓库当前尚未选择许可证；在
-明确许可证之前应保持 private。
+tag 标识，发布变化记录在 [CHANGELOG.md](CHANGELOG.md)。本项目采用 [MIT 许可证](LICENSE)。
 
 
 ### 更新维护子技能
@@ -351,7 +409,7 @@ tag 标识，发布变化记录在 [CHANGELOG.md](CHANGELOG.md)。仓库当前�
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo hgw25/frontend-architect-skill \
   --path skills/frontend-architect-update \
-  --ref v0.4.2 --name frontend-architect-update
+  --ref v0.5.0 --name frontend-architect-update
 ```
 
 已存在的安装需先暂存新版、校验并备份旧版，再替换；安装器不会直接覆盖。

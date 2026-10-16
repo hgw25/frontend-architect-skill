@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "maintenance-reuse-existing-check",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确还原了 build、check-package、标准 check、CI 与发布文档之间的执行链，并遵守无需发布、安装依赖或新增框架的约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了复用现有门禁、增加独立 CI 步骤和增加 Skill 人工清单的维护成本，选择将既有验收脚本接入唯一标准入口的最小方案。"
+          },
+          {
+            "key": "infrastructure_design",
+            "score": 2,
+            "reason": "以 npm run check 作为开发者、CI 和发布流程共用的窄契约，保留 build 后检查产物的顺序，并避免形成漂移的第二入口。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "验收条件覆盖故障注入、成功路径、退出码和 CI 日志，但因工作区没有项目文件而未实际执行。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论优先，清楚区分必要修复、可选文档澄清和 Skill 维护判断，范围与未验证部分明确。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供可执行项目文件或夹具，无法核实 package.json 修改及实际命令结果。",
+          "没有 CI 运行日志可证明标准入口已在真实流水线中执行。"
+        ],
+        "normalized_score": 14.4,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "centralized-tests-follow-project-contract",
+        "dimensions": [
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "测试目录按 src 结构镜像，setup、快照、fixture、Vitest 发现范围、测试类型配置和生产构建边界均有明确归属，且最终只保留 tests 单入口。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "提出了基线数量对比、定点执行、探针发现、全量测试、类型检查和构建等有效验收，但没有项目文件或实际运行结果。"
+          },
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确遵循用户要求的 tests 集中布局、现有 Vitest 发现限制和不新增业务功能约束，并说明无法核实的具体文件与脚本。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "工作区没有 package.json、Vitest 配置、src 或测试文件，因此迁移方案未实施。",
+          "没有迁移前后测试文件数、用例数或命令输出可供核验。"
+        ],
+        "normalized_score": 13.33,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "group-by-api",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "围绕是否进入基础库评审，识别了调用方、目标运行时、兼容矩阵和维护责任均未知，而非只改写循环。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "将自研封装与 Object.groupBy、Map.groupBy、标准 polyfill 及窄属性便利 API 进行比较，按键语义和运行时兼容性选择维护成本相称的方案。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖原型属性冲突、__proto__、键字符串化与身份丢失、枚举顺序、任意 iterable 回调契约、symbol、缺失属性及返回类型可选性等实际边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "记录了 Node 22.22.2 环境及原型冲突、对象键合并与 Map 行为的实际结果，同时明确缺少业务源码、消费者和浏览器目标；标准契约另有规范来源支撑。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给出拒绝入库及替代路径，再按严重度解释正确性、API 取舍、兼容性和最低限度自研要求，风险与适用范围清晰。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供执行命令及原始输出，Node 实验结果只能依据响应中的运行记录评价。",
+          "没有真实调用方、包配置、browserslist 或目标 Node 版本，无法验证标准 API/polyfill 的最终兼容决策。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [
+          {
+            "rule": "Reference breadth exception not established",
+            "reason": "执行记录为第三个主题 verification-and-review 给出的理由只是按严重度组织可验证的评审结论，并未指出相对于架构/API 契约和前端基础设施主题新增的具体决策缺口。请求虽然要求评审和建议，但这不足以自动证明需要超过默认上限的第三个主题；记录也没有陈述会触发该额外主题的独立条件。未涉及多平台渲染。"
+          }
+        ],
+        "verdict": "fail"
+      }
+    ]
+  }
+}

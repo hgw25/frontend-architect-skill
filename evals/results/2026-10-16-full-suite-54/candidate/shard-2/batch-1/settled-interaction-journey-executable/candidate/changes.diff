@@ -1,0 +1,104 @@
+diff --git a/src/app.mjs b/src/app.mjs
+index b26b32f..0f2e1fc 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -2,24 +2,73 @@ const input = document.querySelector('#name');
+ const feedback = document.querySelector('#feedback');
+ const save = document.querySelector('#save');
+ const grid = document.querySelector('#grid');
+-document.querySelector('#clear').onclick = () => { input.value = ''; };
+-save.onclick = async () => {
++const clear = document.querySelector('#clear');
++
++let editRevision = 0;
++
++input.addEventListener('input', () => {
++  editRevision += 1;
++});
++
++clear.addEventListener('click', () => {
++  input.value = '';
++  editRevision += 1;
++  input.focus();
++});
++
++save.addEventListener('click', async () => {
++  const submittedValue = input.value;
++  const submittedRevision = editRevision;
++
+   save.disabled = true;
+   feedback.textContent = 'Saving';
++
+   try {
+-    const response = await fetch('/save', { method: 'POST', body: input.value });
++    const response = await fetch('/save', { method: 'POST', body: submittedValue });
+     if (!response.ok) throw new Error('Save failed');
+-    document.querySelector('td').textContent = input.value;
++
++    document.querySelector('td').textContent = submittedValue;
+     feedback.textContent = 'Saved';
+-  } catch { feedback.textContent = 'Save failed'; }
+-  finally { input.value = ''; save.disabled = false; }
+-};
++
++    if (editRevision === submittedRevision) input.value = '';
++  } catch {
++    feedback.textContent = 'Save failed';
++  } finally {
++    save.disabled = false;
++  }
++});
++
+ const body = document.querySelector('tbody');
+ for (let index = 0; index < 30; index++) {
+-  const row = body.insertRow(); row.dataset.row = String(index);
++  const row = body.insertRow();
++  row.dataset.row = String(index);
+   row.insertCell().textContent = 'Record ' + index;
+ }
+-if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+-  for (const row of [...body.rows].slice(0, 8)) row.animate({ opacity: [0, 1] }, { duration: 240 });
++
++function animateVisibleRows() {
++  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
++
++  const gridRect = grid.getBoundingClientRect();
++  const visibleTop = Math.max(gridRect.top, 0);
++  const visibleBottom = Math.min(gridRect.bottom, window.innerHeight);
++  const visibleRows = [...body.rows].filter((row) => {
++    const rowRect = row.getBoundingClientRect();
++    return rowRect.bottom > visibleTop && rowRect.top < visibleBottom;
++  });
++
++  for (const row of visibleRows) {
++    row.animate({ opacity: [0, 1] }, { duration: 240, easing: 'ease-out' });
++  }
+ }
+-setTimeout(() => { grid.dataset.ready = 'true'; }, Number(new URLSearchParams(location.search).get('delay') || 200));
++
++const delayParam = new URLSearchParams(location.search).get('delay');
++const requestedDelay = Number(delayParam);
++const readyDelay = delayParam !== null && delayParam !== ''
++  && Number.isFinite(requestedDelay) && requestedDelay >= 0
++  ? requestedDelay
++  : 200;
++
++setTimeout(() => {
++  grid.dataset.ready = 'true';
++  requestAnimationFrame(animateVisibleRows);
++}, readyDelay);
+diff --git a/src/style.css b/src/style.css
+index 101573d..e50a4bd 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -3,8 +3,8 @@ body { font: 16px system-ui; margin: 16px; }
+ main { width: min(560px, 100%); }
+ .field { display: flex; width: 100%; height: 36px; }
+ .field input { flex: 1; min-width: 0; }
+-#clear { width: 28px; opacity: 0; pointer-events: none; }
+-.field:hover #clear, #clear:focus-visible { opacity: 1; pointer-events: auto; }
++#clear { display: none; width: 28px; }
++.field:hover #clear, .field:focus-within #clear { display: block; }
+ #feedback { min-height: 24px; }
+ #grid { height: 100px; overflow: hidden; }
+ #grid[data-ready='false'] { visibility: hidden; }

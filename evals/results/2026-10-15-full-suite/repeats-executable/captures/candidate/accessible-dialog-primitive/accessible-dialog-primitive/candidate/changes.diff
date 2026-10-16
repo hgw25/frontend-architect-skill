@@ -1,0 +1,1241 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..b67ba3f
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,5 @@
++dist/
++dist-app/
++dist-browser/
++node_modules/
++test-results/
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..ef1c88f
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,105 @@
++# React Dialog primitive
++
++This package provides a headless, modal Dialog for React 18.3 and 19. Product copy,
++actions, layout, and visual styles stay in the consuming application. The primitive
++owns the cross-product behavior that must not drift: ARIA relationships, controlled
++and uncontrolled state, portals, focus containment and restoration, modal isolation,
++top-layer Escape handling, and nested-dialog ordering.
++
++## Public API
++
++Import either the compound `Dialog` object or the individually named components from
++the package root:
++
++```tsx
++import { Dialog } from '@example/react-dialog'
++
++<Dialog.Root defaultOpen={false} onOpenChange={(open) => console.log(open)}>
++  <Dialog.Trigger className="trigger">Edit profile</Dialog.Trigger>
++  <Dialog.Portal>
++    <Dialog.Overlay className="overlay">
++      <Dialog.Content className="panel">
++        <Dialog.Title>Edit profile</Dialog.Title>
++        <Dialog.Description>Update your public information.</Dialog.Description>
++        {/* Product-owned form and actions */}
++        <Dialog.Close>Cancel</Dialog.Close>
++      </Dialog.Content>
++    </Dialog.Overlay>
++  </Dialog.Portal>
++</Dialog.Root>
++```
++
++- `Dialog.Root` owns state. Use `defaultOpen` for uncontrolled state, or `open` with
++  `onOpenChange` for controlled state.
++- `Dialog.Trigger` and `Dialog.Close` render buttons, forward refs and native button
++  props, and compose consumer click handlers. Calling `preventDefault()` keeps the
++  primitive from changing state.
++- `Dialog.Portal` renders into `document.body` after mount, or into its optional
++  `container`. It renders nothing on the server, so server and first hydration output
++  agree.
++- `Dialog.Overlay` renders a `div` and dismisses only the top dialog when the overlay
++  itself receives a pointer press. Prevent its `onPointerDown` to disable that policy.
++- `Dialog.Content` renders the modal `role="dialog"`, traps focus, handles Tab wrapping,
++  restores the previously focused element, and accepts native `div` props, `className`,
++  `style`, forwarded refs, and `initialFocusRef`.
++- `Dialog.Title` and `Dialog.Description` provide the generated, hydration-stable ARIA
++  relationships. A content without a visible title must receive `aria-label`. If no
++  description is appropriate, pass `aria-describedby={undefined}` explicitly.
++
++The state-bearing Trigger, Overlay, and Content components expose `data-state` where state-based styling is useful.
++No CSS ships with the package and no private DOM selector is a styling contract.
++
++## Implementation boundaries
++
++`Dialog.tsx` is the React-facing contract: state ownership, composition, DOM semantics,
++and event/ref composition. `dialog/modalManager.ts` is private and owns the browser
++lifecycle shared by all instances: the ordered modal stack, document listeners, focus
++containment, background `inert`/`aria-hidden` snapshots, and cleanup. Only the current
++top layer can dismiss or redirect focus. This split keeps a future layering change in
++one internal owner without widening the package API.
++
++The package is ESM-only. React and React DOM are peer dependencies because the host
++must provide the singleton renderer. `src/index.ts` is the sole public source entry;
++the package `exports` map exposes only `dist/index.js` and its declarations, keeping
++the modal manager private.
++
++## Test matrix
++
++| Contract | Evidence |
++| --- | --- |
++| Uncontrolled open, first focus, forward/reverse Tab wrap | Chromium behavior test |
++| Escape closes and focus returns to the actual opener | Chromium behavior test |
++| Programmatic focus cannot escape; background is inert | Chromium behavior test |
++| Nested dialogs: only the top layer closes, then local focus restores | Chromium behavior test |
++| Accessible name, description, `aria-modal`, and body portal | Chromium accessibility/DOM assertions |
++| Overlay dismissal and cleanup of modal isolation | Chromium pointer/DOM assertions |
++| Controlled `open`/`onOpenChange` | Chromium consumer fixture |
++| Server render without browser globals, including inline open content | Node SSR tests |
++| Hydration-stable trigger IDs followed by client portal mount | Server markup hydrated in Chromium with console-error assertion |
++| Public runtime/types artifact and package file list | ESM library build, declaration build, and `npm pack --dry-run` |
++
++Run the complete gate with `npm run check`. Browser tests use built IIFE fixtures
++in Playwright rather than a localhost server, so the same interactions run in network-
++restricted CI sandboxes.
++
++## Migration for the three products
++
++1. Publish a prerelease and add it beside each existing Dialog. Do not replace all
++   implementations in one release. Inventory whether each product currently closes on
++   overlay press and preserve that choice with the overlay handler during migration.
++2. In the first product, keep its existing product-level component as a compatibility
++   adapter. Move its title, description, buttons, analytics, and styling into the
++   compound children; map its current `open` callback to `Root`. Verify its key flows
++   with the matrix above and release behind the existing product boundary.
++3. Migrate the product with nested dialogs next, using a separate `Root` and `Portal`
++   for every layer. Remove local Escape listeners, focus sentinels, body-wide
++   `aria-hidden`, and focus-restoration effects as each consumer moves; retaining them
++   would create competing owners.
++4. Migrate the final product, then remove the compatibility adapters only after no call
++   sites remain. Treat changes to close policy, initial focus, DOM element types, or
++   styling hooks as consumer-visible release notes even when TypeScript signatures do
++   not change.
++
++Rollback is per product: restore its adapter to the previous implementation while the
++shared package remains installed for already-migrated products. This keeps the
++foundation release and product rollout independently reversible.
+diff --git a/package-lock.json b/package-lock.json
+index c19651f..1fd9eb0 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,23 +1,27 @@
+ {
+-  "name": "frontend-architect-dialog-browser-eval",
++  "name": "@example/react-dialog",
++  "version": "0.1.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+-      "name": "frontend-architect-dialog-browser-eval",
+-      "dependencies": {
+-        "react": "19.1.1",
+-        "react-dom": "19.1.1"
+-      },
++      "name": "@example/react-dialog",
++      "version": "0.1.0",
+       "devDependencies": {
+         "@playwright/test": "1.62.1",
+         "@types/node": "24.3.0",
+         "@types/react": "19.1.10",
+         "@types/react-dom": "19.1.7",
+         "@vitejs/plugin-react": "5.0.2",
++        "react": "19.1.1",
++        "react-dom": "19.1.1",
+         "typescript": "5.9.2",
+         "vite": "7.3.6",
+         "vitest": "4.1.11"
++      },
++      "peerDependencies": {
++        "react": ">=18.3 <20",
++        "react-dom": ">=18.3 <20"
+       }
+     },
+     "node_modules/@babel/code-frame": {
+@@ -1869,6 +1873,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react/-/react-19.1.1.tgz",
+       "integrity": "sha512-w8nqGImo45dmMIfljjMwOGtbmC/mk4CMYhWIicdSflH91J9TyCyczcPFXJzrZ/ZXcgGRFeP6BU0BEJTw6tZdfQ==",
++      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">=0.10.0"
+@@ -1878,6 +1883,7 @@
+       "version": "19.1.1",
+       "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.1.1.tgz",
+       "integrity": "sha512-Dlq/5LAZgF0Gaz6yiqZCf6VCcZs1ghAJyrsu84Q/GT0gV+mCxbfmKNoGRKBYMJ8IEdGPqu49YWXD02GCknEDkw==",
++      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "scheduler": "^0.26.0"
+@@ -1946,6 +1952,7 @@
+       "version": "0.26.0",
+       "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.26.0.tgz",
+       "integrity": "sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA==",
++      "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/semver": {
+diff --git a/package-tests/consumer.tsx b/package-tests/consumer.tsx
+new file mode 100644
+index 0000000..6d17635
+--- /dev/null
++++ b/package-tests/consumer.tsx
+@@ -0,0 +1,16 @@
++import { Dialog, type DialogRootProps } from '@example/react-dialog'
++
++const rootProps: DialogRootProps = {
++  children: null,
++  defaultOpen: false,
++  onOpenChange: (_open) => undefined,
++}
++
++export const consumer = (
++  <Dialog.Root {...rootProps}>
++    <Dialog.Trigger className="product-trigger">Open</Dialog.Trigger>
++    <Dialog.Portal>
++      <Dialog.Content aria-label="Package consumer" className="product-dialog" />
++    </Dialog.Portal>
++  </Dialog.Root>
++)
+diff --git a/package.json b/package.json
+index e721197..8623ef3 100644
+--- a/package.json
++++ b/package.json
+@@ -1,24 +1,41 @@
+ {
+-  "name": "frontend-architect-dialog-browser-eval",
+-  "private": true,
++  "name": "@example/react-dialog",
++  "version": "0.1.0",
++  "private": false,
+   "type": "module",
++  "files": [
++    "dist"
++  ],
++  "sideEffects": false,
++  "types": "./dist/index.d.ts",
++  "module": "./dist/index.js",
++  "exports": {
++    ".": {
++      "types": "./dist/index.d.ts",
++      "import": "./dist/index.js"
++    }
++  },
++  "peerDependencies": {
++    "react": ">=18.3 <20",
++    "react-dom": ">=18.3 <20"
++  },
+   "scripts": {
+     "build": "vite build",
+-    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run build",
+-    "test:browser": "playwright test",
++    "build:package": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json",
++    "check": "npm run typecheck && npm run test:ssr && npm run test:browser && npm run build && npm run build:package && npm run test:package",
++    "test:browser": "vite build --config vite.browser-test.config.ts && vite build --config vite.hydration-test.config.ts && playwright test",
++    "test:package": "tsc -p tsconfig.package-test.json && node scripts/verify-package.mjs && npm pack --dry-run --cache ./node_modules/.cache/npm",
+     "test:ssr": "vitest run src/Dialog.ssr.test.tsx",
+     "typecheck": "tsc --noEmit"
+   },
+-  "dependencies": {
+-    "react": "19.1.1",
+-    "react-dom": "19.1.1"
+-  },
+   "devDependencies": {
+     "@playwright/test": "1.62.1",
+     "@types/node": "24.3.0",
+     "@types/react": "19.1.10",
+     "@types/react-dom": "19.1.7",
+     "@vitejs/plugin-react": "5.0.2",
++    "react": "19.1.1",
++    "react-dom": "19.1.1",
+     "typescript": "5.9.2",
+     "vite": "7.3.6",
+     "vitest": "4.1.11"
+diff --git a/playwright.config.ts b/playwright.config.ts
+index f332bf4..6b2fc27 100644
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -5,11 +5,6 @@ export default defineConfig({
+   fullyParallel: false,
+   use: {
+     ...devices['Desktop Chrome'],
+-    baseURL: 'http://127.0.0.1:4173',
+-  },
+-  webServer: {
+-    command: 'npm run build && npx vite preview --host 127.0.0.1 --port 4173',
+-    port: 4173,
+-    reuseExistingServer: false,
++    trace: 'retain-on-failure',
+   },
+ })
+diff --git a/scripts/verify-package.mjs b/scripts/verify-package.mjs
+new file mode 100644
+index 0000000..39a93f6
+--- /dev/null
++++ b/scripts/verify-package.mjs
+@@ -0,0 +1,18 @@
++const publicModule = await import('../dist/index.js')
++
++const expectedExports = [
++  'Dialog',
++  'DialogClose',
++  'DialogContent',
++  'DialogDescription',
++  'DialogOverlay',
++  'DialogPortal',
++  'DialogRoot',
++  'DialogTitle',
++  'DialogTrigger',
++]
++
++const missingExports = expectedExports.filter((name) => !(name in publicModule))
++if (missingExports.length > 0) {
++  throw new Error(`Missing public runtime exports: ${missingExports.join(', ')}`)
++}
+diff --git a/src/App.tsx b/src/App.tsx
+index f903b93..731b8b7 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,27 +1,56 @@
++import { useState } from 'react'
++
+ import { Dialog } from './Dialog'
+ import './styles.css'
+ 
+ export function App() {
++  const [settingsOpen, setSettingsOpen] = useState(false)
++
+   return (
+     <main>
+       <a href="#background">Background link</a>
+-      <Dialog
+-        title="Edit profile"
+-        description="Update your public information."
+-        triggerLabel="Edit profile"
+-      >
+-        <label>
+-          Name
+-          <input name="name" defaultValue="Ada" />
+-        </label>
+-        <Dialog
+-          title="Permissions"
+-          description="Choose who can see this profile."
+-          triggerLabel="Open permissions"
+-        >
+-          <button type="button">Save permissions</button>
+-        </Dialog>
+-      </Dialog>
++      <Dialog.Root>
++        <Dialog.Trigger>Edit profile</Dialog.Trigger>
++        <Dialog.Portal>
++          <Dialog.Overlay className="overlay">
++            <Dialog.Content className="dialog">
++              <Dialog.Title>Edit profile</Dialog.Title>
++              <Dialog.Description>Update your public information.</Dialog.Description>
++              <label>
++                Name
++                <input name="name" defaultValue="Ada" />
++              </label>
++              <Dialog.Root>
++                <Dialog.Trigger>Open permissions</Dialog.Trigger>
++                <Dialog.Portal>
++                  <Dialog.Overlay className="overlay">
++                    <Dialog.Content className="dialog">
++                      <Dialog.Title>Permissions</Dialog.Title>
++                      <Dialog.Description>Choose who can see this profile.</Dialog.Description>
++                      <button type="button">Save permissions</button>
++                      <Dialog.Close>Close</Dialog.Close>
++                    </Dialog.Content>
++                  </Dialog.Overlay>
++                </Dialog.Portal>
++              </Dialog.Root>
++              <Dialog.Close>Close</Dialog.Close>
++            </Dialog.Content>
++          </Dialog.Overlay>
++        </Dialog.Portal>
++      </Dialog.Root>
++
++      <Dialog.Root open={settingsOpen} onOpenChange={setSettingsOpen}>
++        <Dialog.Trigger>Open settings</Dialog.Trigger>
++        <Dialog.Portal>
++          <Dialog.Overlay className="overlay">
++            <Dialog.Content className="dialog">
++              <Dialog.Title>Settings</Dialog.Title>
++              <Dialog.Description>Manage application preferences.</Dialog.Description>
++              <Dialog.Close>Done</Dialog.Close>
++            </Dialog.Content>
++          </Dialog.Overlay>
++        </Dialog.Portal>
++      </Dialog.Root>
+     </main>
+   )
+ }
+diff --git a/src/Dialog.ssr.test.tsx b/src/Dialog.ssr.test.tsx
+index 9b76a14..f09fbd1 100644
+--- a/src/Dialog.ssr.test.tsx
++++ b/src/Dialog.ssr.test.tsx
+@@ -3,14 +3,39 @@
+ import { renderToString } from 'react-dom/server'
+ import { expect, test } from 'vitest'
+ 
+-import { Dialog } from './Dialog'
++import { Dialog } from './index'
+ 
+ test('renders the closed primitive without accessing browser globals', () => {
+   const html = renderToString(
+-    <Dialog title="Example" description="Description" triggerLabel="Open">
+-      <button type="button">Action</button>
+-    </Dialog>,
++    <Dialog.Root>
++      <Dialog.Trigger>Open</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Content>
++          <Dialog.Title>Example</Dialog.Title>
++          <Dialog.Description>Description</Dialog.Description>
++          <button type="button">Action</button>
++        </Dialog.Content>
++      </Dialog.Portal>
++    </Dialog.Root>,
+   )
+ 
+   expect(html).toContain('Open')
++  expect(html).not.toContain('role="dialog"')
++})
++
++test('server-renders non-portalled content with stable accessible relationships', () => {
++  const html = renderToString(
++    <Dialog.Root defaultOpen>
++      <Dialog.Trigger>Open</Dialog.Trigger>
++      <Dialog.Content>
++        <Dialog.Title>Example</Dialog.Title>
++        <Dialog.Description>Description</Dialog.Description>
++      </Dialog.Content>
++    </Dialog.Root>,
++  )
++
++  expect(html).toContain('role="dialog"')
++  expect(html).toContain('aria-modal="true"')
++  expect(html).toMatch(/aria-labelledby="([^"]+)-title"/)
++  expect(html).toMatch(/aria-describedby="([^"]+)-description"/)
+ })
+diff --git a/src/Dialog.tsx b/src/Dialog.tsx
+index 55b30e8..71d188a 100644
+--- a/src/Dialog.tsx
++++ b/src/Dialog.tsx
+@@ -1,43 +1,310 @@
+-import { type ReactNode, useId, useState } from 'react'
++import {
++  createContext,
++  forwardRef,
++  type ButtonHTMLAttributes,
++  type HTMLAttributes,
++  type MutableRefObject,
++  type ReactNode,
++  type Ref,
++  type RefObject,
++  useCallback,
++  useContext,
++  useEffect,
++  useId,
++  useLayoutEffect,
++  useMemo,
++  useRef,
++  useState,
++} from 'react'
+ import { createPortal } from 'react-dom'
+ 
+-type DialogProps = {
++import {
++  focusFirstElement,
++  getFocusableElements,
++  isTopLayer,
++  registerDialog,
++} from './dialog/modalManager'
++
++type DialogContextValue = {
++  contentId: string
++  descriptionId: string
++  layerId: symbol
++  open: boolean
++  setOpen: (open: boolean) => void
++  titleId: string
++}
++
++const DialogContext = createContext<DialogContextValue | null>(null)
++const useIsomorphicLayoutEffect = typeof document === 'undefined' ? useEffect : useLayoutEffect
++
++function useDialogContext(component: string) {
++  const context = useContext(DialogContext)
++  if (!context) throw new Error(`${component} must be rendered inside Dialog.Root.`)
++  return context
++}
++
++function setRef<T>(ref: Ref<T> | undefined, value: T | null) {
++  if (typeof ref === 'function') ref(value)
++  else if (ref) (ref as MutableRefObject<T | null>).current = value
++}
++
++function useComposedRefs<T>(...refs: Array<Ref<T> | undefined>) {
++  return useCallback((value: T | null) => {
++    for (const ref of refs) setRef(ref, value)
++  }, refs)
++}
++
++export type DialogRootProps = {
+   children: ReactNode
+-  description: string
+-  title: string
+-  triggerLabel: string
++  defaultOpen?: boolean
++  onOpenChange?: (open: boolean) => void
++  open?: boolean
+ }
+ 
+-export function Dialog({ children, description, title, triggerLabel }: DialogProps) {
+-  const [open, setOpen] = useState(false)
+-  const titleId = useId()
+-  const descriptionId = useId()
++export function DialogRoot({ children, defaultOpen = false, onOpenChange, open: openProp }: DialogRootProps) {
++  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
++  const controlled = openProp !== undefined
++  const open = controlled ? openProp : uncontrolledOpen
++  const controlledRef = useRef(controlled)
++  const onOpenChangeRef = useRef(onOpenChange)
++  const openRef = useRef(open)
++  const reactId = useId()
++  const layerId = useMemo(() => Symbol('dialog-layer'), [])
++
++  useIsomorphicLayoutEffect(() => {
++    controlledRef.current = controlled
++    onOpenChangeRef.current = onOpenChange
++    openRef.current = open
++  }, [controlled, onOpenChange, open])
++
++  const setOpen = useCallback((nextOpen: boolean) => {
++    if (nextOpen === openRef.current) return
++    if (!controlledRef.current) setUncontrolledOpen(nextOpen)
++    onOpenChangeRef.current?.(nextOpen)
++  }, [])
++
++  const value = useMemo<DialogContextValue>(
++    () => ({
++      contentId: `${reactId}-content`,
++      descriptionId: `${reactId}-description`,
++      layerId,
++      open,
++      setOpen,
++      titleId: `${reactId}-title`,
++    }),
++    [layerId, open, reactId, setOpen],
++  )
++
++  return <DialogContext.Provider value={value}>{children}</DialogContext.Provider>
++}
++
++export type DialogTriggerProps = ButtonHTMLAttributes<HTMLButtonElement>
++
++export const DialogTrigger = forwardRef<HTMLButtonElement, DialogTriggerProps>(function DialogTrigger(
++  { onClick, type = 'button', ...props },
++  forwardedRef,
++) {
++  const { contentId, open, setOpen } = useDialogContext('Dialog.Trigger')
+ 
+   return (
+-    <>
+-      <button type="button" onClick={() => setOpen(true)}>
+-        {triggerLabel}
+-      </button>
+-      {open &&
+-        createPortal(
+-          <div className="overlay" onClick={() => setOpen(false)}>
+-            <section
+-              aria-describedby={descriptionId}
+-              aria-labelledby={titleId}
+-              className="dialog"
+-              role="dialog"
+-              onClick={(event) => event.stopPropagation()}
+-            >
+-              <h2 id={titleId}>{title}</h2>
+-              <p id={descriptionId}>{description}</p>
+-              {children}
+-              <button type="button" onClick={() => setOpen(false)}>
+-                Close
+-              </button>
+-            </section>
+-          </div>,
+-          document.body,
+-        )}
+-    </>
++    <button
++      {...props}
++      aria-controls={contentId}
++      aria-expanded={open}
++      aria-haspopup="dialog"
++      data-state={open ? 'open' : 'closed'}
++      ref={forwardedRef}
++      type={type}
++      onClick={(event) => {
++        onClick?.(event)
++        if (!event.defaultPrevented) setOpen(true)
++      }}
++    />
+   )
++})
++
++export type DialogPortalProps = {
++  children: ReactNode
++  container?: Element | DocumentFragment | null
++}
++
++export function DialogPortal({ children, container }: DialogPortalProps) {
++  const { open } = useDialogContext('Dialog.Portal')
++  const [mounted, setMounted] = useState(false)
++
++  useEffect(() => setMounted(true), [])
++
++  if (!mounted || !open) return null
++  return createPortal(children, container ?? document.body)
++}
++
++export type DialogOverlayProps = HTMLAttributes<HTMLDivElement>
++
++export const DialogOverlay = forwardRef<HTMLDivElement, DialogOverlayProps>(function DialogOverlay(
++  { onPointerDown, ...props },
++  forwardedRef,
++) {
++  const { layerId, open, setOpen } = useDialogContext('Dialog.Overlay')
++  if (!open) return null
++
++  return (
++    <div
++      {...props}
++      data-state="open"
++      ref={forwardedRef}
++      onPointerDown={(event) => {
++        onPointerDown?.(event)
++        if (!event.defaultPrevented && event.target === event.currentTarget && isTopLayer(layerId)) {
++          event.preventDefault()
++          setOpen(false)
++        }
++      }}
++    />
++  )
++})
++
++export type DialogContentProps = Omit<HTMLAttributes<HTMLDivElement>, 'id'> & {
++  initialFocusRef?: RefObject<HTMLElement | null>
++}
++
++export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(function DialogContent(
++  allProps,
++  forwardedRef,
++) {
++  const {
++    'aria-describedby': ariaDescribedBy,
++    'aria-label': ariaLabel,
++    'aria-labelledby': ariaLabelledBy,
++    initialFocusRef,
++    onKeyDown,
++    ...props
++  } = allProps
++  const { contentId, descriptionId, layerId, open, setOpen, titleId } =
++    useDialogContext('Dialog.Content')
++  const contentRef = useRef<HTMLDivElement>(null)
++  const restoreFocusRef = useRef<HTMLElement | null>(null)
++  const composedRef = useComposedRefs(forwardedRef, contentRef)
++  const hasExplicitDescription = Object.prototype.hasOwnProperty.call(allProps, 'aria-describedby')
++
++  useIsomorphicLayoutEffect(() => {
++    if (!open) {
++      restoreFocusRef.current = null
++      return
++    }
++    if (!contentRef.current) return
++
++    const content = contentRef.current
++    if (!restoreFocusRef.current) {
++      const activeElement = content.ownerDocument.activeElement
++      restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null
++    }
++    const unregister = registerDialog({
++      content,
++      dismiss: () => setOpen(false),
++      id: layerId,
++      restoreFocus: restoreFocusRef.current,
++    })
++
++    const initialFocus = initialFocusRef?.current
++    if (initialFocus && content.contains(initialFocus)) initialFocus.focus({ preventScroll: true })
++    else focusFirstElement(content)
++
++    return unregister
++  }, [layerId, open, setOpen])
++
++  useEffect(() => {
++    if (!open || !contentRef.current || import.meta.env.PROD) return
++    const content = contentRef.current
++    const hasName = Boolean(ariaLabel || ariaLabelledBy || content.ownerDocument.getElementById(titleId))
++    if (!hasName) console.warn('Dialog.Content requires Dialog.Title or an accessible aria-label.')
++  }, [ariaLabel, ariaLabelledBy, open, titleId])
++
++  if (!open) return null
++
++  return (
++    <div
++      {...props}
++      aria-describedby={hasExplicitDescription ? ariaDescribedBy : descriptionId}
++      aria-label={ariaLabel}
++      aria-labelledby={ariaLabel ? ariaLabelledBy : (ariaLabelledBy ?? titleId)}
++      aria-modal="true"
++      data-state="open"
++      id={contentId}
++      ref={composedRef}
++      role="dialog"
++      tabIndex={-1}
++      onKeyDown={(event) => {
++        onKeyDown?.(event)
++        if (event.defaultPrevented || event.key !== 'Tab' || !isTopLayer(layerId)) return
++
++        const focusable = getFocusableElements(event.currentTarget)
++        if (focusable.length === 0) {
++          event.preventDefault()
++          event.currentTarget.focus({ preventScroll: true })
++          return
++        }
++
++        const first = focusable[0]
++        const last = focusable[focusable.length - 1]
++        const active = event.currentTarget.ownerDocument.activeElement
++        if (event.shiftKey && (active === first || active === event.currentTarget)) {
++          event.preventDefault()
++          last.focus({ preventScroll: true })
++        } else if (!event.shiftKey && active === last) {
++          event.preventDefault()
++          first.focus({ preventScroll: true })
++        }
++      }}
++    />
++  )
++})
++
++export type DialogTitleProps = Omit<HTMLAttributes<HTMLHeadingElement>, 'id'>
++
++export const DialogTitle = forwardRef<HTMLHeadingElement, DialogTitleProps>(function DialogTitle(
++  props,
++  forwardedRef,
++) {
++  const { titleId } = useDialogContext('Dialog.Title')
++  return <h2 {...props} id={titleId} ref={forwardedRef} />
++})
++
++export type DialogDescriptionProps = Omit<HTMLAttributes<HTMLParagraphElement>, 'id'>
++
++export const DialogDescription = forwardRef<HTMLParagraphElement, DialogDescriptionProps>(
++  function DialogDescription(props, forwardedRef) {
++    const { descriptionId } = useDialogContext('Dialog.Description')
++    return <p {...props} id={descriptionId} ref={forwardedRef} />
++  },
++)
++
++export type DialogCloseProps = ButtonHTMLAttributes<HTMLButtonElement>
++
++export const DialogClose = forwardRef<HTMLButtonElement, DialogCloseProps>(function DialogClose(
++  { onClick, type = 'button', ...props },
++  forwardedRef,
++) {
++  const { setOpen } = useDialogContext('Dialog.Close')
++  return (
++    <button
++      {...props}
++      ref={forwardedRef}
++      type={type}
++      onClick={(event) => {
++        onClick?.(event)
++        if (!event.defaultPrevented) setOpen(false)
++      }}
++    />
++  )
++})
++
++export const Dialog = {
++  Close: DialogClose,
++  Content: DialogContent,
++  Description: DialogDescription,
++  Overlay: DialogOverlay,
++  Portal: DialogPortal,
++  Root: DialogRoot,
++  Title: DialogTitle,
++  Trigger: DialogTrigger,
+ }
+diff --git a/src/HydrationFixture.tsx b/src/HydrationFixture.tsx
+new file mode 100644
+index 0000000..83c3a78
+--- /dev/null
++++ b/src/HydrationFixture.tsx
+@@ -0,0 +1,18 @@
++import { Dialog } from './Dialog'
++
++export function HydrationFixture() {
++  return (
++    <Dialog.Root>
++      <Dialog.Trigger>Hydrated trigger</Dialog.Trigger>
++      <Dialog.Portal>
++        <Dialog.Overlay>
++          <Dialog.Content>
++            <Dialog.Title>Hydrated dialog</Dialog.Title>
++            <Dialog.Description>Rendered on the client after hydration.</Dialog.Description>
++            <button type="button">Hydrated action</button>
++          </Dialog.Content>
++        </Dialog.Overlay>
++      </Dialog.Portal>
++    </Dialog.Root>
++  )
++}
+diff --git a/src/dialog/modalManager.ts b/src/dialog/modalManager.ts
+new file mode 100644
+index 0000000..f894ae8
+--- /dev/null
++++ b/src/dialog/modalManager.ts
+@@ -0,0 +1,146 @@
++type DialogLayer = {
++  content: HTMLElement
++  dismiss: () => void
++  id: symbol
++  restoreFocus: HTMLElement | null
++}
++
++type ElementSnapshot = {
++  ariaHidden: string | null
++  inert: boolean
++}
++
++const layers: DialogLayer[] = []
++const isolatedElements = new Map<HTMLElement, ElementSnapshot>()
++let listeningDocument: Document | null = null
++
++const focusableSelector = [
++  'a[href]',
++  'area[href]',
++  'button:not([disabled])',
++  'input:not([disabled]):not([type="hidden"])',
++  'select:not([disabled])',
++  'textarea:not([disabled])',
++  'iframe',
++  'details > summary:first-of-type',
++  '[contenteditable="true"]',
++  '[tabindex]:not([tabindex="-1"])',
++].join(',')
++
++function isVisible(element: HTMLElement) {
++  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
++  return style?.display !== 'none' && style?.visibility !== 'hidden' && element.getClientRects().length > 0
++}
++
++export function getFocusableElements(container: HTMLElement) {
++  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter(isVisible)
++}
++
++export function focusFirstElement(container: HTMLElement) {
++  const focusable = getFocusableElements(container)
++  const target = focusable.find((element) => element.hasAttribute('autofocus')) ?? focusable[0] ?? container
++
++  target.focus({ preventScroll: true })
++}
++
++function topLayer() {
++  return layers.at(-1)
++}
++
++export function isTopLayer(id: symbol) {
++  return topLayer()?.id === id
++}
++
++function restoreIsolation() {
++  for (const [element, snapshot] of isolatedElements) {
++    element.inert = snapshot.inert
++    if (snapshot.ariaHidden === null) {
++      element.removeAttribute('aria-hidden')
++    } else {
++      element.setAttribute('aria-hidden', snapshot.ariaHidden)
++    }
++  }
++  isolatedElements.clear()
++}
++
++function isolateElement(element: HTMLElement) {
++  if (!isolatedElements.has(element)) {
++    isolatedElements.set(element, {
++      ariaHidden: element.getAttribute('aria-hidden'),
++      inert: element.inert,
++    })
++  }
++  element.inert = true
++  element.setAttribute('aria-hidden', 'true')
++}
++
++function updateIsolation() {
++  restoreIsolation()
++
++  const content = topLayer()?.content
++  if (!content) return
++
++  let current: HTMLElement = content
++  while (current.parentElement) {
++    const parent = current.parentElement
++    for (const sibling of parent.children) {
++      if (sibling !== current && sibling instanceof HTMLElement) {
++        isolateElement(sibling)
++      }
++    }
++    if (parent === content.ownerDocument.body) break
++    current = parent
++  }
++}
++
++function handleKeyDown(event: KeyboardEvent) {
++  if (event.key !== 'Escape' || event.defaultPrevented) return
++
++  const layer = topLayer()
++  if (!layer) return
++
++  event.preventDefault()
++  event.stopPropagation()
++  layer.dismiss()
++}
++
++function handleFocusIn(event: FocusEvent) {
++  const layer = topLayer()
++  if (!layer || layer.content.contains(event.target as Node)) return
++  focusFirstElement(layer.content)
++}
++
++function startListening(document: Document) {
++  if (listeningDocument === document) return
++  listeningDocument = document
++  document.addEventListener('keydown', handleKeyDown, true)
++  document.addEventListener('focusin', handleFocusIn, true)
++}
++
++function stopListeningWhenIdle() {
++  if (layers.length > 0 || !listeningDocument) return
++  listeningDocument.removeEventListener('keydown', handleKeyDown, true)
++  listeningDocument.removeEventListener('focusin', handleFocusIn, true)
++  listeningDocument = null
++}
++
++export function registerDialog(layer: DialogLayer) {
++  layers.push(layer)
++  startListening(layer.content.ownerDocument)
++  updateIsolation()
++
++  return () => {
++    const index = layers.indexOf(layer)
++    if (index !== -1) layers.splice(index, 1)
++    updateIsolation()
++    stopListeningWhenIdle()
++
++    queueMicrotask(() => {
++      const target = layer.restoreFocus
++      const activeLayer = topLayer()
++      if (target?.isConnected && (!activeLayer || activeLayer.content.contains(target))) {
++        target.focus({ preventScroll: true })
++      }
++    })
++  }
++}
+diff --git a/src/hydration-main.tsx b/src/hydration-main.tsx
+new file mode 100644
+index 0000000..0b93ded
+--- /dev/null
++++ b/src/hydration-main.tsx
+@@ -0,0 +1,5 @@
++import { hydrateRoot } from 'react-dom/client'
++
++import { HydrationFixture } from './HydrationFixture'
++
++hydrateRoot(document.getElementById('root')!, <HydrationFixture />)
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..3f9d69b
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,22 @@
++export {
++  Dialog,
++  DialogClose,
++  DialogContent,
++  DialogDescription,
++  DialogOverlay,
++  DialogPortal,
++  DialogRoot,
++  DialogTitle,
++  DialogTrigger,
++} from './Dialog.js'
++
++export type {
++  DialogCloseProps,
++  DialogContentProps,
++  DialogDescriptionProps,
++  DialogOverlayProps,
++  DialogPortalProps,
++  DialogRootProps,
++  DialogTitleProps,
++  DialogTriggerProps,
++} from './Dialog.js'
+diff --git a/src/styles.css b/src/styles.css
+index 34b9121..ebfbfe2 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -5,6 +5,7 @@
+   inset: 0;
+   justify-content: center;
+   position: fixed;
++  z-index: 1;
+ }
+ 
+ .dialog {
+@@ -15,3 +16,8 @@
+   max-width: 28rem;
+   padding: 2rem;
+ }
++
++main {
++  display: flex;
++  gap: 1rem;
++}
+diff --git a/tests/dialog.spec.ts b/tests/dialog.spec.ts
+index 5beb5a4..13694a1 100644
+--- a/tests/dialog.spec.ts
++++ b/tests/dialog.spec.ts
+@@ -1,7 +1,22 @@
+-import { expect, test } from '@playwright/test'
++import { expect, test, type Page } from '@playwright/test'
++import { resolve } from 'node:path'
++import { createElement } from 'react'
++import { renderToString } from 'react-dom/server'
++
++import { HydrationFixture } from '../src/HydrationFixture'
++
++const browserBundle = resolve(import.meta.dirname, '../dist-browser/app.js')
++const browserStyles = resolve(import.meta.dirname, '../dist-browser/style.css')
++const hydrationBundle = resolve(import.meta.dirname, '../dist-browser/hydrate.js')
++
++async function loadFixture(page: Page) {
++  await page.setContent('<!doctype html><html><head></head><body><div id="root"></div></body></html>')
++  await page.addStyleTag({ path: browserStyles })
++  await page.addScriptTag({ path: browserBundle })
++}
+ 
+ test('traps focus, closes with Escape, and restores the trigger', async ({ page }) => {
+-  await page.goto('/')
++  await loadFixture(page)
+   const trigger = page.getByRole('button', { name: 'Edit profile' })
+   await trigger.click()
+ 
+@@ -9,6 +24,11 @@ test('traps focus, closes with Escape, and restores the trigger', async ({ page
+   await expect(dialog).toBeVisible()
+   await expect(dialog.getByLabel('Name')).toBeFocused()
+ 
++  await page.getByRole('link', { name: 'Background link', includeHidden: true }).evaluate((link) => {
++    link.focus()
++  })
++  await expect(dialog.getByLabel('Name')).toBeFocused()
++
+   await page.keyboard.press('Shift+Tab')
+   await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
+   await page.keyboard.press('Tab')
+@@ -20,7 +40,7 @@ test('traps focus, closes with Escape, and restores the trigger', async ({ page
+ })
+ 
+ test('only the top nested dialog handles Escape and restores local focus', async ({ page }) => {
+-  await page.goto('/')
++  await loadFixture(page)
+   await page.getByRole('button', { name: 'Edit profile' }).click()
+   const parent = page.getByRole('dialog', { name: 'Edit profile' })
+   const nestedTrigger = parent.getByRole('button', { name: 'Open permissions' })
+@@ -38,3 +58,49 @@ test('only the top nested dialog handles Escape and restores local focus', async
+   await page.keyboard.press('Escape')
+   await expect(parent).toBeHidden()
+ })
++
++test('provides modal naming, description, portal placement, and outside dismissal', async ({ page }) => {
++  await loadFixture(page)
++  const trigger = page.getByRole('button', { name: 'Edit profile' })
++  await trigger.click()
++
++  const dialog = page.getByRole('dialog', { name: 'Edit profile' })
++  await expect(dialog).toHaveAttribute('aria-modal', 'true')
++  await expect(dialog).toHaveAccessibleDescription('Update your public information.')
++  await expect(page.locator('body > .overlay')).toHaveCount(1)
++  await expect(page.locator('#root')).toHaveAttribute('inert', '')
++
++  await page.mouse.click(2, 2)
++  await expect(dialog).toBeHidden()
++  await expect(trigger).toBeFocused()
++  await expect(page.locator('#root')).not.toHaveAttribute('inert', '')
++})
++
++test('supports controlled open state', async ({ page }) => {
++  await loadFixture(page)
++  const trigger = page.getByRole('button', { name: 'Open settings' })
++  await trigger.click()
++
++  const dialog = page.getByRole('dialog', { name: 'Settings' })
++  await expect(dialog).toBeVisible()
++  await dialog.getByRole('button', { name: 'Done' }).click()
++  await expect(dialog).toBeHidden()
++  await expect(trigger).toBeFocused()
++})
++
++test('hydrates stable ids and opens a portal without hydration errors', async ({ page }) => {
++  const hydrationErrors: string[] = []
++  page.on('console', (message) => {
++    if (message.type() === 'error') hydrationErrors.push(message.text())
++  })
++
++  const serverHtml = renderToString(createElement(HydrationFixture))
++  await page.setContent(`<!doctype html><html><body><div id="root">${serverHtml}</div></body></html>`)
++  await page.addScriptTag({ path: hydrationBundle })
++
++  await page.getByRole('button', { name: 'Hydrated trigger' }).click()
++  const dialog = page.getByRole('dialog', { name: 'Hydrated dialog' })
++  await expect(dialog).toBeVisible()
++  await expect(dialog.getByRole('button', { name: 'Hydrated action' })).toBeFocused()
++  expect(hydrationErrors).toEqual([])
++})
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+new file mode 100644
+index 0000000..e43751f
+--- /dev/null
++++ b/tsconfig.build.json
+@@ -0,0 +1,11 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "allowImportingTsExtensions": false,
++    "declaration": true,
++    "emitDeclarationOnly": true,
++    "noEmit": false,
++    "outDir": "dist"
++  },
++  "include": ["src/index.ts", "src/Dialog.tsx", "src/dialog/modalManager.ts"]
++}
+diff --git a/tsconfig.package-test.json b/tsconfig.package-test.json
+new file mode 100644
+index 0000000..fdbccac
+--- /dev/null
++++ b/tsconfig.package-test.json
+@@ -0,0 +1,12 @@
++{
++  "compilerOptions": {
++    "jsx": "react-jsx",
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext",
++    "noEmit": true,
++    "skipLibCheck": true,
++    "strict": true,
++    "target": "ES2022"
++  },
++  "include": ["package-tests"]
++}
+diff --git a/vite.browser-test.config.ts b/vite.browser-test.config.ts
+new file mode 100644
+index 0000000..d514049
+--- /dev/null
++++ b/vite.browser-test.config.ts
+@@ -0,0 +1,24 @@
++import { resolve } from 'node:path'
++
++import react from '@vitejs/plugin-react'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  build: {
++    cssCodeSplit: false,
++    emptyOutDir: true,
++    lib: {
++      entry: resolve(import.meta.dirname, 'src/main.tsx'),
++      fileName: () => 'app.js',
++      formats: ['iife'],
++      name: 'DialogFixture',
++    },
++    outDir: 'dist-browser',
++    rollupOptions: {
++      output: {
++        assetFileNames: (asset) => (asset.names.some((name) => name.endsWith('.css')) ? 'style.css' : '[name][extname]'),
++      },
++    },
++  },
++  plugins: [react()],
++})
+diff --git a/vite.config.ts b/vite.config.ts
+index 80316f3..2bdd783 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,4 +1,8 @@
+ import react from '@vitejs/plugin-react'
+ import { defineConfig } from 'vite'
+ 
+-export default defineConfig({ plugins: [react()] })
++export default defineConfig({
++  base: './',
++  build: { outDir: 'dist-app' },
++  plugins: [react()],
++})
+diff --git a/vite.hydration-test.config.ts b/vite.hydration-test.config.ts
+new file mode 100644
+index 0000000..995643c
+--- /dev/null
++++ b/vite.hydration-test.config.ts
+@@ -0,0 +1,18 @@
++import { resolve } from 'node:path'
++
++import react from '@vitejs/plugin-react'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  build: {
++    emptyOutDir: false,
++    lib: {
++      entry: resolve(import.meta.dirname, 'src/hydration-main.tsx'),
++      fileName: () => 'hydrate.js',
++      formats: ['iife'],
++      name: 'DialogHydrationFixture',
++    },
++    outDir: 'dist-browser',
++  },
++  plugins: [react()],
++})
+diff --git a/vite.lib.config.ts b/vite.lib.config.ts
+new file mode 100644
+index 0000000..9586111
+--- /dev/null
++++ b/vite.lib.config.ts
+@@ -0,0 +1,20 @@
++import { resolve } from 'node:path'
++
++import react from '@vitejs/plugin-react'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  build: {
++    emptyOutDir: true,
++    lib: {
++      entry: resolve(import.meta.dirname, 'src/index.ts'),
++      fileName: 'index',
++      formats: ['es'],
++    },
++    outDir: 'dist',
++    rollupOptions: {
++      external: ['react', 'react-dom', 'react/jsx-runtime'],
++    },
++  },
++  plugins: [react()],
++})

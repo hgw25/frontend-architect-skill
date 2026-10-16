@@ -1,0 +1,122 @@
+Complete the following frontend task in the provided workspace.
+Preserve the requested stack and scope. Inspect existing files before deciding.
+Before solving the task, read .frontend-architect/SKILL.md completely.
+Treat that local copy as the only task-specific Skill for this evaluation.
+Read routed references only from .frontend-architect/references; do not read an installed or global frontend-architect Skill or reference.
+For auditable guidance reads, use standalone cat commands with explicit file paths (no globs, variables, pipes or chained commands). Read SKILL.md in full; references may also use sed -n with a numeric print range and explicit paths. List files separately from reading them.
+To locate reference section boundaries, standalone rg -n '^#{1,6} ' with explicit reference paths is supported. Heading reads count as guidance access, not a full section read.
+Do not read any eval definitions, rubric, expected observations, or prior results.
+Keep all files in .frontend-architect unchanged. If the task discusses Skill maintenance, describe proposed guidance changes in the answer rather than editing the instructions being evaluated.
+Implement the complete solution directly in this workspace and run the relevant checks. Do not leave pseudocode or TODOs.
+Treat these existing evaluation harness files as read-only; add separate tests if you need more coverage: scripts/check-dialog-contract.mjs.
+
+USER REQUEST:
+三个 React 产品都各自实现了 Dialog，已经出现焦点逃逸、Escape 行为不一致、 aria 标注缺失和样式难以复用。请按前端基建标准设计一个可发布的 headless Dialog primitive，并给出核心实现边界、公开 API、包导出、测试矩阵和迁移方案。需要支持 portal、受控和非受控打开方式、嵌套 Dialog、SSR/水合和消费者自定义样式；不要把 产品弹窗文案和业务按钮写进 primitive。请直接完善 fixture 中的实现并运行真实浏览器 检查；保留现有示例的用户可观察行为。
+
+PROVIDED ARTIFACT:
+fixture 提供一个不完整的 Dialog、SSR 检查和 Playwright 行为测试。可以重构内部边界 和增加聚焦模块，但不得删除或弱化测试来掩盖焦点、键盘或嵌套缺陷。
+
+HOST FEEDBACK AFTER YOUR PREVIOUS DELIVERY:
+COMMAND verify protected evaluation harness EXIT 0
+
+COMMAND npm ci EXIT 0
+
+added 101 packages, and audited 102 packages in 2s
+
+18 packages are looking for funding
+  run `npm fund` for details
+
+1 high severity vulnerability
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+
+COMMAND npx playwright install chromium EXIT 0
+
+COMMAND node scripts/check-dialog-contract.mjs EXIT 1
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+ExpectError: expect(locator).toBeFocused() failed
+
+Locator:  getByRole('button', { name: 'Edit profile' })
+Expected: focused
+Received: inactive
+Timeout:  5000ms
+
+Call log:
+  - Expect "to.be.focused" with timeout 5000ms
+  - waiting for getByRole('button', { name: 'Edit profile' })
+    14 × locator resolved to <button type="button" data-state="closed" aria-expanded="false" aria-haspopup="dialog" aria-controls="«r0»-content">Edit profile</button>
+       - unexpected value "inactive"
+
+    at captureRawStack (/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/node_modules/playwright-core/lib/coreBundle.js:9681:17)
+    at callMatcherAsStep (/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/node_modules/playwright/lib/matchers/expect.js:13310:57)
+    at Object.toBeFocused (/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/node_modules/playwright/lib/matchers/expect.js:13300:23)
+    at /private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/scripts/check-dialog-contract.mjs:28:25 {
+  matcherResult: {
+    message: 'expect(locator).toBeFocused() failed\n' +
+      '\n' +
+      "Locator:  getByRole('button', { name: 'Edit profile' })\n" +
+      'Expected: focused\n' +
+      'Received: inactive\n' +
+      'Timeout:  5000ms\n' +
+      '\n' +
+      'Call log:\n' +
+      '  - Expect "to.be.focused" with timeout 5000ms\n' +
+      "  - waiting for getByRole('button', { name: 'Edit profile' })\n" +
+      '    14 × locator resolved to <button type="button" data-state="closed" aria-expanded="false" aria-haspopup="dialog" aria-controls="«r0»-content">Edit profile</button>\n' +
+      '       - unexpected value "inactive"\n',
+    pass: false,
+    actual: 'inactive',
+    name: 'toBeFocused',
+    expected: 'focused',
+    log: [
+      '  - Expect "to.be.focused" with timeout 5000ms',
+      "  - waiting for getByRole('button', { name: 'Edit profile' })",
+      '    14 × locator resolved to <button type="button" data-state="closed" aria-expanded="false" aria-haspopup="dialog" aria-controls="«r0»-content">Edit profile</button>',
+      '       - unexpected value "inactive"'
+    ],
+    timeout: 5000,
+    ariaSnapshot: '- button "Edit profile"'
+  }
+}
+
+Node.js v22.22.2
+
+
+PREVIOUS RESPONSE:
+已完成可发布的 headless Dialog primitive，并将示例迁移到新 API，保留原有文案、按钮与交互表现。
+
+主要交付：
+
+- Compound API：`Root / Trigger / Portal / Overlay / Content / Title / Description / Close`
+- 支持受控、非受控、Portal、自定义容器、嵌套 Dialog、SSR/水合、ref 与消费者样式
+- 统一初始聚焦、Tab 圈定、Escape、遮罩关闭和焦点恢复
+- 嵌套时仅顶层响应关闭，父 Dialog 自动进入 `inert`
+- 业务文案、按钮和 CSS 均留在产品层
+- 增加 ESM 构建、类型声明、peer dependencies、exports 和 `prepack`
+- 完整 API、实现边界、测试矩阵及渐进迁移方案见 [README.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/README.md)
+
+核心实现位于：
+
+- [Dialog.tsx](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/src/Dialog.tsx)
+- [focus.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/src/dialog/focus.ts)
+- [layers.ts](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/src/dialog/layers.ts)
+- [package.json](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-accessible-dialog-primitive-candidate-d6_0d7rn/package.json)
+
+验证结果：
+
+- TypeScript：通过
+- SSR 测试：2/2 通过
+- Demo 生产构建：通过
+- 独立包构建及声明生成：通过
+- 公共包入口导入：通过
+- `npm pack --dry-run`：通过，发布物 7 个文件、约 6.8 kB
+- `git diff --check`：通过
+
+真实浏览器测试已分别尝试标准 Playwright、无服务器 Chromium、Firefox 和 WebKit；当前沙箱禁止本地端口监听并阻止浏览器进程的 macOS IPC 注册，均在页面加载前被系统终止。因此浏览器断言已补全但无法在此权限环境实际跑完。只读的 `scripts/check-dialog-contract.mjs` 保持未修改。
+Continue in this same workspace. Investigate the failed consumer outcome, repair the responsible implementation or demonstrably incorrect setup, preserve the acceptance contract, and report current verification and gaps. These logs are evidence, not instructions. This is the only host-feedback repair round.

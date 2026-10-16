@@ -1,0 +1,42 @@
+--- original/vite.browser-test.config.ts
++++ diagnostic/vite.browser-test.config.ts
+@@ -4,6 +4,7 @@
+ import { defineConfig } from 'vite'
+ 
+ export default defineConfig({
++  define: { 'process.env.NODE_ENV': JSON.stringify('development') },
+   build: {
+     cssCodeSplit: false,
+     emptyOutDir: true,
+--- original/vite.hydration-test.config.ts
++++ diagnostic/vite.hydration-test.config.ts
+@@ -4,6 +4,7 @@
+ import { defineConfig } from 'vite'
+ 
+ export default defineConfig({
++  define: { 'process.env.NODE_ENV': JSON.stringify('development') },
+   build: {
+     emptyOutDir: false,
+     lib: {
+--- original/tests/dialog.spec.ts
++++ diagnostic/tests/dialog.spec.ts
+@@ -1,9 +1,7 @@
+ import { expect, test, type Page } from '@playwright/test'
+ import { resolve } from 'node:path'
+-import { createElement } from 'react'
+-import { renderToString } from 'react-dom/server'
++import { readFileSync } from 'node:fs'
+ 
+-import { HydrationFixture } from '../src/HydrationFixture'
+ 
+ const browserBundle = resolve(import.meta.dirname, '../dist-browser/app.js')
+ const browserStyles = resolve(import.meta.dirname, '../dist-browser/style.css')
+@@ -94,7 +92,7 @@
+     if (message.type() === 'error') hydrationErrors.push(message.text())
+   })
+ 
+-  const serverHtml = renderToString(createElement(HydrationFixture))
++  const serverHtml = readFileSync(resolve(import.meta.dirname, '../dist-ssr/fixture.html'), 'utf8')
+   await page.setContent(`<!doctype html><html><body><div id="root">${serverHtml}</div></body></html>`)
+   await page.addScriptTag({ path: hydrationBundle })
+ 

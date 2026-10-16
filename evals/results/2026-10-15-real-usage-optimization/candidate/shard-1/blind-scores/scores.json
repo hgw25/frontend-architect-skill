@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "root-cause-before-recovery-executable",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别增量终态缺少 replyTo、历史恢复为何有效、需保留其他请求与恢复能力，并拒绝无必要的全量轮询。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "直接复用消息合并后的既有事实修正账本输入，只改一处所有权明确的逻辑，没有新增轮询、依赖或补偿系统。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "关联释放仍由 ledger 的消息合并和请求账本边界负责，修改位于事实完成合并之后，未把恢复逻辑散落到调用方。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实际 diff 将 scope、replyTo、id、status 全部统一取自 stored，代码与调用顺序一致；完整测试命令 7/7 通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "验证覆盖 done、error、重复终态、并行请求、scope 隔离、未知关联、终态先到及历史恢复，涉及的身份、顺序和幂等边界充分。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "提供了可执行测试的成功输出及具体用例，并报告基线失败数量、修复后结果和 diff 检查；同时明确未覆盖生产持久层、跨进程并发与真实传输。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给出修复结果，再清楚区分确定根因、恢复机制、验证范围和未知部分，范围与风险表达明确。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供基线测试的原始命令输出，仅在回复中报告基线为 3/7。",
+          "证据仅覆盖内存账本 fixture，未覆盖生产持久层、跨进程并发或真实传输链路。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "justified-recovery-after-signal-loss",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "完整吸收了推送不补发、查询权威、无游标、后台和前台均可能丢最终通知、已有生命周期管理器等约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了推送补偿、永久轮询等更重方案，选择复用现有管理器进行仅针对前台活跃任务的有限核对，并约束并发和退避。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "把查询、定时器、身份校验和结果发布统一归属生命周期管理器，组件不各自持有定时器，终态定义继续复用领域契约。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖账号与任务身份、生命周期代次、查询和推送竞态、迟到响应、单请求在途、后台清理、失败重试及终态停止。"
+          },
+          {
+            "key": "operability",
+            "score": 1,
+            "reason": "给出了限流意识、退避、停止条件和真机请求记录检查，但没有定义上线灰度、监控信号、告警阈值或异常流量的恢复控制。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "验证矩阵和两条真实生命周期验收路径与风险对应良好，但没有可执行 fixture，也明确未运行任何验证。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有应用源码、测试配置或可执行 fixture，所有验证均为待执行方案。",
+          "无法确认现有生命周期管理器的具体 API、服务端限流值及项目既有错误策略。",
+          "没有生产灰度、遥测或请求量基线证据。"
+        ],
+        "normalized_score": 13.33,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "covered-hover-diagnosis",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "正确区分直接 dispatchEvent 与真实指针命中，结合透明标题、负 margin、组合组件和上游 demo 评估现有证据，同时保留其他候选原因。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "没有依据不足地替换 Tooltip，而是按命中、事件、开放状态、挂载和可见性逐段定位，并为不同证据规定相称的最小修复。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "调查与验收覆盖几何命中、pointer-events、事件/ref 合并、portal、裁剪、层叠、Tooltip 与 Dropdown 共存，以及指针和键盘交互。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "提出了真实浏览器坐标移动、elementFromPoint、可访问角色及多状态验证，且明确 DOM 模拟不足；但当前不能运行应用，没有实际结果。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结论、证据强度、未知部分、决策条件和通过标准均清晰，且没有把高概率假设表述成已确认根因。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供应用源码、DOM/CSS、组件测试实现或运行配置。",
+          "没有实际浏览器命中栈、边界矩形、事件链、浮层 DOM 或 A/B 结果。",
+          "所有最小修复分支仍取决于后续运行时调查。"
+        ],
+        "normalized_score": 14.4,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "anticipate-small-boundary",
+        "dimensions": [
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "明确比较并排除了 Repository、Provider、全局 Store、通用请求框架和多层模型，只建立能解决当前散落转换与错误处理的小边界。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "接口响应解析与映射归 order-api，页面加载状态归唯一 loadOrder，金额格式化作为纯派生能力；后续字段、展示或数据源变化均有明确修改位置。"
+          },
+          {
+            "key": "developer_experience",
+            "score": 2,
+            "reason": "提供了窄且易调用的类型契约、统一加载入口、可选 AbortSignal、错误分类原则和具体示例，并避免让调用方接触 total_in_cents。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "没有项目源码、依赖清单或框架约定，无法核实是否已有请求、金额格式化或错误规范可直接复用。",
+          "这是设计建议，没有实现或执行验证。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

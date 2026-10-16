@@ -1,0 +1,30 @@
+--- src/Dialog.tsx
++++ src/Dialog.tsx
+@@ -268,7 +268,19 @@
+       focusElement(fallback)
+     }
+ 
++    const handleFocusOut = () => {
++      queueMicrotask(() => {
++        if (!isTopDialog(content) || content.contains(document.activeElement)) return
++        const fallback =
++          (layer.lastFocusedInside?.isConnected ? layer.lastFocusedInside : null) ??
++          getFocusableElements(content)[0] ??
++          content
++        focusElement(fallback)
++      })
++    }
++
+     document.addEventListener('focusin', handleFocusIn)
++    document.addEventListener('focusout', handleFocusOut)
+ 
+     if (!focusSession.didAutoFocus) {
+       focusSession.didAutoFocus = true
+@@ -295,6 +307,7 @@
+ 
+     return () => {
+       document.removeEventListener('focusin', handleFocusIn)
++      document.removeEventListener('focusout', handleFocusOut)
+       unregister()
+ 
+       queueMicrotask(() => {
