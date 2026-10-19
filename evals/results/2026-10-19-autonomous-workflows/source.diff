@@ -1,0 +1,602 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e649e3c..7896892 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -3,6 +3,15 @@
+ 本文件记录 Frontend Architect Skill 的可安装发布版本。Git tag 是发布内容的不可变标识，
+ `VERSION` 是仓库中的当前版本单一来源。
+ 
++## [Unreleased]
++
++- 将需求开发、架构设计和代码审查作为三条默认工作路径：从简短目标自主发现上下文和适用检查；设计与审查保持授权边界，开发交付前用同一工程标准检查实际代码。
++- 普通审查默认同时核对当前有效需求和工程质量，涵盖现有代码及调用关系；不以全绿测试代替可维护性判断，不依赖用户额外列出审查维度。简化技能调用示例和默认提示。
++- 增加四项短请求用例，定向复测开发、架构和两类审查，并保留局部修改对照；补清图示有效性、设计落盘和审查责任边界。复测与实际产物检查通过，91 项脚本回归通过；未运行完整 60 例，失败、评分漏判和证据限制见[自主流程验证](evals/results/2026-10-19-autonomous-workflows/report.md)。
++- 需要设计的功能开发、职责重构、共享基建与迁移默认先写技术文档，明确实施步骤、每步功能和函数或类契约，并包含技术架构图与数据流转图；局部既定修改保持轻量路径，文档不增加审批门槛。
++- 增加仅提供需求与技能的条件字段和导出职责重构用例，核对文档先行、设计完整性与实际功能，保留局部修改和文档深度对照。
++- 定向对照保留原版和无技能组缺少先行设计、首轮图示语法错误及评分漏判；细化规则后重新生成，两项功能检查及四张图的解析通过。过程和限制见[需求开发流程验证](evals/results/2026-10-19-design-workflow/report.md)。
++
+ ## [0.5.0] - 2026-10-16
+ 
+ ### Changed
+diff --git a/README.md b/README.md
+index ad51c72..a8a217b 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,8 @@
+ # Frontend Architect
+ 
+-一个面向 AI 编码代理的高级前端与前端架构 Skill，覆盖 Web、App/跨端和小程序运行时。
++一个面向 AI 编码代理的高级前端与前端架构 Skill，主要负责需求开发、架构设计和代码审查，
++覆盖 Web、App/跨端和小程序运行时。用户说明目标与对象后，技能自行发现上下文、选择流程，
++完成适用的设计、实现、工程质量检查和验证，无需再列一遍工程要求。
+ 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
+ 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
+ 
+@@ -184,19 +186,26 @@ printf 'Backup: %s\n' "$skill_backup_dir"
+ 显式调用示例：
+ 
+ ```text
+-使用 $frontend-architect 实现这个需求，并说明关键架构取舍。
++使用 $frontend-architect 实现这个需求。
+ ```
+ 
+ ```text
+-使用 $frontend-architect review 这个模块，重点检查模块边界、状态所有权和测试。
++使用 $frontend-architect 设计这个模块的架构。
+ ```
+ 
+ ```text
+-使用 $frontend-architect 判断这里应该使用纯函数、Reducer、状态机还是类。
++使用 $frontend-architect 审查这个模块。
+ ```
+ 
+ 该 Skill 默认也允许 Codex 在匹配的前端开发与架构任务中自动发现。
+ 
++三类请求有不同的默认完成状态：需求开发会先设计、分步实现、检查实际代码质量并验证；
++架构设计交付可实施的技术文档，不擅自开始编码；代码审查自行寻找当前有效契约，沿调用
++关系检查需求符合度及完整的适用工程标准，给出具体发现和有证据边界的质量结论。
++仅审查时不修改实现；已有测试全绿不能代替函数、模块、所有权和维护成本的判断。
++“最高标准”落实为同一套可检查的工程要求，范围和验证深度随任务调整，不以更多抽象、
++目录或假想防护证明质量，也不作超出实际覆盖的全面达标承诺。
++
+ ## 核心观点
+ 
+ ### 统一的判断体系
+@@ -208,12 +217,15 @@ Skill 按四个部分组织：入口中的核心判断体系和任务执行方
+ 状态或资源的所有者、实际执行位置和可发现错误的验证；新边界用有现实依据的变化
+ 检验，而不靠目录数量证明架构质量。证据变化时可以回到前面的决定重新调整。
+ 
+-执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。明确的小改动
+-直接实现，边界清楚的方案在对话中简述；只有需要跨阶段或协作保留的重要决定才落成
+-简短文档。文档不是默认审批门槛。
++执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。新建或改变
++业务流程、重新分配职责的重构、共享基建和迁移，默认先形成技术文档再改实现，无需
++用户额外提醒。文档明确拆成多少步、每步功能与依赖、支撑的类型及函数或类契约、
++技术架构图、数据流转图和逐步验收；实现中同步修订，交付时补回实际验证结果。
++文案、间距或沿用既有契约的局部接线仍可直接完成。文档不增加默认审批门槛。
++详见[需求到技术设计](references/architecture-and-code.md#turn-requirements-into-an-executable-technical-design)。
+ 
+ 领域概念和重要决策优先沉淀到项目已有说明：定义保存概念、身份和关系，决策记录保留
+-选择与理由，实施方案保存验收和后续步骤。已确认的修订及时更新原记录；未解决的
++选择与理由，技术设计保存功能拆分、代码契约、图示及验收。已确认的修订及时更新原记录；未解决的
+ 契约冲突保持明确，不猜测身份映射。按需创建有后续用途的简短记录，小改动无需先建
+ 词汇表、ADR 或初始化会话。详见[领域知识与决策指导](references/architecture-and-code.md#preserve-domain-knowledge-and-decisions)。
+ 
+diff --git a/SKILL.md b/SKILL.md
+index cb5294f..379e2b9 100644
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: frontend-architect
+-description: Design, implement, refactor, or review frontend code for web, app, and mini-programs. Use for changes of any size, including shared infrastructure, needing proportional judgment about state, ownership, public contracts, runtime, accessibility, security, performance, and verification. Excludes backend-only work and visual assets without frontend code.
++description: Develop frontend requirements, produce implementation-ready architecture designs, and review code against product contracts and a shared engineering standard. Autonomously discover context, choose the workflow and complete applicable design, code-quality and verification work for web, app and mini-programs, including shared foundations. Excludes backend-only work and visual assets without frontend code.
+ ---
+ 
+ # Frontend Architect
+@@ -9,6 +9,23 @@ Produce frontend changes that are easy to understand, safe to change, and
+ proportionate to the product need. Apply the same engineering standard when
+ implementing and reviewing; functional success alone does not prove code quality.
+ 
++## Own the task from a short request
++
++The user supplies the outcome and target, not a checklist of engineering duties.
++Infer whether they want development, architecture design or code review from their
++request and context. Discover relevant requirements, accepted decisions, code,
++consumers and checks yourself; choose the needed guidance without waiting for the
++user to name modularity, function design, state ownership, diagrams or review axes.
++Ask only when a consequential choice remains unresolved after investigation;
++continue independent work. Do not stop at a plan when implementation is requested.
++
++Use the full applicable shared standard as the quality bar in all three workflows.
++Task size changes scope, design detail and verification effort, not whether clarity,
++correctness and maintainability matter. "Highest standard" does not justify invented
++defects, speculative frameworks or claims beyond evidence. Respect an explicitly
++limited scope and existing authorization; design-only and review-only requests do
++not authorize implementation. Routine workflow selection needs no approval.
++
+ ## Shared engineering standard
+ 
+ Apply these defaults to code, configuration, scripts and operations in scope:
+@@ -50,7 +67,8 @@ code, consumers and authoritative contracts. Model identities, minimal state,
+ transitions and effect owners, then connect a complete flow to a check that could
+ expose its failure. Shared rules must agree across the paths that implement them.
+ Revisit decisions when evidence changes; scale depth to uncertainty and impact.
+-These checkpoints need no document set or approval sequence.
++For work that needs design, turn these checkpoints into the technical document
++required below before changing implementation. Documentation adds no approval gate.
+ 
+ Follow the selected framework, router and repository conventions. Read relevant
+ existing domain definitions and decisions; visual similarity does not establish
+@@ -63,12 +81,13 @@ comments and documentation.
+ | Requested work | Execution and completion |
+ | --- | --- |
+ | Clear local edit | Implement directly within established behavior and boundaries; check the affected outcome |
+-| Feature | Resolve domain ambiguity and connect one complete flow early, then meaningful branches and recovery |
++| Feature | Write the technical design and ordered increments first; connect one complete flow early, then meaningful branches and recovery |
++| Architecture design | Inspect the supplied context, save and link the technical document below with functional steps, code contracts and both diagrams; distinguish proposed checks from executed evidence; stop before implementation unless authorized |
+ | Defect | Reproduce the symptom, distinguish hypotheses, fix its responsible boundary and repeat the decisive check |
+ | Refactor or simplification | Preserve intended contracts; remove mechanisms serving abandoned requirements while retaining real consumers; verify surviving behavior |
+ | Shared foundation | Establish consumers and a narrow public contract; complete applicable types, diagnostics, artifacts, compatibility and consumer checks |
+ | Migration | Use an incremental seam, compatibility and recovery; retire the old path after evidence |
+-| Review only | Establish scope and requirement sources; inspect changed behavior and omissions, then report actionable findings and concrete coverage gaps; do not edit implementation |
++| Review only | Infer scope, discover requirement sources and assess both requirement compliance and the shared engineering standard; inspect real code and omissions, report evidenced findings and a bounded quality conclusion; do not edit implementation |
+ 
+ For a defect, distinguish symptom, hypothesis and demonstrated mechanism. Recovery
+ clearing a symptom does not establish the main-path cause. Retain justified
+@@ -76,12 +95,25 @@ recovery, withdraw rejected experiments, and leave missing incident evidence
+ unresolved. When tests disagree with the application, inspect the harness and
+ real event/layout conditions before changing production code.
+ 
+-A settled local edit needs no design document. Explain a bounded choice briefly;
+-record a concise plan only when unsettled ownership, shared contracts, migration
+-or handoff needs it. As lasting domain meanings or consequential decisions settle,
+-update their existing owned records, preserving useful reasons and superseded
+-history. Missing documents do not block ordinary work; recording a decision does
+-not introduce an approval gate.
++### Design before implementation
++
++For new or changed business workflows, refactors that redistribute responsibilities,
++shared foundations and migrations, create or update a technical document before
++editing implementation, even when the user asks only for the feature. Read
++[technical design](references/architecture-and-code.md#turn-requirements-into-an-executable-technical-design).
++Decompose the requirement into an explicitly counted, dependency-ordered sequence;
++map each step's functions or classes to its functionality, contracts and acceptance.
++Include both a technical architecture diagram and a data-flow diagram. Keep this
++design aligned with implementation and verification through delivery.
++
++A settled local edit that only follows established behavior and boundaries needs
++no design document: for example a label, spacing token or existing filter binding.
++Do not use file count or the absence of ambiguity to exempt a new business flow.
++Investigation and read-only review need no implementation document unless requested;
++an unexplained defect needs causal evidence before a proposed redesign.
++Use the project's existing documentation location and relevant owned record; if
++none exists, create a discoverable document. Scale detail to the actual requirement,
++without waiting for document approval. Preserve useful decision reasons and history.
+ 
+ ## Read only the needed sections
+ 
+@@ -120,6 +152,11 @@ authorities; applicable correctness and safety obligations still hold.
+ 
+ ## Verify and report
+ 
++Before delivering implementation, inspect the actual changed code and affected
++callers against the same engineering standard used in a requested review; remedy
++in-scope defects and maintenance problems. Passing behavior checks is not this
++code-quality check, and the check needs no separate review ceremony.
++
+ Choose checks that can expose the changed outcome at its real consumer boundary.
+ Check the consumer's settled outcome, not just that a handler ran: pending work,
+ accepted data, visible feedback, recovery and the final state after interruption
+diff --git a/agents/openai.yaml b/agents/openai.yaml
+index 61ec4a4..d901277 100644
+--- a/agents/openai.yaml
++++ b/agents/openai.yaml
+@@ -1,4 +1,4 @@
+ interface:
+   display_name: "Frontend Architect"
+-  short_description: "Engineer production-quality web, app, and mini-program frontends"
+-  default_prompt: "Use $frontend-architect to design, implement, or review this web, app, or mini-program frontend change with proportional depth, explicit runtime and rendering boundaries, tradeoffs, and verification."
++  short_description: "Develop, design and review frontends autonomously"
++  default_prompt: "Use $frontend-architect for this frontend task."
+diff --git a/evals/cases.md b/evals/cases.md
+index 030f3aa..efcbfab 100644
+--- a/evals/cases.md
++++ b/evals/cases.md
+@@ -162,6 +162,23 @@ CI 校验用例结构、维度名称和必填字段，但不会伪装成模型
+ 
+ ## 从真实使用记录验证改进
+ 
++自主工作流用例仅给“把条件字段支持做完”“设计这个模块的架构”或“审查这次改动”等简短
++目标，不在请求中补充设计步骤、图示或工程审查维度。`autonomous-feature-development`
++和 `autonomous-architecture-design` 检查交付路径与权限边界；两个 `autonomous-review-*`
++分别检查全绿代码的调用协议问题及分散需求下的遗漏路径。后者复用社区快照；前者的
++`autonomous-export-review` 源自 `export-operation-review`，仅移除 README 中对评估维度的
++提示，保留原始代码、公共契约和检查。比较修改前后指导时，使用相同采集器、输入和模型；
++不会因新指导更明确就把原指导已经会做的行为计为新增能力。
++
++`requirement-only-conditional-fields` 和 `requirement-only-export-refactor` 只向生成代理
++提供业务或维护需求、原始代码与 Skill，不提示写技术文档、拆实施步骤或画图，也不提供
++参考方案。分别检查新增业务规则和职责重构是否主动先保存技术设计，再按步骤修改实现；
++从原始执行事件核对首次文档与首次源码/测试修改顺序，从实际产物核对步骤、代码契约、
++架构图和数据流图。两类图不能只靠出现 Mermaid 围栏或固定标题判定合格。
++用可用解析器核对实际图示语法；模型评分通过不能覆盖图示无法解析的失败。
++同时保留 `local-edit-without-domain-documents` 和 `proportional-design-documentation`
++检查局部修改的轻量路径；比较无 Skill、原指导和新指导时固定模型与配置。
++
+ 将真实失败转为脱敏、可独立复现的输入，不把私人对话、项目数据或答案写进 fixture。
+ 区分已确认加载 Skill 的任务与仅有相似问题的补充案例；记录其他技能、仓库规则、模型
+ 和后续人工纠正的影响，不能把最终代码质量全部归因于本 Skill。
+diff --git a/evals/cases.yaml b/evals/cases.yaml
+index 993c9b2..2dcacf3 100644
+--- a/evals/cases.yaml
++++ b/evals/cases.yaml
+@@ -1,5 +1,149 @@
+ version: 1
+ cases:
++  - id: autonomous-feature-development
++    title: 简短功能目标自主完成发现设计实现与检查
++    prompt: 把这个表单的条件字段支持做完。
++    artifact: ''
++    fixture: evals/fixtures/conditional-fields
++    protected_paths: [package.json, package-lock.json, test/process-form.test.js, test/conditional-fields.test.js]
++    validation_commands: [npm ci, npm run check]
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
++    must_observe:
++      - 自行从原有契约与现有验收检查发现 enabledWhen、disabled 优先、单次求值和顶层提交快照要求
++      - 未经额外流程提醒先保存技术设计，包含有依赖与验收的功能步骤、实际代码契约及架构图和数据流转图
++      - 继续完成实现并运行现有检查，审视真实函数和调用语义，不停在方案或要求用户补列工程职责
++    fail_if:
++      - 只交付计划或提出仓库已经能回答的流程问题，未完成已授权功能
++      - 首次修改实现前完全省略技术设计或事后补写，或缺少步骤、代码契约及两类有效图示中的任一项
++      - 受保护检查失败或被修改，或声称未运行的验证已经通过
++
++  - id: autonomous-architecture-design
++    title: 简短架构请求默认交付可实施设计且不开始编码
++    prompt: 设计这个文件上传模块的架构。
++    artifact: |
++      项目事实：浏览器 React + TypeScript 应用，当前上传模块只有下面的单文件上传入口。
++      已有 appApi 负责认证、取消信号传递和标准错误，不需要另建请求或认证框架。
++
++      src/uploads/upload.ts
++      import { appApi } from '../app/api';
++      export async function uploadFile(file: File, signal: AbortSignal) {
++        return appApi.upload(file, { signal });
++      }
++
++      docs/uploads.md（已接受的新产品契约）
++      用户可添加多个文件，每次最多两个文件处于上传状态；界面展示每个文件的进度，
++      支持暂停、继续、取消和失败重试，已由服务端确认的片不重复传输。只需页面存活期内
++      恢复，不要求刷新后保留 File 或后台上传。页面关闭时释放本地资源。
++      后端已提供稳定的分片 API：create(fileName, size) 返回 uploadId 和 partSize；
++      putPart(uploadId, index, bytes, signal) 确认该片；inspect(uploadId) 返回 confirmedIndices；
++      complete(uploadId) 返回 fileId；status(uploadId) 返回 uploading/completed 及完成后的 fileId；
++      abort(uploadId) 终结服务端会话。完整成功只能在服务端确认后报告；complete 的响应丢失时
++      可以用 status 对账。这些调用通过现有 appApi 接入，不在前端自己拼认证头。
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, paradigm_choice, correctness_boundary, verification_evidence, communication_quality]
++    must_observe:
++      - 自主交付持久化且可实施的技术文档，不依赖提示拆步骤、设计函数类或画图
++      - 按依赖和功能拆出明确数量的增量及验收，定义队列、单文件会话、协议适配与 UI 的契约和所有权
++      - 架构与数据流图准确覆盖两文件并发、暂停恢复对账、完成确认及资源释放，图示应可读，若使用图形 DSL 则语法应有效
++      - 函数和资源对象按实际职责选择，复用 appApi，不将 proposed 验证写为已执行
++    fail_if:
++      - 未在工作区保存实际技术设计文档，包括聊天中已有完整设计但没有文档文件；本用例检验默认交付，原始请求未提醒保存不构成豁免
++      - 只给原则目录或聊天提纲，缺少保存的技术文档、功能步骤、代码契约或任一必要有效图示
++      - 把仅设计请求执行成源码开发或安装项目依赖，或等待非必要设计审批
++      - 混淆暂停、取消和最终完成，另建认证请求框架，或声称未执行的运行时检查已通过
++
++  - id: autonomous-review-maintainability
++    title: 普通审查自行识别全绿代码中的职责和调用协议问题
++    task_type: review
++    fixture: evals/fixtures/autonomous-export-review
++    prompt: 审查这次改动。
++    artifact: ''
++    validation_commands: [node --test before/test/export.test.mjs after/test/export.test.mjs]
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, verification_evidence, communication_quality]
++    must_observe:
++      - 自行发现公共契约并审查需求符合度及工程质量，不要求用户再列维度
++      - 沿两个真实入口识别重复准备协议、可变上下文和私有调用顺序外泄，以现实变化说明维护成本
++      - 准确区分现有功能通过与职责边界回退，保留必要公共入口委托，给出有覆盖边界的质量结论
++    fail_if:
++      - 因功能检查通过就宣布工程质量达标，或漏掉跨调用方的步骤顺序和上下文耦合
++      - 只罗列通用原则而没有具体位置和实际维护后果，或把正常行为编造为功能或安全缺陷
++      - 修改被审查代码，或要求用户补充本可自行确定的审查维度后才开始
++
++  - id: autonomous-review-contracts
++    title: 普通审查自主发现有效需求和未修改的遗漏路径
++    task_type: review
++    fixture: evals/fixtures/community-review
++    prompt: 审查这次改动。
++    artifact: ''
++    validation_commands: [node --test after/test/*.test.mjs]
++    applicable_dimensions: [requirements_context, module_boundaries, correctness_boundary, verification_evidence, communication_quality]
++    must_observe:
++      - 自行定位产品文档、已接受修订和实际代码，兼顾需求与工程质量
++      - 沿调用链发现无 ID 获取未禁用、目录前台恢复遗漏、重试使用新草稿及首屏失败后复用旧游标
++      - 保留纯文本作者、本地收藏和不可变分类的合理例外，声明静态审查与真实浏览器证据边界
++      - 对快照外宿主或调用方负责的集成路径区分证据缺口与已证实的模块内缺陷
++    fail_if:
++      - 漏掉无 ID 获取、目录恢复、重试快照或失败查询复用旧游标中的任一契约问题
++      - 将已取消作者链接、本地状态不刷新或固定标签判为缺陷，或为了结构统一推荐无依据重写
++      - 修改被审代码、因测试全绿宣布全面达标，或声称执行了不存在的 React 浏览器验证
++      - 仅因未提供宿主或外部调用方就断言其集成缺失并列为确定功能缺陷，而非明确记录证据缺口
++
++  - id: requirement-only-conditional-fields
++    title: 仅给条件字段业务需求时主动完成技术设计再实现
++    prompt: >-
++      给这个表单提交能力增加条件字段。字段可以声明同步的 enabledWhen(values)，只在
++      返回 true 时参与 required、自定义校验和提交；disabled 优先，禁用时条件回调也不运行。
++      每次提交开始时捕获一份顶层值快照，条件只求值一次，所有校验和最终 payload 使用
++      同一份快照，避免异步校验期间用户继续编辑影响本次提交。条件回调抛错要原样传递。
++      保留现有 processForm API、原有字段语义和零依赖约束，请完成实现。
++    artifact: ''
++    fixture: evals/fixtures/conditional-fields
++    protected_paths:
++      - package.json
++      - package-lock.json
++      - test/process-form.test.js
++      - test/conditional-fields.test.js
++    validation_commands:
++      - npm ci
++      - npm run check
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
++    must_observe:
++      - 未经额外提醒，在首次修改实现或测试前保存可独立阅读的技术文档
++      - 文档明确实施步骤总数、依赖顺序、每步具体功能及验收，并映射实际支撑的类型及函数或类契约
++      - 文档包含职责依赖的架构图和带数据及返回分支的数据流转图，图与代码契约一致
++      - 原行为与条件字段通过同一有效集合和快照完成校验及提交，最终文档与实际验证一致
++    fail_if:
++      - 首次修改实现或测试前没有保存技术设计文档，包括完全省略、只在聊天中描述或事后补写；本用例检验默认技能行为，原始需求未提醒写文档不构成豁免
++      - 技术文档缺少功能到代码契约的映射、可执行步骤或任一必要图示，或图示无法解析、仅为目录树与重复空泛框图
++      - 等待用户批准文档而未完成已授权实现
++      - 受保护检查失败或被修改，或为同步字段条件引入通用规则引擎与强制抽象类
++
++  - id: requirement-only-export-refactor
++    title: 仅给职责重构需求时主动设计完整实施路径
++    prompt: >-
++      重构这个前端选中项导出能力。工具栏和键盘入口现在分别了解了内部准备、检查、编码
++      和发送步骤，后续协议变化很容易漏改其中一个入口。让调用方只表达一次完整导出意图，
++      保持现有两个公开入口、返回值、提交顺序、一次发送和错误传递契约。现有测试已经
++      全部通过；请完成职责调整，不增加依赖，也不要引入可暂停工作流或通用插件系统。
++    artifact: ''
++    fixture: evals/fixtures/export-operation
++    protected_paths:
++      - README.md
++      - test/export.test.mjs
++    validation_commands:
++      - node --test test/export.test.mjs
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, verification_evidence, communication_quality]
++    must_observe:
++      - 首次修改实现或测试前保存技术文档，不依赖用户提示文档或图示
++      - 分解重构的功能步骤及依赖验收，列出公共入口和内部操作的输入输出、职责与调用方
++      - 架构图与数据流转图说明入口到完整操作及返回值和失败路径，交付时与实际代码一致
++      - 两个入口不再编排私有导出步骤，保留已有行为且不为文档制造类或多层转发
++    fail_if:
++      - 首次修改实现或测试前没有保存技术设计文档，包括完全省略或事后补写；本用例检验默认技能行为，原始需求未提醒写文档不构成豁免
++      - 设计缺少功能步骤与代码契约映射或任一必要图示，或必要图示无法解析
++      - 等待额外文档审批而停止已授权重构
++      - 仅移动或改名浅层步骤，两个消费者仍了解私有调用顺序
++      - 行为检查失败、受保护文件变化或引入无依据的抽象类与通用机制
++
+   - id: readiness-claims-match-exercised-evidence
+     title: 就绪与兼容结论不超过实际验证边界
+     prompt: >-
+@@ -1414,12 +1558,13 @@ cases:
+     must_observe:
+       - A 直接实施和适度验证，不因公共组件而要求设计文档
+       - B 可简短说明数据流和验证后实施，不强制持久化文档
+-      - C 因跨团队所有权和迁移决策需要可追溯方案，复用项目现有文档位置
++      - C 在改实现前需要技术文档，复用现有位置，拆出有依赖和验收的功能步骤，定义类型及函数或类契约，并包含架构图和数据流转图
+       - 区分需要澄清的业务决策与不必要的文档审批
+     fail_if:
+       - 所有任务都强制先建文档或等待用户批准
+       - 因共享文件或功能关键词机械决定文档深度
+       - C 不处理所有权歧义就直接实施迁移
++      - C 将技术文档缩减为仅记录取舍或聊天中的简短提纲，遗漏功能步骤、代码契约或两类图示要求
+   - id: field-eligibility-executable
+     title: 实现有效字段统一契约
+     prompt: >-
+diff --git a/references/architecture-and-code.md b/references/architecture-and-code.md
+index c1dfb7e..4850f8c 100644
+--- a/references/architecture-and-code.md
++++ b/references/architecture-and-code.md
+@@ -13,6 +13,7 @@ for execution, placement, cache, or delivery boundaries.
+ 
+ - [Understand before changing](#understand-before-changing)
+ - [Preserve domain knowledge and decisions](#preserve-domain-knowledge-and-decisions)
++- [Turn requirements into an executable technical design](#turn-requirements-into-an-executable-technical-design)
+ - [Construct a readable operation](#construct-a-readable-operation)
+ - [Choose data representations](#choose-data-representations)
+ - [Model data and state](#model-data-and-state)
+@@ -68,7 +69,7 @@ three kinds of information distinct:
+ | --- | --- |
+ | Domain definition | What the concept means, identity and relationships, and ambiguous aliases worth distinguishing |
+ | Consequential decision | Context, chosen alternative, reason and non-obvious consequences; link an earlier decision when replacing it |
+-| Implementation plan | Acceptance conditions, affected contracts and implementation/verification steps |
++| Technical design | Requirement decomposition, ordered functional increments, supporting contracts, architecture and data-flow diagrams, implementation and verification; see the technical-design section below |
+ 
+ A domain definition should let another maintainer distinguish such concepts as
+ a seller profile, organization and signed-in user; their identifiers do not
+@@ -90,6 +91,83 @@ material when the confirmed contract changes, preserving useful rationale and
+ project history conventions. Check one plausible later use: can a new maintainer
+ find the definition or decision and apply it without the original conversation?
+ 
++## Turn requirements into an executable technical design
++
++Use this section for the design-bearing work identified in SKILL.md. The document
++is an implementation input: establish it after inspecting the relevant system and
++before changing source, tests, configuration or generation templates. Inspection,
++reproduction and baseline checks can precede it. Do not substitute a chat outline
++or an after-the-fact description of finished code. Reuse a relevant owned document;
++otherwise add one under the project's documentation convention and link it from
++an existing discovery point when available. Missing documentation is a reason to
++write the design, not to skip it or wait for an initialization session.
++
++Keep the following information connected, using the project's format rather than
++a mandatory heading template:
++
++1. **Requirement and facts.** State the intended outcome, scope, business rules,
++   acceptance conditions, existing capabilities and authoritative data/contracts.
++   Distinguish inspected facts, proposed changes and unresolved assumptions.
++2. **Functional decomposition and sequence.** State how many implementation steps
++   are needed and order them by dependency. Each step identifies the functionality
++   delivered, prerequisites, affected owners/files, supporting operations and a
++   concrete completion check. Split into coherent verifiable increments, not an
++   arbitrary quota or generic "analyze, code, test" tasks. Show how the steps cover
++   the whole requirement, including meaningful branches and recovery.
++3. **Supporting code contracts.** Map each product capability to the modules, types,
++   operations and classes that implement it; identify actual supporting symbols. Give
++   important names/locations, responsibilities, typed inputs/results or equivalent
++   signatures, callers/dependencies, state/effect ownership and relevant error or
++   cleanup semantics. Distinguish reused, changed and new contracts. Design classes
++   or interfaces where identity, lifecycle or a real substitution boundary warrants
++   them; pure functions and existing primitives may suffice. Do not invent an
++   abstract class per capability or enumerate trivial private helpers in advance.
++4. **Technical architecture diagram.** Show the concrete modules or components,
++   runtime/external boundaries, responsibilities and dependency or call direction.
++   Label significant interfaces/operations; a directory tree alone is insufficient.
++5. **Data-flow diagram.** Follow a representative input through named operations,
++   transformations, state/storage or transport to its returned or visible outcome.
++   Include return paths and consequential failure, cancellation or stale-result
++   branches. Label data and owners. An appropriately annotated sequence diagram
++   is suitable; duplicating the architecture graph without data movement is not.
++6. **Verification and evolution.** Tie each step and important rule to a decisive
++   check. Record applicable compatibility/migration/recovery and one realistic
++   follow-up change, without building speculative general mechanisms.
++
++Both diagrams must be readable in the document and agree with its symbol and data
++contracts. Prefer the repository's supported format and existing renderer/parser.
++For a diagram DSL such as Mermaid, actually check its syntax before calling the
++design complete; merely disclosing that no renderer ran does not validate it.
++If no usable diagram tool is available, use self-contained, labelled plain-text
++diagrams with explicit arrows and branches rather than unverified DSL. Both views
++remain required, and a directory tree is still insufficient. Do not install a
++separate toolchain merely to draw a small design. Retain editable sources for any
++generated assets, verify references and distinguish syntax from visual validation.
++In Mermaid, quote node and edge labels containing punctuation such as function
++calls. A diagram that cannot parse is an incomplete deliverable.
++Use a small number of representative flows, expanding only for materially
++different behavior. Detail should enable
++another engineer to implement the next step without reconstructing the chat;
++length, diagram count beyond the two required views, and exhaustive pseudocode
++are not goals.
++
++Once the design is concrete enough to act, implement its ordered increments within
++existing authorization. A new consequential unknown can hold its dependent step
++while independent work continues; creating the document itself requires no approval.
++Update the same document when contracts or steps change, keeping planned checks
++distinct from executed results. At delivery reconcile diagrams, symbols and step
++status with the final code and actual evidence. Do not claim a planned runtime
++check passed, and do not describe a superseded design as the current implementation.
++
++For design-only requests, save the technical document in the workspace and link it
++in the response; a chat-only proposal is not the completed artifact. If context is
++supplied as inline source or contracts and the workspace has no application files,
++use those inputs, label proposed paths and unsettled facts, and save the design
++without fabricating an existing repository or adding implementation skeletons.
++Do not silently start development.
++For settled local edits, retain the lightweight path in SKILL.md; do not create
++diagrams just to satisfy a workflow intended for design-bearing requirements.
++
+ ## Construct a readable operation
+ 
+ Start from an actual caller and a complete behavior. Keep the main path readable
+diff --git a/references/verification-and-review.md b/references/verification-and-review.md
+index 2044deb..629ca61 100644
+--- a/references/verification-and-review.md
++++ b/references/verification-and-review.md
+@@ -132,12 +132,24 @@ hypotheses and continue independent authorized work without claiming a fix.
+ ## Establish review scope and coverage
+ 
+ For a requested review, establish two complementary views before drawing a
+-conclusion: what the change is required to do, and what the changed code actually
+-does. Keep this lightweight for a local edit; use the supplied request as its
+-contract when sufficient. Do not edit the implementation unless requested.
+-
+-- Establish the comparison baseline or supplied snapshot and inventory the
+-  changed files and behaviors. Follow affected consumers and shared policies
++conclusion: whether the code satisfies the current product/repository contracts,
++and whether its actual design and implementation meet the shared engineering
++standard in SKILL.md. A plain "review this" requests both views; the user need not
++enumerate architecture, modularity, function quality or failure handling. Keep this
++lightweight for a local edit; use the supplied request as its contract when
++sufficient. Do not edit the implementation unless requested.
++
++Infer the target before asking for a review checklist. Use a supplied PR, revision,
++snapshot or named module; otherwise inspect the current staged, unstaged and
++relevant untracked changes. A request to review a project or existing module covers its current code,
++including unchanged paths; the absence of a diff is not a reason to stop. For a
++large target, map entry points, ownership and dependency boundaries, inspect the
++important end-to-end paths and report concrete coverage limits. Ask about scope
++only when the target remains materially ambiguous after this discovery.
++
++- Establish the comparison baseline when reviewing changes; for current-code
++  review establish the in-scope system instead. Inventory its files and behaviors.
++  Follow affected consumers and shared policies
+   beyond diff hunks when needed. Choose depth from change and risk; familiarity,
+   authorship, or an earlier passing check is not a reason to skip changed behavior.
+ - Identify authoritative requirements from the request, applicable spec and
+@@ -147,7 +159,7 @@ contract when sufficient. Do not edit the implementation unless requested.
+   and unresolved requirements. Cite the source for a claimed requirement mismatch;
+   flag conflicting or unavailable requirements instead of inferring intent from
+   the implementation. Continue checks that do not depend on the missing source.
+-- Inspect changed behavior for correctness and maintainability independently of
++- Inspect in-scope behavior for correctness and maintainability independently of
+   requirement matching. Trace shared rules through affected entry points and
+   meaningful branches; include local controls and boundary states when a
+   page-level check cannot expose their failures. Use the questions below and load
+@@ -161,9 +173,28 @@ Keep this working coverage account in review notes or existing project artifacts
+ a separate document, exhaustive report of passing items, or fixed team structure
+ is not required. Respect an explicitly limited review scope and name its limits.
+ 
++Before classifying a defect, locate the responsible boundary and establish that
++the available evidence actually shows its violation. An extracted module with
++unprovided host bindings cannot prove that the host lacks an integration merely
++because there is no local caller. Report the specific missing caller/configuration
++as a verification gap unless a shown contract is independently broken. Conversely,
++missing host evidence does not excuse a demonstrated defect within the module.
++Apply the same distinction to proposed improvements: explain a concrete maintenance
++cost without presenting a possible future failure as an observed functional bug.
++
+ ## Review architecture and implementation
+ 
+-Review the changed system, not isolated clever lines. Ask:
++Review the system in scope, not isolated clever lines. Use the shared standard to
++select applicable checks yourself: real function bodies and call protocols,
++component/module ownership and dependency direction, data and state representation,
++appropriate functions or resource-owning objects, async/lifecycle policies, types,
++project/platform reuse and realistic evolution. Add runtime, trust, interaction,
++accessibility, locale and measured-performance checks where the inspected code
++establishes those concerns; do not require the user to request them separately.
++Existing tests and tooling help find defects but do not define the entire quality
++bar. Do not manufacture UI/runtime findings from a source-only fixture.
++
++Ask:
+ 
+ - Does the implementation satisfy the stated outcome?
+ - Is there a simpler platform or project-native capability?
+@@ -187,7 +218,7 @@ Treat code clarity as the time required for a future maintainer to predict the
+ effect of a change. Shorter code is not automatically clearer; more layers are
+ not automatically more architectural.
+ 
+-For code-quality claims, follow important changed operations through their real
++For code-quality claims, follow important in-scope operations through their real
+ callers and callees. Use [readable operation construction](architecture-and-code.md#construct-a-readable-operation)
+ when the function body or call contract is unclear. Ground a maintenance finding
+ in the rule, ordering or internal detail that callers must understand, or a
+@@ -284,9 +315,12 @@ For code review:
+ 3. Cite the tightest relevant file and line when available.
+ 4. Distinguish correctness defects, evidenced requirement mismatches, and
+    maintainability suggestions; do not count heuristics as confirmed bugs.
+-5. Say explicitly when no actionable defect was found, while noting residual
+-   testing or environment gaps. Summarize the reviewed scope, requirement sources,
+-   and concrete unchecked behaviors; limit the conclusion to that evidence.
++5. Give a bounded conclusion for requirement compliance and engineering quality.
++   Correct behavior can coexist with a demonstrated maintenance problem; say
++   which standard is unmet and what real change or understanding cost it creates.
++   If no issue is evidenced, say so without inventing findings or treating a
++   passing sample as proof of the whole system's quality. Summarize scope,
++   requirement sources, actual checks and concrete unchecked behaviors.
+ 
+ For completed implementation:
+ 

@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import yaml
 import score_behavior_evals as scorer
+from test_support import passing_audit
 import unittest
 import tempfile
 import json
@@ -223,7 +224,7 @@ class VerdictTests(unittest.TestCase):
             validate_failure_audits(raw, BATCH, CASES)
 
     def test_failure_audit_accepts_empty_triggered_list(self) -> None:
-        raw = {"audits": [{"id": CASE_ID, "triggered": []}]}
+        raw = {"audits": [passing_audit(CASE_ID)]}
         self.assertEqual(
             validate_failure_audits(raw, BATCH, CASES),
             {CASE_ID: []},
@@ -231,15 +232,17 @@ class VerdictTests(unittest.TestCase):
 
     def test_pending_breadth_cannot_reuse_unaudited_cached_score(self) -> None:
         batch = [{"id": CASE_ID, "reference_routing": {"breadth_review_required": True}}]
+        audit = passing_audit(CASE_ID)
+        del audit["routing_review"]
         with self.assertRaisesRegex(ValueError, "Routing review required"):
-            validate_failure_audits({"audits": [{"id": CASE_ID, "triggered": []}]}, batch, CASES)
+            validate_failure_audits({"audits": [audit]}, batch, CASES)
 
     def test_breadth_audit_requires_justification_to_pass(self) -> None:
         batch = [{"id": CASE_ID, "reference_routing": {"breadth_review_required": True}}]
         for verdict in ("justified", "unjustified", "insufficient_evidence"):
             with self.subTest(verdict=verdict):
                 audits = validate_failure_audits({"audits": [{
-                    "id": CASE_ID,
+                    **passing_audit(CASE_ID),
                     "triggered": [],
                     "routing_review": {"verdict": verdict, "reason": "Specific evidence assessment"},
                 }]}, batch, CASES)
@@ -298,6 +301,19 @@ class ScoringWorkflowTests(unittest.TestCase):
         record['events_sha256'] = hashlib.sha256(events.encode()).hexdigest()
         record['reference_routing'] = scorer.analyze_reference_reads(events, Path(record['workspace']))
         record['capture_contract'] = scorer.capture_contract(self.cases[record['id']], self.root)
+        if self.cases[record['id']].get('fixture'):
+            from eval_evidence import save_snapshot
+            fixture = self.root/self.cases[record['id']]['fixture']
+            files = {}
+            for path in fixture.rglob('*'):
+                if path.is_file():
+                    content=path.read_bytes()
+                    files[str(path.relative_to(fixture))] = {'sha256':hashlib.sha256(content).hexdigest(),
+                        'size':len(content), 'text':content.decode()}
+            for label in ('input','final'):
+                record[f'project_{label}_sha256'] = save_snapshot(
+                    self.results/record['id']/record['mode']/f'project-{label}.json',
+                    {'version':1,'files':files})
 
     def save_cases(self) -> None:
         (self.root/'evals/cases.yaml').write_text(yaml.safe_dump({'cases': list(self.cases.values())}))
@@ -308,7 +324,7 @@ class ScoringWorkflowTests(unittest.TestCase):
     def fake_score(self, args, prompt, schema, output):
         names = re.findall(r'^id: (.+)$', prompt, re.MULTILINE)
         if schema.name == 'failure-schema.json':
-            data = {'audits': [{'id': name, 'triggered': [],
+            data = {'audits': [{**passing_audit(name), 'triggered': [],
                 'routing_review': {'verdict': 'justified', 'reason': 'Observed decision gap'}} for name in names]}
         else:
             data = {'evaluations': [{**raw_score()['evaluations'][0], 'id': name} for name in names]}
@@ -455,7 +471,7 @@ class ScoringWorkflowTests(unittest.TestCase):
         self.records[0]['validations'][0]['exit_code'] = 1
         self.save_manifest()
         code, calls, scores = self.invoke()
-        self.assertEqual((code, calls), (0, 2))
+        self.assertEqual((code, calls), (1, 2))
         self.assertEqual(scores[0]['verdict'], 'fail')
         self.assertEqual(scores[0]['validation_failures'], ['behavior test'])
 

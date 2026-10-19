@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "autonomous-review-maintainability",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "审查准确引用 README 的一次性操作契约、公共入口范围及无需可暂停流程的明确背景，并据此判断改动。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "正确识别将简单原子操作拆成四阶段可变流程所增加的复杂度，并提出恢复单一编排函数的适度改进。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "准确指出流程前置条件未由接口表达，且两个入口重复掌握编排顺序，形成易分歧的维护边界。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "结论清楚区分可维护性问题与可观察行为回归；快照及测试支持现有契约仍被满足。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "报告了 before 与 after 各 10 项契约测试通过，覆盖关键行为；生成期自检及后续主机 20 项联合验证均支持该陈述。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "以严重度、定位、具体风险、契约依据和可执行建议组织发现，简洁且没有夸大为当前功能故障。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "autonomous-review-contracts",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确读取当前需求，并正确处理 accepted decision 对创作者链接要求的覆盖，没有把 draft decision 或 release notes 当作验收契约。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "审查覆盖控制器、生命周期、策略/UI、路由和宿主集成边界；尤其指出 URL 状态需要在宿主绑定边界明确所有权，并单独标注快照外的公共入口迁移风险。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "识别出三个可直接复现的确定缺陷：重试载荷错误、缺失 activityId 时按钮错误启用、前台恢复漏刷目录；定位、影响和修复方向均准确。URL 接线问题也以证据不足和所需集成验证作了适当限定。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "报告了完整测试套件 10/10 通过，并用针对性运行检查复现三个核心缺陷；同时明确现有测试的覆盖空洞及浏览器、真实导航和前台事件未验证。自检结果与后续 host 验证一致。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "发现按严重度排序，每项包含位置、行为、契约影响、修复建议和应补测试；验证结果与范围限制清楚，且没有把通过的结构测试夸大为浏览器验证。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "React 宿主代码和浏览器测试环境未包含在证据中，因此无法确认 URL 同步、键盘与布局行为、真实前台事件接线，以及 createCommunity 新参数在宿主调用方的迁移状态。",
+          "未提供隐藏的全局失败定义，只能依据所给请求、快照、自检和 host validations 判断是否触发失败。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [
+          {
+            "rule": "漏掉无 ID 获取、目录恢复、重试快照或失败查询复用旧游标中的任一契约问题",
+            "reason": "响应识别了无 ID 获取、目录恢复和重试快照问题，但漏掉失败的新查询会保留旧 cursor：替换加载失败后，loadMore() 可将上一查询的游标用于当前查询。"
+          }
+        ],
+        "verdict": "fail"
+      }
+    ]
+  }
+}

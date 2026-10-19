@@ -1,0 +1,62 @@
+diff --git a/README.md b/README.md
+index 3d9050b..9a4df08 100644
+--- a/README.md
++++ b/README.md
+@@ -5,9 +5,10 @@ selection as one operation; no consumer needs a pausable preparation workflow.
+ The files in src are internal except for the two entry points below.
+ 
+ Both entry points are aliases of the workflow in `src/export-selection.mjs`.
+-Keep selection policy, payload construction, and transport sequencing there so
+-toolbar and keyboard behavior stays identical. The entry-point modules should
+-only provide their interaction-specific public names.
++Keep selection policy and encoding/transport sequencing there so toolbar and
++keyboard behavior stays identical. Payload encoding is provided by the async
++encoder in `src/codec.mjs`; the entry-point modules should only provide their
++interaction-specific public names.
+ 
+ Keep these public contracts:
+ 
+@@ -16,10 +17,12 @@ Keep these public contracts:
+   rows are eligible. Preserve selection order; do not mutate the caller's rows.
+ - Empty selection returns `{ kind: 'empty' }`. Any ineligible row prevents all
+   writes and returns `{ kind: 'blocked', ids }` naming the ineligible rows.
+-- Eligible selection writes exactly once with `{ schema: 1, document_ids: ids }`
+-  and returns `{ kind: 'sent', ids }` after acceptance. `write` is the existing
+-  trusted transport capability and borrows the payload without mutating it.
+-- The submitted IDs remain stable while awaiting acceptance. A transport failure
+-  rejects with the original error; it does not become a successful empty result.
++- Eligible selection is encoded, then writes exactly once with the encoded
++  `{ schema: 1, document_ids: ids }` payload and returns `{ kind: 'sent', ids }`
++  after acceptance. `write` is the existing trusted transport capability and
++  borrows the payload without mutating it.
++- The submitted IDs remain stable while awaiting encoding and acceptance. An
++  encoding or transport failure rejects with the original error; it does not
++  become a successful empty result.
+ 
+-Run `node --test test/export.test.mjs`.
++Run `node --test test/*.test.mjs`.
+diff --git a/src/export-selection.mjs b/src/export-selection.mjs
+index 4e327bd..66965dd 100644
+--- a/src/export-selection.mjs
++++ b/src/export-selection.mjs
+@@ -1,3 +1,5 @@
++import { encodeSelection } from './codec.mjs';
++
+ /**
+  * Export a selection as one atomic operation.
+  *
+@@ -15,10 +17,11 @@ export async function exportSelection(rows, write) {
+     return { kind: 'blocked', ids: blockedIds };
+   }
+ 
+-  // Capture the accepted intent before yielding to the transport. The caller
+-  // may update its live selection while the write is pending.
++  // Capture the accepted intent before yielding to the encoder. The caller may
++  // update its live selection while encoding or transport is pending.
+   const ids = rows.map((row) => row.id);
+-  await write({ schema: 1, document_ids: ids });
++  const payload = await encodeSelection(ids);
++  await write(payload);
+ 
+   return { kind: 'sent', ids };
+ }

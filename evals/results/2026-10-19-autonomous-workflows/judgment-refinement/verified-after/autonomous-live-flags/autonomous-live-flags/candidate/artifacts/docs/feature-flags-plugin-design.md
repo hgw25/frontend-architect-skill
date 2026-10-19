@@ -1,0 +1,93 @@
+# Reusable feature-flags Vite plugin
+
+## Requirement and established facts
+
+The package `@frontend-architect-eval/feature-flags` is a Vite plugin consumed as
+`featureFlags({ source, expose })`. Applications import their client-safe flags
+from `virtual:feature-flags`. `source` is a JSON object on disk (a file path or
+file URL), while `expose` is the explicit list of keys allowed into client code.
+Values not listed in `expose` may be secrets and must not enter generated code or
+source maps. An exposed missing key must fail with both the key and source path.
+Changing the JSON file in development must update consumers. The built package,
+not just workspace source, is a supported consumption path.
+
+The existing package already defines an ESM entry point and the virtual-module
+declaration. No framework-neutral runtime is needed: this is a Vite-hosted build
+tool, and Vite owns module invalidation and HMR.
+
+## Design and public contract
+
+`featureFlags(options: FeatureFlagsOptions): Plugin` remains the only plugin
+factory. `FeatureFlagsOptions.source` accepts `string | URL`; relative strings
+are resolved from Vite's configured root. `expose` is a readonly list of JSON
+object keys. `FeatureFlagValue` describes JSON values recursively, and the
+virtual module exports `Readonly<Record<string, FeatureFlagValue>>`.
+
+The plugin owns path resolution, parsing, configuration validation, and a
+current client-safe flag snapshot. Vite owns watching, module invalidation, and
+delivery to browser consumers. Parsing occurs before build output or virtual
+module delivery. A malformed file, non-object root, unsupported URL, duplicate
+exposed key, or absent exposed key produces an actionable error with the source
+path; failures are not converted to an empty flag set.
+
+Only an object constructed from `expose` is serialized into the virtual module.
+The source file is never transformed, so its full JSON cannot be placed in
+transform source maps. The generated virtual-module string is deterministic for
+the same selected values and preserves the caller's `expose` order.
+
+## Implementation sequence
+
+1. **Public API and source boundary** — add exported option/value types and
+   resolve the selected local JSON source after Vite supplies its root. Check:
+   the consumer TypeScript project accepts its existing `URL` configuration.
+2. **Virtual-module delivery** — parse and validate the JSON object, project
+   only exposed values, and implement Vite `resolveId`/`load`. Check: production
+   build renders only `checkoutV2` and `theme`, never `SERVER_TOKEN`.
+3. **Development lifecycle** — register the source with Vite's watcher; on a
+   source update reread it, invalidate the virtual module, and return it to HMR.
+   Check: the development harness observes the changed client flag.
+4. **Package and consumer evidence** — retain declarations/static virtual
+   export in the generated package and document consumption. Check: the package
+   harness installs the packed artifact and builds the consumer.
+
+## Technical architecture
+
+```text
+vite.config.ts
+  └─ featureFlags(options) ──────────────> FeatureFlagsPlugin
+                                                │ resolves/validates source
+flags.json ────────────────────────────────────┤ reads selected keys only
+                                                │
+Vite module graph <─ resolveId/load ───────────┴─> \0virtual:feature-flags
+                                                          │ exports frozen data literal
+application import("virtual:feature-flags") <────────────┘
+```
+
+## Data flow and failures
+
+```text
+source path/URL + expose
+  -> resolveSource(root) -> absolute JSON path
+  -> readFlagSnapshot(path, expose)
+       -> JSON parse/object validation --failure--> Vite error(source + remedy)
+       -> missing exposed key ---------failure--> Vite error(key + source)
+       -> selected JSON value object
+  -> virtualModuleCode(selected object)
+  -> Vite load -> browser/build client module
+
+file watcher update
+  -> reread + validate -> invalidate virtual module -> Vite HMR/reload consumer
+                      \-> validation failure -> Vite surfaces source error
+```
+
+## Evolution and verification
+
+A likely next change is adding another client flag while retaining server-only
+settings in the same JSON file. That only changes `expose`; projection and the
+virtual module need no API or policy change. Nested JSON values are intentionally
+supported as values, but nested paths are not: key-level exposure remains clear
+and prevents a new path-expression policy from silently widening data access.
+
+Executed checks are recorded in the delivery after the implementation; the
+repository's `npm run check` is the final public-artifact and host-lifecycle
+verification.

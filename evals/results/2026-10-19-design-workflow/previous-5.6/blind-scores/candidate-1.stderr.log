@@ -1,0 +1,398 @@
+2026-10-19T03:12:56.093952Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:12:56.127577Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:12:56.145744Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:12:56.162892Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:12:56.180707Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:12:56.205779Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+OpenAI Codex v0.145.0
+--------
+workdir: /var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a15225-df01-7373-9aca-9b473777076d
+--------
+user
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Match evidence requirements to the request: a plan-only task can establish a sound verification design without executing an absent application; do not impose release/rollout work outside scope.
+The RESPONSE predates HOST VALIDATIONS. Generator self-checks ran during generation in its sandbox; host checks ran afterwards and may have different browser/network permissions. Distinguish these origins rather than treating different results as automatically contradictory.
+Judge unresolved failures and false claims against their actual phase evidence; a later host pass does not make an earlier false self-test claim true, and a correctly reported sandbox failure does not contradict a later host pass.
+A final unresolved validation failure is direct evidence against implementation_integrity and verification_evidence. An intermediate failed check followed by relevant edits and a passing rerun is a repaired state, not proof that the final code still fails. Do not require a delivery summary to list every repaired intermediate error; assess remaining risk and consistency of readiness claims.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+[missing]
+
+CASE
+id: requirement-only-conditional-fields
+request: 给这个表单提交能力增加条件字段。字段可以声明同步的 enabledWhen(values)，只在 返回 true 时参与 required、自定义校验和提交；disabled 优先，禁用时条件回调也不运行。 每次提交开始时捕获一份顶层值快照，条件只求值一次，所有校验和最终 payload 使用 同一份快照，避免异步校验期间用户继续编辑影响本次提交。条件回调抛错要原样传递。 保留现有 processForm API、原有字段语义和零依赖约束，请完成实现。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "implementation_integrity", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+已完成条件字段支持，同时保留现有 `processForm` API、字段语义和零依赖约束。
+
+改动：
+
+- 提交开始时创建顶层浅快照。
+- `disabled` 优先，不执行 `enabledWhen`。
+- `enabledWhen(snapshot)` 每次提交仅求值一次，且仅严格返回 `true` 时字段参与 required、校验和 payload。
+- 校验器与最终 payload 始终使用同一份提交快照。
+- 条件回调异常不包装，原样向上传递。
+- 更新了 [README.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/README.md) 契约说明。
+- 实现在 [process-form.js](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/src/process-form.js)。
+
+验证：`npm run check`，13/13 项测试通过。未修改评测文件或 `.frontend-architect` 内容。
+
+DIFF:
+diff --git a/README.md b/README.md
+index 04a9827..a8d01bb 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,11 @@ This is an existing frontend form submission capability. Its public async API is
+ Fields have unique string names, optional boolean disabled/required and an optional
+ sync or async `validate(value, values)` returning a string error or undefined.
+ Disabled fields are neither validated nor submitted. Unknown values are omitted.
++Fields may also define a synchronous `enabledWhen(values)` condition. A conditional
++field participates in required checks, custom validation, and submission only when
++the condition returns `true`; disabled fields take precedence and do not evaluate
++their condition. Each submission uses one shallow top-level values snapshot for
++all conditions, validators, and the final payload.
+ Required emptiness is undefined, null or the empty string; zero, false, whitespace
+ and empty arrays are valid. Required errors are `Required` and skip that field's
+ custom validator. Custom errors retain their text. Await validation before sending
+diff --git a/src/process-form.js b/src/process-form.js
+index 5b23b0d..ea45daf 100644
+--- a/src/process-form.js
++++ b/src/process-form.js
+@@ -1,18 +1,22 @@
+ /** Existing form submission entry point. */
+ export async function processForm(fields, values, send) {
+-  const eligible = fields.filter(field => !field.disabled);
++  const snapshot = { ...values };
++  const eligible = fields.filter(field => {
++    if (field.disabled) return false;
++    return field.enabledWhen === undefined || field.enabledWhen(snapshot) === true;
++  });
+   const errors = {};
+   for (const field of eligible) {
+-    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
++    const value = Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined;
+     let error;
+     if (field.required && (value === undefined || value === null || value === '')) {
+       error = 'Required';
+     } else if (field.validate) {
+-      error = await field.validate(value, values);
++      error = await field.validate(value, snapshot);
+     }
+     if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });
+   }
+   if (Object.keys(errors).length) return { errors };
+   return send(Object.fromEntries(eligible.map(field => [field.name,
+-    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));
++    Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined])));
+ }
+
+
+GENERATOR SELF-CHECKS (during generation; output tails, not a full command audit):
+[{"attempt": 0, "command": "/bin/zsh -lc 'cat src/process-form.js'", "exit_code": 0, "kind": "source inspection", "output_tail": "/** Existing form submission entry point. */\nexport async function processForm(fields, values, send) {\n  const eligible = fields.filter(field => !field.disabled);\n  const errors = {};\n  for (const field of eligible) {\n    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;\n    let error;\n    if (field.required && (value === undefined || value === null || value === '')) {\n      error = 'Required';\n    } else if (field.validate) {\n      error = await field.validate(value, values);\n    }\n    if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });\n  }\n  if (Object.keys(errors).length) return { errors };\n  return send(Object.fromEntries(eligible.map(field => [field.name,\n    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));\n}\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat test/conditional-fields.test.js'", "exit_code": 0, "kind": "source inspection", "output_tail": "ny: 'Acme' });\n  assert.equal(calls, 3);\n});\n\ntest('disabled wins over the conditional callback', async () => {\n  assert.deepEqual(await processForm([{ name: 'old', disabled: true,\n    enabledWhen() { assert.fail('disabled condition ran'); } }], { old: 1 }, x => x), {});\n});\n\ntest('conditions, validators and payload use the same top-level submission snapshot', async () => {\n  let release;\n  let started;\n  const entered = new Promise(resolve => { started = resolve; });\n  const gate = new Promise(resolve => { release = resolve; });\n  const values = { kind: 'business', company: 'Before' };\n  let conditionSnapshot;\n  let validatorSnapshot;\n  const pending = processForm([\n    { name: 'kind', validate: async (value, snapshot) => { validatorSnapshot = snapshot; started(); await gate; } },\n    { name: 'company', enabledWhen(snapshot) { conditionSnapshot = snapshot; return snapshot.kind === 'business'; },\n      validate(value, snapshot) { assert.equal(value, 'Before'); assert.equal(snapshot, validatorSnapshot); } },\n  ], values, x => x);\n  await entered;\n  values.kind = 'personal'; values.company = 'After';\n  release();\n  assert.deepEqual(await pending, { kind: 'business', company: 'Before' });\n  assert.equal(conditionSnapshot, validatorSnapshot);\n  assert.notEqual(conditionSnapshot, values);\n  assert.deepEqual(values, { kind: 'personal', company: 'After' });\n});\n\ntest('conditional failures propagate with their original identity', async () => {\n  const failure = new Error('condition failed');\n  await assert.rejects(processForm([{ name: 'x', enabledWhen() { throw failure; } }], { x: 1 },\n    () => assert.fail('sent')), error => error === failure);\n});\n\ntest('conditional prototype-like names remain own payload keys', async () => {\n  let calls = 0;\n  const result = await processForm([{ name: '__proto__', enabledWhen() { calls++; return false; } }],\n    { ['__proto__']: 'hidden' }, x => x);\n  assert.equal(Object.hasOwn(result, '__proto__'), false);\n  assert.equal(calls, 1);\n});\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat test/process-form.test.js'", "exit_code": 0, "kind": "source inspection", "output_tail": "));\n  const result = await processForm(fields, values, () => assert.fail('invalid form sent'));\n  assert.deepEqual(result, { errors: { absent: 'Required', nil: 'Required', blank: 'Required' } });\n});\ntest('async validator preserves specific error and blocks send', async () => {\n  const result = await processForm([{ name: 'name', validate: async () => 'Already taken' }], { name: 'Ada' }, () => assert.fail('invalid form sent'));\n  assert.deepEqual(result, { errors: { name: 'Already taken' } });\n});\ntest('send waits for custom validation and returns the send result without mutation', async () => {\n  let release; const gate = new Promise(resolve => { release = resolve; }); let sent = 0;\n  const fields = Object.freeze([Object.freeze({ name: 'value', validate: () => gate })]);\n  const values = Object.freeze({ value: 1 });\n  const pending = processForm(fields, values, async payload => { sent++; return { saved: payload.value }; });\n  await Promise.resolve(); assert.equal(sent, 0); release(undefined);\n  assert.deepEqual(await pending, { saved: 1 }); assert.equal(sent, 1);\n});\ntest('validator and transport rejections propagate', async () => {\n  const failure = Error('offline');\n  await assert.rejects(processForm([{ name: 'x', validate: async () => { throw failure; } }], { x: 1 }, () => assert.fail('sent')), error => error === failure);\n  await assert.rejects(processForm([{ name: 'x' }], { x: 1 }, async () => { throw failure; }), error => error === failure);\n});\ntest('prototype-like names remain own error and payload keys', async () => {\n  const fields = [{ name: '__proto__', required: true }];\n  const result = await processForm(fields, {}, () => assert.fail('sent'));\n  assert.equal(Object.hasOwn(result.errors, '__proto__'), true); assert.equal(result.errors.__proto__, 'Required');\n  const payload = await processForm(fields, { ['__proto__']: 'value' }, payload => payload);\n  assert.equal(Object.hasOwn(payload, '__proto__'), true); assert.equal(payload.__proto__, 'value');\n});\n"}, {"attempt": 0, "kind": "source changes", "paths": ["/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/README.md", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/src/process-form.js"]}, {"attempt": 0, "command": "/bin/zsh -lc 'npm run check'", "exit_code": 0, "kind": "executed check", "output_tail": "n snapshot\nok 4 - conditions, validators and payload use the same top-level submission snapshot\n  ---\n  duration_ms: 0.977667\n  type: 'test'\n  ...\n# Subtest: conditional failures propagate with their original identity\nok 5 - conditional failures propagate with their original identity\n  ---\n  duration_ms: 0.28325\n  type: 'test'\n  ...\n# Subtest: conditional prototype-like names remain own payload keys\nok 6 - conditional prototype-like names remain own payload keys\n  ---\n  duration_ms: 0.429875\n  type: 'test'\n  ...\n# Subtest: disabled validation never runs or blocks, and payload excludes disabled/unknown fields\nok 7 - disabled validation never runs or blocks, and payload excludes disabled/unknown fields\n  ---\n  duration_ms: 0.904\n  type: 'test'\n  ...\n# Subtest: zero false whitespace and empty arrays satisfy required\nok 8 - zero false whitespace and empty arrays satisfy required\n  ---\n  duration_ms: 0.156167\n  type: 'test'\n  ...\n# Subtest: all specified empty representations fail and skip custom validation\nok 9 - all specified empty representations fail and skip custom validation\n  ---\n  duration_ms: 0.083166\n  type: 'test'\n  ...\n# Subtest: async validator preserves specific error and blocks send\nok 10 - async validator preserves specific error and blocks send\n  ---\n  duration_ms: 0.113541\n  type: 'test'\n  ...\n# Subtest: send waits for custom validation and returns the send result without mutation\nok 11 - send waits for custom validation and returns the send result without mutation\n  ---\n  duration_ms: 0.226375\n  type: 'test'\n  ...\n# Subtest: validator and transport rejections propagate\nok 12 - validator and transport rejections propagate\n  ---\n  duration_ms: 0.262625\n  type: 'test'\n  ...\n# Subtest: prototype-like names remain own error and payload keys\nok 13 - prototype-like names remain own error and payload keys\n  ---\n  duration_ms: 0.071292\n  type: 'test'\n  ...\n1..13\n# tests 13\n# suites 0\n# pass 13\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 70.667625\n"}]
+
+HOST VALIDATIONS (after RESPONSE, by the capture runner):
+COMMAND verify protected evaluation harness EXIT 0
+
+COMMAND npm ci EXIT 0
+
+up to date, audited 1 package in 193ms
+
+found 0 vulnerabilities
+
+COMMAND npm run check EXIT 0
+
+> check
+> node --test
+
+TAP version 13
+# Subtest: inactive conditional field cannot validate, block or submit
+ok 1 - inactive conditional field cannot validate, block or submit
+  ---
+  duration_ms: 0.635167
+  type: 'test'
+  ...
+# Subtest: conditional field is recalculated once on each submission
+ok 2 - conditional field is recalculated once on each submission
+  ---
+  duration_ms: 0.154834
+  type: 'test'
+  ...
+# Subtest: disabled wins over the conditional callback
+ok 3 - disabled wins over the conditional callback
+  ---
+  duration_ms: 0.05425
+  type: 'test'
+  ...
+# Subtest: conditions, validators and payload use the same top-level submission snapshot
+ok 4 - conditions, validators and payload use the same top-level submission snapshot
+  ---
+  duration_ms: 0.768334
+  type: 'test'
+  ...
+# Subtest: conditional failures propagate with their original identity
+ok 5 - conditional failures propagate with their original identity
+  ---
+  duration_ms: 0.2785
+  type: 'test'
+  ...
+# Subtest: conditional prototype-like names remain own payload keys
+ok 6 - conditional prototype-like names remain own payload keys
+  ---
+  duration_ms: 0.062333
+  type: 'test'
+  ...
+# Subtest: disabled validation never runs or blocks, and payload excludes disabled/unknown fields
+ok 7 - disabled validation never runs or blocks, and payload excludes disabled/unknown fields
+  ---
+  duration_ms: 0.734834
+  type: 'test'
+  ...
+# Subtest: zero false whitespace and empty arrays satisfy required
+ok 8 - zero false whitespace and empty arrays satisfy required
+  ---
+  duration_ms: 0.137125
+  type: 'test'
+  ...
+# Subtest: all specified empty representations fail and skip custom validation
+ok 9 - all specified empty representations fail and skip custom validation
+  ---
+  duration_ms: 0.079125
+  type: 'test'
+  ...
+# Subtest: async validator preserves specific error and blocks send
+ok 10 - async validator preserves specific error and blocks send
+  ---
+  duration_ms: 0.085542
+  type: 'test'
+  ...
+# Subtest: send waits for custom validation and returns the send result without mutation
+ok 11 - send waits for custom validation and returns the send result without mutation
+  ---
+  duration_ms: 0.234541
+  type: 'test'
+  ...
+# Subtest: validator and transport rejections propagate
+ok 12 - validator and transport rejections propagate
+  ---
+  duration_ms: 0.284334
+  type: 'test'
+  ...
+# Subtest: prototype-like names remain own error and payload keys
+ok 13 - prototype-like names remain own error and payload keys
+  ---
+  duration_ms: 0.081
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 59.086375
+
+
+CASE
+id: requirement-only-export-refactor
+request: 重构这个前端选中项导出能力。工具栏和键盘入口现在分别了解了内部准备、检查、编码 和发送步骤，后续协议变化很容易漏改其中一个入口。让调用方只表达一次完整导出意图， 保持现有两个公开入口、返回值、提交顺序、一次发送和错误传递契约。现有测试已经 全部通过；请完成职责调整，不增加依赖，也不要引入可暂停工作流或通用插件系统。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "implementation_integrity", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+已完成导出职责重构。
+
+- 新增 [export-selection.mjs](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-candidate-z1cey76t/src/export-selection.mjs)，统一负责资格检查、协议编码、单次发送和结果生成。
+- 工具栏与键盘入口保留原公开函数，但现在只提交一次完整导出意图。
+- 移除暴露内部阶段和可变上下文的 `export-steps.mjs`。
+- 保持返回值、选择顺序、一次发送、等待期间 ID 稳定及原始错误传递契约。
+- 未增加依赖，也未引入工作流或插件抽象。
+
+验证：
+
+- `node --test test/export.test.mjs`：10/10 通过
+- `node --check src/export-selection.mjs`：通过
+- `git diff --check`：通过
+
+DIFF:
+diff --git a/src/export-selection.mjs b/src/export-selection.mjs
+new file mode 100644
+index 0000000..3e72f93
+--- /dev/null
++++ b/src/export-selection.mjs
+@@ -0,0 +1,16 @@
++export async function exportSelection(rows, write) {
++  if (rows.length === 0) return { kind: 'empty' };
++
++  const blockedIds = rows
++    .filter((row) => row.status !== 'ready')
++    .map((row) => row.id);
++
++  if (blockedIds.length > 0) {
++    return { kind: 'blocked', ids: blockedIds };
++  }
++
++  const ids = rows.map((row) => row.id);
++  await write({ schema: 1, document_ids: ids });
++
++  return { kind: 'sent', ids };
++}
+diff --git a/src/export-steps.mjs b/src/export-steps.mjs
+deleted file mode 100644
+index 06dcb55..0000000
+--- a/src/export-steps.mjs
++++ /dev/null
+@@ -1,24 +0,0 @@
+-export function begin(rows, write) {
+-  return { rows, write, decision: undefined, payload: undefined };
+-}
+-
+-export function classify(context) {
+-  const blocked = context.rows.filter((row) => row.status !== 'ready');
+-  context.decision = context.rows.length === 0
+-    ? { kind: 'empty' }
+-    : blocked.length
+-      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }
+-      : { kind: 'ready', ids: context.rows.map((row) => row.id) };
+-}
+-
+-export function encode(context) {
+-  if (context.decision.kind === 'ready') {
+-    context.payload = { schema: 1, document_ids: context.decision.ids };
+-  }
+-}
+-
+-export async function dispatch(context) {
+-  if (context.decision.kind !== 'ready') return context.decision;
+-  await context.write(context.payload);
+-  return { kind: 'sent', ids: context.decision.ids };
+-}
+diff --git a/src/keyboard.mjs b/src/keyboard.mjs
+index c04db7c..2a95278 100644
+--- a/src/keyboard.mjs
++++ b/src/keyboard.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-selection.mjs';
+ 
+ export async function handleKeyboardExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++  return exportSelection(rows, write);
+ }
+diff --git a/src/toolbar.mjs b/src/toolbar.mjs
+index 4ee21aa..80a55ec 100644
+--- a/src/toolbar.mjs
++++ b/src/toolbar.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-selection.mjs';
+ 
+ export async function handleToolbarExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++  return exportSelection(rows, write);
+ }
+
+
+GENERATOR SELF-CHECKS (during generation; output tails, not a full command audit):
+[{"attempt": 0, "command": "/bin/zsh -lc 'cat src/toolbar.mjs'", "exit_code": 0, "kind": "source inspection", "output_tail": "import { begin, classify, encode, dispatch } from './export-steps.mjs';\n\nexport async function handleToolbarExport(rows, write) {\n  const context = begin(rows, write);\n  classify(context);\n  encode(context);\n  return dispatch(context);\n}\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat src/export-steps.mjs'", "exit_code": 0, "kind": "source inspection", "output_tail": "export function begin(rows, write) {\n  return { rows, write, decision: undefined, payload: undefined };\n}\n\nexport function classify(context) {\n  const blocked = context.rows.filter((row) => row.status !== 'ready');\n  context.decision = context.rows.length === 0\n    ? { kind: 'empty' }\n    : blocked.length\n      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }\n      : { kind: 'ready', ids: context.rows.map((row) => row.id) };\n}\n\nexport function encode(context) {\n  if (context.decision.kind === 'ready') {\n    context.payload = { schema: 1, document_ids: context.decision.ids };\n  }\n}\n\nexport async function dispatch(context) {\n  if (context.decision.kind !== 'ready') return context.decision;\n  await context.write(context.payload);\n  return { kind: 'sent', ids: context.decision.ids };\n}\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat test/export.test.mjs'", "exit_code": 0, "kind": "source inspection", "output_tail": "arExport, keyboard: handleKeyboardExport })) {\n  test(name + ': empty does not write', async () => {\n    const outcome = await exportSelection([], () => assert.fail('Unexpected write'));\n    assert.deepEqual(outcome, { kind: 'empty' });\n  });\n  test(name + ': ineligible selection is all-or-nothing', async () => {\n    const rows = [{ id: 'a', status: 'ready' }, { id: 'b', status: 'pending' }];\n    const outcome = await exportSelection(rows, () => assert.fail('Unexpected partial write'));\n    assert.deepEqual(outcome, { kind: 'blocked', ids: ['b'] });\n    assert.deepEqual(rows, [{ id: 'a', status: 'ready' }, { id: 'b', status: 'pending' }]);\n  });\n  test(name + ': ready selection writes the owned protocol once in selection order', async () => {\n    const calls = [];\n    const rows = [{ id: 'b', status: 'ready' }, { id: 'a', status: 'ready' }];\n    const outcome = await exportSelection(rows, async (body) => { calls.push(body); });\n    assert.deepEqual(calls, [{ schema: 1, document_ids: ['b', 'a'] }]);\n    assert.deepEqual(outcome, { kind: 'sent', ids: ['b', 'a'] });\n    assert.deepEqual(rows, [{ id: 'b', status: 'ready' }, { id: 'a', status: 'ready' }]);\n  });\n  test(name + ': transport errors retain their meaning', async () => {\n    const failure = new Error('Storage unavailable');\n    await assert.rejects(exportSelection([{ id: 'a', status: 'ready' }], async () => { throw failure; }),\n      (error) => error === failure);\n  });\n  test(name + ': accepted intent does not drift during a pending write', async () => {\n    let release;\n    const accepted = new Promise((resolve) => { release = resolve; });\n    const rows = [{ id: 'a', status: 'ready' }];\n    let payload;\n    const outcome = exportSelection(rows, async (body) => { payload = body; await accepted; });\n    rows[0].id = 'changed'; rows[0].status = 'pending';\n    release();\n    assert.deepEqual(await outcome, { kind: 'sent', ids: ['a'] });\n    assert.deepEqual(payload, { schema: 1, document_ids: ['a'] });\n  });\n}\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat src/keyboard.mjs'", "exit_code": 0, "kind": "source inspection", "output_tail": "import { begin, classify, encode, dispatch } from './export-steps.mjs';\n\nexport async function handleKeyboardExport(rows, write) {\n  const context = begin(rows, write);\n  classify(context);\n  encode(context);\n  return dispatch(context);\n}\n"}, {"attempt": 0, "kind": "source changes", "paths": ["/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-candidate-z1cey76t/src/export-selection.mjs", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-candidate-z1cey76t/src/export-steps.mjs", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-candidate-z1cey76t/src/keyboard.mjs", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-candidate-z1cey76t/src/toolbar.mjs"]}, {"attempt": 0, "command": "/bin/zsh -lc 'git diff --check'", "exit_code": 0, "kind": "executed check", "output_tail": ""}, {"attempt": 0, "command": "/bin/zsh -lc 'node --test test/export.test.mjs'", "exit_code": 0, "kind": "executed check", "output_tail": "TAP version 13\n# Subtest: toolbar: empty does not write\nok 1 - toolbar: empty does not write\n  ---\n  duration_ms: 1.127792\n  type: 'test'\n  ...\n# Subtest: toolbar: ineligible selection is all-or-nothing\nok 2 - toolbar: ineligible selection is all-or-nothing\n  ---\n  duration_ms: 0.165833\n  type: 'test'\n  ...\n# Subtest: toolbar: ready selection writes the owned protocol once in selection order\nok 3 - toolbar: ready selection writes the owned protocol once in selection order\n  ---\n  duration_ms: 0.122959\n  type: 'test'\n  ...\n# Subtest: toolbar: transport errors retain their meaning\nok 4 - toolbar: transport errors retain their meaning\n  ---\n  duration_ms: 0.356292\n  type: 'test'\n  ...\n# Subtest: toolbar: accepted intent does not drift during a pending write\nok 5 - toolbar: accepted intent does not drift during a pending write\n  ---\n  duration_ms: 0.12375\n  type: 'test'\n  ...\n# Subtest: keyboard: empty does not write\nok 6 - keyboard: empty does not write\n  ---\n  duration_ms: 0.120584\n  type: 'test'\n  ...\n# Subtest: keyboard: ineligible selection is all-or-nothing\nok 7 - keyboard: ineligible selection is all-or-nothing\n  ---\n  duration_ms: 0.052209\n  type: 'test'\n  ...\n# Subtest: keyboard: ready selection writes the owned protocol once in selection order\nok 8 - keyboard: ready selection writes the owned protocol once in selection order\n  ---\n  duration_ms: 0.049209\n  type: 'test'\n  ...\n# Subtest: keyboard: transport errors retain their meaning\nok 9 - keyboard: transport errors retain their meaning\n  ---\n  duration_ms: 0.433833\n  type: 'test'\n  ...\n# Subtest: keyboard: accepted intent does not drift during a pending write\nok 10 - keyboard: accepted intent does not drift during a pending write\n  ---\n  duration_ms: 0.267875\n  type: 'test'\n  ...\n1..10\n# tests 10\n# suites 0\n# pass 10\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 69.675791\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat src/export-selection.mjs'", "exit_code": 0, "kind": "source inspection", "output_tail": "export async function exportSelection(rows, write) {\n  if (rows.length === 0) return { kind: 'empty' };\n\n  const blockedIds = rows\n    .filter((row) => row.status !== 'ready')\n    .map((row) => row.id);\n\n  if (blockedIds.length > 0) {\n    return { kind: 'blocked', ids: blockedIds };\n  }\n\n  const ids = rows.map((row) => row.id);\n  await write({ schema: 1, document_ids: ids });\n\n  return { kind: 'sent', ids };\n}\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'node --check src/export-selection.mjs'", "exit_code": 0, "kind": "executed check", "output_tail": ""}]
+
+HOST VALIDATIONS (after RESPONSE, by the capture runner):
+COMMAND verify protected evaluation harness EXIT 0
+
+COMMAND node --test test/export.test.mjs EXIT 0
+TAP version 13
+# Subtest: toolbar: empty does not write
+ok 1 - toolbar: empty does not write
+  ---
+  duration_ms: 0.970958
+  type: 'test'
+  ...
+# Subtest: toolbar: ineligible selection is all-or-nothing
+ok 2 - toolbar: ineligible selection is all-or-nothing
+  ---
+  duration_ms: 0.146375
+  type: 'test'
+  ...
+# Subtest: toolbar: ready selection writes the owned protocol once in selection order
+ok 3 - toolbar: ready selection writes the owned protocol once in selection order
+  ---
+  duration_ms: 0.097084
+  type: 'test'
+  ...
+# Subtest: toolbar: transport errors retain their meaning
+ok 4 - toolbar: transport errors retain their meaning
+  ---
+  duration_ms: 0.189583
+  type: 'test'
+  ...
+# Subtest: toolbar: accepted intent does not drift during a pending write
+ok 5 - toolbar: accepted intent does not drift during a pending write
+  ---
+  duration_ms: 0.068583
+  type: 'test'
+  ...
+# Subtest: keyboard: empty does not write
+ok 6 - keyboard: empty does not write
+  ---
+  duration_ms: 0.074584
+  type: 'test'
+  ...
+# Subtest: keyboard: ineligible selection is all-or-nothing
+ok 7 - keyboard: ineligible selection is all-or-nothing
+  ---
+  duration_ms: 0.031583
+  type: 'test'
+  ...
+# Subtest: keyboard: ready selection writes the owned protocol once in selection order
+ok 8 - keyboard: ready selection writes the owned protocol once in selection order
+  ---
+  duration_ms: 0.030833
+  type: 'test'
+  ...
+# Subtest: keyboard: transport errors retain their meaning
+ok 9 - keyboard: transport errors retain their meaning
+  ---
+  duration_ms: 0.158417
+  type: 'test'
+  ...
+# Subtest: keyboard: accepted intent does not drift during a pending write
+ok 10 - keyboard: accepted intent does not drift during a pending write
+  ---
+  duration_ms: 0.203166
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 38.271625
+
+codex
+{"evaluations":[{"id":"requirement-only-conditional-fields","dimensions":[{"key":"requirements_context","score":2,"reason":"实现逐项覆盖条件字段契约：disabled 优先、enabledWhen 同步求值、仅 true 时参与处理、提交级顶层快照及异常原样传播，并保留既有 API 和语义。"},{"key":"solution_complexity","score":2,"reason":"改动集中且直接，仅增加浅快照和一次 eligibility 计算，没有依赖或多余抽象。"},{"key":"module_boundaries","score":2,"reason":"条件资格判断仍由 processForm 统一拥有，required、校验和 payload 共用同一 eligible 集合与快照，职责边界清晰。"},{"key":"implementation_integrity","score":2,"reason":"差异中的实现自洽，既有行为测试与新增条件行为测试均通过，主机复验 13/13 通过且无未解决失败。"},{"key":"correctness_boundary","score":2,"reason":"覆盖了禁用短路、非严格 true 排除、每次提交仅求值一次、异步校验期间原值稳定、原始异常身份及特殊属性名等边界。"},{"key":"verification_evidence","score":2,"reason":"生成阶段与主机阶段均执行完整 npm run check，13 项测试全部通过；测试明确验证核心新增契约和原有语义。"},{"key":"communication_quality","score":2,"reason":"交付说明简洁准确，列明实现位置、关键语义和实际验证结果，与差异及检查输出一致。"}],"global_failures":[],"evidence_limits":[]},{"id":"requirement-only-export-refactor","dimensions":[{"key":"requirements_context","score":2,"reason":"重构准确响应了让两个入口只表达完整导出意图的要求，同时保留公开入口、结果、顺序、单次发送和错误传播契约。"},{"key":"solution_complexity","score":2,"reason":"使用一个小型领域函数替代四阶段可变工作流，没有新增依赖、暂停机制或插件系统，复杂度与需求匹配。"},{"key":"module_boundaries","score":2,"reason":"资格检查、协议编码、发送及结果生成被收拢到 exportSelection，工具栏和键盘模块仅负责入口委托，协议变化形成单一修改点。"},{"key":"implementation_integrity","score":2,"reason":"删除旧内部阶段后所有引用均已迁移；语法检查、差异检查和生成端测试通过，主机端 10/10 再次通过。"},{"key":"verification_evidence","score":2,"reason":"两类公开入口都经过相同的五项契约测试，覆盖空选择、全有或全无、顺序与一次发送、错误身份和等待期间结果稳定；主机复验全部通过。"},{"key":"communication_quality","score":2,"reason":"回复清楚说明职责迁移、保留的契约、删除内容和具体检查命令，且所有声明均有差异或验证输出支持。"}],"global_failures":[],"evidence_limits":[]}]}
+2026-10-19T03:13:24.339594Z  WARN codex_core::shell_snapshot: Failed to delete shell snapshot at AbsolutePathBuf("/Users/heguangwei/.codex/shell_snapshots/01a15225-df01-7373-9aca-9b473777076d.1792379576065548000.sh"): Os { code: 2, kind: NotFound, message: "No such file or directory" }
+tokens used
+4,967

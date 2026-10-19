@@ -1,0 +1,212 @@
+2026-10-19T03:11:01.018164Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:11:01.026667Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:11:01.035466Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:11:01.042759Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:11:01.050948Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+2026-10-19T03:11:01.059634Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back
+OpenAI Codex v0.145.0
+--------
+workdir: /var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a15224-1d8e-7a80-a209-ee1a62525e39
+--------
+user
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Match evidence requirements to the request: a plan-only task can establish a sound verification design without executing an absent application; do not impose release/rollout work outside scope.
+The RESPONSE predates HOST VALIDATIONS. Generator self-checks ran during generation in its sandbox; host checks ran afterwards and may have different browser/network permissions. Distinguish these origins rather than treating different results as automatically contradictory.
+Judge unresolved failures and false claims against their actual phase evidence; a later host pass does not make an earlier false self-test claim true, and a correctly reported sandbox failure does not contradict a later host pass.
+A final unresolved validation failure is direct evidence against implementation_integrity and verification_evidence. An intermediate failed check followed by relevant edits and a passing rerun is a repaired state, not proof that the final code still fails. Do not require a delivery summary to list every repaired intermediate error; assess remaining risk and consistency of readiness claims.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+[missing]
+
+CASE
+id: requirement-only-conditional-fields
+request: 给这个表单提交能力增加条件字段。字段可以声明同步的 enabledWhen(values)，只在 返回 true 时参与 required、自定义校验和提交；disabled 优先，禁用时条件回调也不运行。 每次提交开始时捕获一份顶层值快照，条件只求值一次，所有校验和最终 payload 使用 同一份快照，避免异步校验期间用户继续编辑影响本次提交。条件回调抛错要原样传递。 保留现有 processForm API、原有字段语义和零依赖约束，请完成实现。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "implementation_integrity", "correctness_boundary", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+已完成条件字段支持，同时保留现有 `processForm` API、字段语义和零依赖约束。
+
+改动：
+
+- 提交开始时创建顶层浅快照。
+- `disabled` 优先，不执行 `enabledWhen`。
+- `enabledWhen(snapshot)` 每次提交仅求值一次，且仅严格返回 `true` 时字段参与 required、校验和 payload。
+- 校验器与最终 payload 始终使用同一份提交快照。
+- 条件回调异常不包装，原样向上传递。
+- 更新了 [README.md](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/README.md) 契约说明。
+- 实现在 [process-form.js](/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/src/process-form.js)。
+
+验证：`npm run check`，13/13 项测试通过。未修改评测文件或 `.frontend-architect` 内容。
+
+DIFF:
+diff --git a/README.md b/README.md
+index 04a9827..a8d01bb 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,11 @@ This is an existing frontend form submission capability. Its public async API is
+ Fields have unique string names, optional boolean disabled/required and an optional
+ sync or async `validate(value, values)` returning a string error or undefined.
+ Disabled fields are neither validated nor submitted. Unknown values are omitted.
++Fields may also define a synchronous `enabledWhen(values)` condition. A conditional
++field participates in required checks, custom validation, and submission only when
++the condition returns `true`; disabled fields take precedence and do not evaluate
++their condition. Each submission uses one shallow top-level values snapshot for
++all conditions, validators, and the final payload.
+ Required emptiness is undefined, null or the empty string; zero, false, whitespace
+ and empty arrays are valid. Required errors are `Required` and skip that field's
+ custom validator. Custom errors retain their text. Await validation before sending
+diff --git a/src/process-form.js b/src/process-form.js
+index 5b23b0d..ea45daf 100644
+--- a/src/process-form.js
++++ b/src/process-form.js
+@@ -1,18 +1,22 @@
+ /** Existing form submission entry point. */
+ export async function processForm(fields, values, send) {
+-  const eligible = fields.filter(field => !field.disabled);
++  const snapshot = { ...values };
++  const eligible = fields.filter(field => {
++    if (field.disabled) return false;
++    return field.enabledWhen === undefined || field.enabledWhen(snapshot) === true;
++  });
+   const errors = {};
+   for (const field of eligible) {
+-    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
++    const value = Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined;
+     let error;
+     if (field.required && (value === undefined || value === null || value === '')) {
+       error = 'Required';
+     } else if (field.validate) {
+-      error = await field.validate(value, values);
++      error = await field.validate(value, snapshot);
+     }
+     if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });
+   }
+   if (Object.keys(errors).length) return { errors };
+   return send(Object.fromEntries(eligible.map(field => [field.name,
+-    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));
++    Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined])));
+ }
+
+
+GENERATOR SELF-CHECKS (during generation; output tails, not a full command audit):
+[{"attempt": 0, "command": "/bin/zsh -lc 'cat src/process-form.js'", "exit_code": 0, "kind": "source inspection", "output_tail": "/** Existing form submission entry point. */\nexport async function processForm(fields, values, send) {\n  const eligible = fields.filter(field => !field.disabled);\n  const errors = {};\n  for (const field of eligible) {\n    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;\n    let error;\n    if (field.required && (value === undefined || value === null || value === '')) {\n      error = 'Required';\n    } else if (field.validate) {\n      error = await field.validate(value, values);\n    }\n    if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });\n  }\n  if (Object.keys(errors).length) return { errors };\n  return send(Object.fromEntries(eligible.map(field => [field.name,\n    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));\n}\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat test/conditional-fields.test.js'", "exit_code": 0, "kind": "source inspection", "output_tail": "ny: 'Acme' });\n  assert.equal(calls, 3);\n});\n\ntest('disabled wins over the conditional callback', async () => {\n  assert.deepEqual(await processForm([{ name: 'old', disabled: true,\n    enabledWhen() { assert.fail('disabled condition ran'); } }], { old: 1 }, x => x), {});\n});\n\ntest('conditions, validators and payload use the same top-level submission snapshot', async () => {\n  let release;\n  let started;\n  const entered = new Promise(resolve => { started = resolve; });\n  const gate = new Promise(resolve => { release = resolve; });\n  const values = { kind: 'business', company: 'Before' };\n  let conditionSnapshot;\n  let validatorSnapshot;\n  const pending = processForm([\n    { name: 'kind', validate: async (value, snapshot) => { validatorSnapshot = snapshot; started(); await gate; } },\n    { name: 'company', enabledWhen(snapshot) { conditionSnapshot = snapshot; return snapshot.kind === 'business'; },\n      validate(value, snapshot) { assert.equal(value, 'Before'); assert.equal(snapshot, validatorSnapshot); } },\n  ], values, x => x);\n  await entered;\n  values.kind = 'personal'; values.company = 'After';\n  release();\n  assert.deepEqual(await pending, { kind: 'business', company: 'Before' });\n  assert.equal(conditionSnapshot, validatorSnapshot);\n  assert.notEqual(conditionSnapshot, values);\n  assert.deepEqual(values, { kind: 'personal', company: 'After' });\n});\n\ntest('conditional failures propagate with their original identity', async () => {\n  const failure = new Error('condition failed');\n  await assert.rejects(processForm([{ name: 'x', enabledWhen() { throw failure; } }], { x: 1 },\n    () => assert.fail('sent')), error => error === failure);\n});\n\ntest('conditional prototype-like names remain own payload keys', async () => {\n  let calls = 0;\n  const result = await processForm([{ name: '__proto__', enabledWhen() { calls++; return false; } }],\n    { ['__proto__']: 'hidden' }, x => x);\n  assert.equal(Object.hasOwn(result, '__proto__'), false);\n  assert.equal(calls, 1);\n});\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'cat test/process-form.test.js'", "exit_code": 0, "kind": "source inspection", "output_tail": "));\n  const result = await processForm(fields, values, () => assert.fail('invalid form sent'));\n  assert.deepEqual(result, { errors: { absent: 'Required', nil: 'Required', blank: 'Required' } });\n});\ntest('async validator preserves specific error and blocks send', async () => {\n  const result = await processForm([{ name: 'name', validate: async () => 'Already taken' }], { name: 'Ada' }, () => assert.fail('invalid form sent'));\n  assert.deepEqual(result, { errors: { name: 'Already taken' } });\n});\ntest('send waits for custom validation and returns the send result without mutation', async () => {\n  let release; const gate = new Promise(resolve => { release = resolve; }); let sent = 0;\n  const fields = Object.freeze([Object.freeze({ name: 'value', validate: () => gate })]);\n  const values = Object.freeze({ value: 1 });\n  const pending = processForm(fields, values, async payload => { sent++; return { saved: payload.value }; });\n  await Promise.resolve(); assert.equal(sent, 0); release(undefined);\n  assert.deepEqual(await pending, { saved: 1 }); assert.equal(sent, 1);\n});\ntest('validator and transport rejections propagate', async () => {\n  const failure = Error('offline');\n  await assert.rejects(processForm([{ name: 'x', validate: async () => { throw failure; } }], { x: 1 }, () => assert.fail('sent')), error => error === failure);\n  await assert.rejects(processForm([{ name: 'x' }], { x: 1 }, async () => { throw failure; }), error => error === failure);\n});\ntest('prototype-like names remain own error and payload keys', async () => {\n  const fields = [{ name: '__proto__', required: true }];\n  const result = await processForm(fields, {}, () => assert.fail('sent'));\n  assert.equal(Object.hasOwn(result.errors, '__proto__'), true); assert.equal(result.errors.__proto__, 'Required');\n  const payload = await processForm(fields, { ['__proto__']: 'value' }, payload => payload);\n  assert.equal(Object.hasOwn(payload, '__proto__'), true); assert.equal(payload.__proto__, 'value');\n});\n"}, {"attempt": 0, "kind": "source changes", "paths": ["/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/README.md", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-conditional-fields-candidate-gg1tsle3/src/process-form.js"]}, {"attempt": 0, "command": "/bin/zsh -lc 'npm run check'", "exit_code": 0, "kind": "executed check", "output_tail": "n snapshot\nok 4 - conditions, validators and payload use the same top-level submission snapshot\n  ---\n  duration_ms: 0.977667\n  type: 'test'\n  ...\n# Subtest: conditional failures propagate with their original identity\nok 5 - conditional failures propagate with their original identity\n  ---\n  duration_ms: 0.28325\n  type: 'test'\n  ...\n# Subtest: conditional prototype-like names remain own payload keys\nok 6 - conditional prototype-like names remain own payload keys\n  ---\n  duration_ms: 0.429875\n  type: 'test'\n  ...\n# Subtest: disabled validation never runs or blocks, and payload excludes disabled/unknown fields\nok 7 - disabled validation never runs or blocks, and payload excludes disabled/unknown fields\n  ---\n  duration_ms: 0.904\n  type: 'test'\n  ...\n# Subtest: zero false whitespace and empty arrays satisfy required\nok 8 - zero false whitespace and empty arrays satisfy required\n  ---\n  duration_ms: 0.156167\n  type: 'test'\n  ...\n# Subtest: all specified empty representations fail and skip custom validation\nok 9 - all specified empty representations fail and skip custom validation\n  ---\n  duration_ms: 0.083166\n  type: 'test'\n  ...\n# Subtest: async validator preserves specific error and blocks send\nok 10 - async validator preserves specific error and blocks send\n  ---\n  duration_ms: 0.113541\n  type: 'test'\n  ...\n# Subtest: send waits for custom validation and returns the send result without mutation\nok 11 - send waits for custom validation and returns the send result without mutation\n  ---\n  duration_ms: 0.226375\n  type: 'test'\n  ...\n# Subtest: validator and transport rejections propagate\nok 12 - validator and transport rejections propagate\n  ---\n  duration_ms: 0.262625\n  type: 'test'\n  ...\n# Subtest: prototype-like names remain own error and payload keys\nok 13 - prototype-like names remain own error and payload keys\n  ---\n  duration_ms: 0.071292\n  type: 'test'\n  ...\n1..13\n# tests 13\n# suites 0\n# pass 13\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 70.667625\n"}]
+
+HOST VALIDATIONS (after RESPONSE, by the capture runner):
+COMMAND verify protected evaluation harness EXIT 0
+
+COMMAND npm ci EXIT 0
+
+up to date, audited 1 package in 193ms
+
+found 0 vulnerabilities
+
+COMMAND npm run check EXIT 0
+
+> check
+> node --test
+
+TAP version 13
+# Subtest: inactive conditional field cannot validate, block or submit
+ok 1 - inactive conditional field cannot validate, block or submit
+  ---
+  duration_ms: 0.635167
+  type: 'test'
+  ...
+# Subtest: conditional field is recalculated once on each submission
+ok 2 - conditional field is recalculated once on each submission
+  ---
+  duration_ms: 0.154834
+  type: 'test'
+  ...
+# Subtest: disabled wins over the conditional callback
+ok 3 - disabled wins over the conditional callback
+  ---
+  duration_ms: 0.05425
+  type: 'test'
+  ...
+# Subtest: conditions, validators and payload use the same top-level submission snapshot
+ok 4 - conditions, validators and payload use the same top-level submission snapshot
+  ---
+  duration_ms: 0.768334
+  type: 'test'
+  ...
+# Subtest: conditional failures propagate with their original identity
+ok 5 - conditional failures propagate with their original identity
+  ---
+  duration_ms: 0.2785
+  type: 'test'
+  ...
+# Subtest: conditional prototype-like names remain own payload keys
+ok 6 - conditional prototype-like names remain own payload keys
+  ---
+  duration_ms: 0.062333
+  type: 'test'
+  ...
+# Subtest: disabled validation never runs or blocks, and payload excludes disabled/unknown fields
+ok 7 - disabled validation never runs or blocks, and payload excludes disabled/unknown fields
+  ---
+  duration_ms: 0.734834
+  type: 'test'
+  ...
+# Subtest: zero false whitespace and empty arrays satisfy required
+ok 8 - zero false whitespace and empty arrays satisfy required
+  ---
+  duration_ms: 0.137125
+  type: 'test'
+  ...
+# Subtest: all specified empty representations fail and skip custom validation
+ok 9 - all specified empty representations fail and skip custom validation
+  ---
+  duration_ms: 0.079125
+  type: 'test'
+  ...
+# Subtest: async validator preserves specific error and blocks send
+ok 10 - async validator preserves specific error and blocks send
+  ---
+  duration_ms: 0.085542
+  type: 'test'
+  ...
+# Subtest: send waits for custom validation and returns the send result without mutation
+ok 11 - send waits for custom validation and returns the send result without mutation
+  ---
+  duration_ms: 0.234541
+  type: 'test'
+  ...
+# Subtest: validator and transport rejections propagate
+ok 12 - validator and transport rejections propagate
+  ---
+  duration_ms: 0.284334
+  type: 'test'
+  ...
+# Subtest: prototype-like names remain own error and payload keys
+ok 13 - prototype-like names remain own error and payload keys
+  ---
+  duration_ms: 0.081
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 59.086375
+
+codex
+{"evaluations":[{"id":"requirement-only-conditional-fields","dimensions":[{"key":"requirements_context","score":2,"reason":"准确识别并覆盖条件字段、disabled 优先、单次条件求值、提交级浅快照、异常原样传播、API 兼容和零依赖等契约。"},{"key":"solution_complexity","score":2,"reason":"改动局部且直接，复用现有过滤、校验和提交流程，没有引入依赖或不必要抽象。"},{"key":"module_boundaries","score":2,"reason":"功能保持在既有 processForm 边界内，公开 API 未变，并同步更新了契约文档。"},{"key":"implementation_integrity","score":2,"reason":"实现完整一致：先捕获浅快照，再一次性确定 eligible 字段；后续 required、自定义校验和 payload 均基于该快照。主机最终验证全部通过。"},{"key":"correctness_boundary","score":2,"reason":"正确处理 disabled 短路、仅严格 true 启用、非活动字段不校验不提交、每次提交重新求值、异步校验期间值隔离及条件异常身份保持。原有必填、错误和特殊字段名语义也保持通过。"},{"key":"verification_evidence","score":2,"reason":"生成阶段与主机阶段的 npm run check 均通过 13/13 测试；测试直接覆盖新增条件语义、快照一致性、异常传播和既有回归行为。"},{"key":"communication_quality","score":2,"reason":"交付说明简洁、可核验，明确列出行为变化、文件位置和实际验证结果，且与证据一致。"}],"global_failures":[],"evidence_limits":[]}]}
+tokens used
+19,954

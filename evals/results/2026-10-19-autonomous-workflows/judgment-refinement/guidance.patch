@@ -1,0 +1,176 @@
+--- before/SKILL.md
++++ after/SKILL.md
+@@ -70,6 +70,10 @@
+ code, consumers and authoritative contracts. Model identities, minimal state,
+ transitions and effect owners, then connect a complete flow to a check that could
+ expose its failure. Shared rules must agree across the paths that implement them.
++Identify authoritative outcomes separately from follow-on synchronization; trace
++what the consumer sees when the first succeeds and the next step fails. Choose
++checks from these boundaries as well as existing tests, without waiting for a
++user-supplied edge-case list.
+ Revisit decisions when evidence changes; scale depth to uncertainty and impact.
+ For work that needs design, turn these checkpoints into the technical document
+ required below before changing implementation. Documentation adds no approval gate.
+@@ -155,7 +159,7 @@
+ | Domain meaning or lasting decision | [Domain knowledge](references/architecture-and-code.md#preserve-domain-knowledge-and-decisions) |
+ | Function clarity, call contracts, utilities or local refactor | [Readable operations](references/architecture-and-code.md#construct-a-readable-operation); [utility contracts](references/architecture-and-code.md#design-utilities-around-explicit-contracts) for a general utility |
+ | State, data, component/API ownership or abstraction | [Architecture contents](references/architecture-and-code.md#contents), then the relevant section |
+-| Races, request policy, reconciliation or cleanup | [Async and lifecycles](references/async-and-lifecycles.md) |
++| Async commands, request policy, reconciliation or cleanup | [Async and lifecycles](references/async-and-lifecycles.md) |
+ | Application/feature organization or dependency direction | [Module contents](references/module-boundaries.md#contents), then the relevant scale |
+ | Functions, objects, closures, reducers or state machines | [Paradigm decision matrix](references/programming-paradigms.md#decision-matrix), then the relevant representation |
+ | Execution placement, routing, hydration, caches, bundles or rollout | [Runtime and delivery](references/runtime-and-delivery.md), select the relevant heading |
+@@ -186,7 +190,10 @@
+ accepted data, visible feedback, recovery and the final state after interruption
+ or teardown. Browser/device claims need that runtime; class names, synthetic
+ events or test counts do not prove layout, focus or performance. Measure material
+-optimizations before and after on representative conditions. Preserve user
++optimizations against the unchanged input and final corrected code on comparable
++representative conditions; recover an original snapshot if the baseline was missed.
++Cross-read important documented contracts and both diagrams against actual
++definitions, callers and executed evidence before delivery. Preserve user
+ preferences and relevant loading, empty, error, permission, stale, cancellation
+ and race behavior.
+ 
+--- before/references/architecture-and-code.md
++++ after/references/architecture-and-code.md
+@@ -222,9 +222,20 @@
+ distinct from executed results. For each increment, use its real callers and checks
+ to test whether the designed boundary supports the required behavior; feed a
+ necessary change back into the steps, contracts and diagrams before dependent
+-work continues. At delivery reconcile diagrams, symbols and step
+-status with the final code and actual evidence. Do not claim a planned runtime
+-check passed, and do not describe a superseded design as the current implementation.
++work continues. Before delivery, walk the document's important operations to their
++actual definitions and representative callers. Check name/location, parameters,
++result, effects and owned state; then follow the diagram's input, confirmation,
++failure and return arrows through that same code. Update the same document for
++renamed helpers, changed calling conventions or redistributed responsibilities,
++and reconcile step status with executed checks. This is a final cross-read of the
++delivered artifacts, not a recollection of the initial plan.
++
++Use existing types, API/document generation or diagram checks where they reliably
++verify a contract, but do not expect name search or diagram parsing to prove
++semantic agreement. Mark conceptual labels and illustrative signatures as such;
++proposed work must remain distinguishable from implemented callable contracts.
++Do not inventory every private helper merely to make checking mechanical. Do not
++claim a planned runtime check passed or describe a superseded design as current.
+ 
+ Design-only requests use this same requirement-to-architecture process with a
+ document as the requested stopping point. Save it in the workspace and link it
+--- before/references/async-and-lifecycles.md
++++ after/references/async-and-lifecycles.md
+@@ -68,6 +68,21 @@
+ from a current user-visible failure. If recovery is impossible locally, retain
+ an honest error or unknown-result state rather than promising that retry is safe.
+ 
++For a command followed by refresh, navigation, rendering or other synchronization,
++identify where the authoritative effect is confirmed. Once confirmed, a secondary
++failure cannot turn it into a failed command or erase its confirmation. Keep the
++confirmed result available and report the secondary failure at its own boundary;
++recovery retries the failed read/projection, not the committed command. If the
++command's outcome is unknown, reconcile it using the existing service contract
++instead of inventing a confirmation or blindly repeating the effect.
++
++Trace this distinction through each supported consumer, including native forms
++and enhanced interactions where both exist. A shared service call does not prove
++that their final feedback agrees. Exercise the combination of successful command
++and failed follow-on work, as well as command rejection; tests of each operation
++in isolation miss that boundary. Reuse existing mutation/query states and error
++presentation before adding new state machinery.
++
+ ## Reconcile optimistic state with acknowledgements
+ 
+ Keep these meanings distinct when optimistic behavior exists:
+--- before/references/interface-and-motion.md
++++ after/references/interface-and-motion.md
+@@ -112,11 +112,22 @@
+ tooltips, comboboxes, and disclosures. ARIA does not repair incorrect interaction
+ behavior; prefer native semantics and verified patterns.
+ 
+-For interactions that close, unmount or transfer focus, observe the result after
+-native defaults and rendering have settled. Restoring focus in a callback can
+-still be undone later in the same pointer sequence. Fix the responsible event
+-or lifecycle boundary while preserving consumer cancellation; do not globally
+-cancel pointer defaults to make a single check pass.
++Treat interaction continuity separately from visual identity. Stable keys or
++reused nodes do not establish that focus, text selection or scroll survived a
++move, replacement or reparenting. Prefer the framework/platform behavior that
++preserves them; where the mutation disrupts an active interaction, carry its
++logical target through that mutation and restore only the state it actually lost.
++Keep this with the owner changing the structure, not an animation-completion
++callback. If the target disappears, use the interaction's defined next target;
++do not steal focus from a user who moved elsewhere during asynchronous work.
++
++Verify through real keyboard use after native defaults and rendering settle:
++activate again without refocusing in the test and observe which control receives
++it. Include the static/reduced-motion path when applicable. A focused node's
++identity or one successful callback does not establish continued operability.
++Restoration can be undone later in the same pointer sequence; fix the responsible
++event or lifecycle boundary while preserving consumer cancellation, rather than
++globally cancelling pointer defaults.
+ 
+ ## Use motion to explain change
+ 
+--- before/references/rendering-and-performance.md
++++ after/references/rendering-and-performance.md
+@@ -67,6 +67,16 @@
+ - the metric and evidence that localize the cost;
+ - the target, tolerance, owner, and release decision;
+ - correctness, accessibility, memory, energy, and maintainability constraints.
++
++Capture the unchanged implementation before the first performance edit, using
++the project's existing profiler or benchmark when suitable. If that opportunity
++was missed, reconstruct the original revision/dirty-tree input in an isolated
++copy and run the same scenario there. Two post-edit samples are repeatability
++evidence, not a before/after baseline. Bind samples to the actual code snapshot
++and keep data, actions, runtime, build and relevant preferences comparable.
++An original functional defect may require a still-valid representative path;
++explain that limit rather than silently measuring different journeys. If a
++comparable baseline cannot be obtained, bound the claim to what was measured.
+ 
+ A display's nominal frame interval is approximately `1000 / refreshRate` ms,
+ but that is not a universal amount of application CPU time. Scheduling,
+@@ -160,6 +170,12 @@
+ tradeoffs. A lower component render count, smaller payload, or faster pure
+ function is only intermediate evidence unless it improves or protects the
+ relevant user outcome.
++
++Repeat after a correctness repair that changes measured work. A faster version
++that loses interaction state is not the accepted comparison. State which stage
++the metric establishes: reduced-motion layout counts can support a layout-work
++claim, but do not establish animated frame delivery or input latency. Do not
++substitute a passing functional suite for the performance measurement.
+ 
+ ## Verify on the real runtime
+ 
+--- before/references/verification-and-review.md
++++ after/references/verification-and-review.md
+@@ -38,6 +38,14 @@
+ Run project-prescribed checks. If the full suite is disproportionate or cannot
+ run, execute the strongest relevant subset and state what remains unverified.
+ Passing tools does not substitute for reasoning about missing behavior.
++
++Derive additional checks from the changed flow, not only the supplied test list.
++For each consequential boundary, ask which plausible completion or interruption
++would make the visible result false even though individual steps passed. Exercise
++that combination at the real consumer; reuse the existing harness or add a small
++focused check. Do not wait for the user or a later review to enumerate it. Inspect
++the actual failing result, repair its responsible owner and repeat that check
++before accepting the affected flow. Keep unrelated combinations out of scope.
+ 
+ Use a real browser when claiming browser behavior: focus movement, keyboard
+ event ordering, hydration, layout, scrolling, pointer interaction, and visual
+@@ -277,6 +285,12 @@
+ 4. Change the smallest responsible part.
+ 5. Repeat the same measurement and compare tradeoffs.
+ 
++Verify the baseline's code identity and timing: a first sample taken after source
++edits is not an original baseline. Recover the original in an isolated copy when
++needed, following the [measurement contract](rendering-and-performance.md#define-the-performance-contract).
++Require a comparison of the final corrected implementation; disclose unmeasured
++stages instead of inferring them from a cheaper intermediate operation.
++
+ Check that the evidence matches the claimed runtime and user path. Do not accept
+ render counts, one synthetic score, a simulator, or a microbenchmark as proof of
+ production impact. Use the rendering or runtime reference only when the review

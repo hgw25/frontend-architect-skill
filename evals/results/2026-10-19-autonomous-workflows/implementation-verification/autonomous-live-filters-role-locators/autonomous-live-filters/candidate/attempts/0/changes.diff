@@ -1,0 +1,698 @@
+diff --git a/README.md b/README.md
+index ade60cd..3c53dbc 100644
+--- a/README.md
++++ b/README.md
+@@ -22,3 +22,6 @@ long translated labels, keyboard operation and 200% text sizing must remain
+ usable without horizontal page overflow. Existing design-system functions in
+ ui.mjs may be extended while preserving their public behavior. There is no
+ animation or performance-optimization requirement. Run npm run check.
++
++The implementation design and maintained behavior contracts are documented in
++[`docs/filtering-design.md`](docs/filtering-design.md).
+diff --git a/docs/filtering-design.md b/docs/filtering-design.md
+new file mode 100644
+index 0000000..59e7560
+--- /dev/null
++++ b/docs/filtering-design.md
+@@ -0,0 +1,141 @@
++# Product and order filtering design
++
++## Outcome and established contracts
++
++The application has two filtering workflows backed by the existing
++`queryProducts` and `queryOrders` functions. The URL is the authoritative applied
++state and unrelated parameters must survive updates.
++
++- Products start with published products, all categories, and no keyword. Form
++  values are a draft: only submit/Apply publishes them to the URL and starts a
++  query. Reset publishes the product defaults.
++- Orders start with all statuses and the 30 calendar days ending on `today` from
++  `data.mjs`. Complete, ordered dates and other edits publish immediately. An
++  incomplete or reversed range stays editable, is associated with a visible
++  error, and leaves the URL and displayed results unchanged. Reset publishes the
++  order defaults.
++- Reload and `popstate` rebuild the page and its controls from the URL. Product
++  submissions create history entries. Live order edits replace the current entry
++  so typing does not create one history item per character; following a page link
++  still creates normal browser history.
++- A current query failure is visible without representing failure as an empty
++  result. Only the newest request may publish rows, counts, or errors.
++- Native labelled controls, submit behavior, visible focus, wrapping layout, and
++  a named Results list preserve keyboard, narrow-width, translation, and text-zoom
++  behavior.
++
++Query parameter contracts are page-prefixed (`p_q`, `p_category`, `p_status` and
++`o_q`, `o_status`, `o_from`, `o_to`). Default values are omitted except that an
++explicit empty product status represents “all statuses” because absence means the
++published default. Unknown enumerated values fall back to their defaults; invalid
++dates remain visible as the order draft but are never queried.
++
++## Ordered implementation (3 steps)
++
++1. **URL filter contracts.** Add pure parsing, serialization, defaults, and order
++   date validation in `src/filters.mjs`. Inputs are a `URL`/draft object; outputs
++   are normalized applied filters or a validation message. Completion: focused
++   module tests cover defaults, preservation of unrelated parameters, explicit
++   all-product-status, and the fixed 30-day range.
++2. **Page composition and effects.** Replace the static page in `src/app.mjs`
++   with product and order page builders using existing `ui.mjs` controls and
++   query functions. The page owns editable form values; URL helpers own applied
++   representation; a single request generation owns latest-result publication.
++   Completion: browser flows demonstrate draft/apply, live valid orders, local
++   invalid dates, URL restoration, reset, error presentation, and stale-response
++   rejection.
++3. **Responsive presentation and reconciliation.** Extend `src/style.css` so the
++   filter surface wraps intrinsically and controls can shrink without page-level
++   horizontal overflow. Reconcile this document with the implemented symbols and
++   record executed checks. Completion: the repository Playwright suite passes,
++   including keyboard submit and 200% text at 360 px.
++
++## Code contracts and ownership
++
++- `productFiltersFromUrl(url) -> ProductFilters` and
++  `orderDraftFromUrl(url) -> OrderFilters` are the only URL readers.
++- `urlWithProductFilters(url, filters) -> URL` and
++  `urlWithOrderFilters(url, filters) -> URL` clone and update only owned keys;
++  callers choose push versus replace history semantics.
++- `validateOrderFilters(filters) -> string | null` owns the synchronous date
++  invariant. `defaultOrderFilters()` derives its range from project `today`.
++- `createProductPage()` and `createOrderPage()` compose product-specific controls
++  and transitions. Shared DOM primitives remain in `ui.mjs`; product rules do not
++  leak into a universal filter component.
++- `createResults(query).run(filters)` in `app.mjs` snapshots the submitted filter
++  and increments a request generation. Success and failure publish only when
++  their generation is still current. Existing results remain visible on failure.
++- `renderFromUrl()` owns route/history reconciliation and invalidates pending work
++  before replacing the current page. Removed DOM owns no external subscriptions.
++
++## Technical architecture
++
++```text
++Browser URL/history
++      | parse on load/popstate             ^ push/replace owned keys
++      v                                    |
++src/filters.mjs (defaults, codecs, validation)
++      | normalized applied filters / validation result
++      v
++src/app.mjs page owner -----------------> src/ui.mjs native primitives
++      | stable filter snapshot                    |
++      v                                           v
++src/query.mjs existing async boundary       labelled form DOM
++      | { rows, count } / Error                    ^
++      v                                            |
++latest-request publication ------------------------+
++```
++
++## Representative data flows
++
++```text
++Product input
++  -> form draft only
++  -> submit/Apply
++  -> urlWithProductFilters(current URL, draft)
++  -> history.pushState
++  -> queryProducts(snapshot)
++  -> [current generation] render rows + actual count
++     [stale generation] discard success/error
++     [current error] keep rows + publish alert
++
++Order date edit
++  -> read form draft
++  -> validateOrderFilters
++  -> [invalid] set aria-invalid + associated alert; URL/results unchanged
++     [valid] clear validation -> history.replaceState
++             -> queryOrders(snapshot)
++             -> current result/error publication as above
++
++Browser back/forward or reload
++  -> renderFromUrl -> parse page-owned URL keys -> rebuild draft controls
++  -> query normalized applied filters -> visible rows/count or current alert
++```
++
++## Verification, recovery, and evolution
++
++The decisive check is `npm run check` at the browser boundary. Source-level
++inspection additionally checks that all query completion branches use the same
++generation guard, URL writes preserve unrelated parameters, and errors remain
++owned by the active page. There is no persistence migration: URLs remain the
++recovery mechanism and malformed/unknown values normalize to documented defaults.
++
++A realistic next change is adding a product price range. It adds fields and codec
++keys within the product filter contract and page builder without changing order
++validation or async publication. If both pages later gain the *same semantic*
++range policy, that demonstrated duplication is the point to extract a shared
++field group; visual similarity alone is not.
++
++## Delivery evidence
++
++Implementation steps 1–3 are complete. `node --test
++tests/filter-contracts.node.mjs` passes three URL/default/validation contract
++checks; `node --check` passes for `src/app.mjs` and `src/filters.mjs`; and
++`git diff --check` passes.
++
++Browser acceptance remains environment-blocked rather than passed. `npm run check`
++cannot start the configured server because this sandbox rejects binding
++`127.0.0.1` with `EPERM`. The no-server browser harness in
++`scripts/check-browser-without-server.mjs` also cannot launch Chromium because the
++sandbox rejects its Mach service registration. Both commands remain reproducible
++for an environment that permits those operations.
+diff --git a/scripts/check-browser-without-server.mjs b/scripts/check-browser-without-server.mjs
+new file mode 100644
+index 0000000..7a239fe
+--- /dev/null
++++ b/scripts/check-browser-without-server.mjs
+@@ -0,0 +1,80 @@
++import { readFile } from 'node:fs/promises';
++import { extname, resolve } from 'node:path';
++import assert from 'node:assert/strict';
++import { chromium, expect } from '@playwright/test';
++
++const root = resolve(import.meta.dirname, '..');
++const types = new Map([
++  ['.html', 'text/html'],
++  ['.mjs', 'text/javascript'],
++  ['.css', 'text/css'],
++]);
++
++const browser = await chromium.launch({ headless: true });
++const page = await browser.newPage();
++await page.route('http://app.test/**', async route => {
++  const pathname = new URL(route.request().url()).pathname;
++  const relativePath = pathname === '/' ? 'index.html' : pathname.slice(1);
++  const filePath = resolve(root, relativePath);
++  if (!filePath.startsWith(`${root}/`)) {
++    await route.abort();
++    return;
++  }
++  await route.fulfill({
++    body: await readFile(filePath),
++    contentType: types.get(extname(filePath)) ?? 'application/octet-stream',
++  });
++});
++
++const results = page.getByRole('list', { name: 'Results' });
++
++await page.goto('http://app.test/?page=products&utm=keep');
++await expect(results.getByRole('listitem')).toHaveCount(3);
++const productKeyword = page.getByLabel('Product keyword', { exact: true });
++await productKeyword.fill('Tea');
++await expect(results.getByRole('listitem')).toHaveCount(3);
++await page.getByRole('button', { name: 'Apply', exact: true }).click();
++await expect(results).toHaveText('Tea');
++assert.equal(new URL(page.url()).searchParams.get('utm'), 'keep');
++await productKeyword.fill('Cap');
++await page.getByRole('button', { name: 'Apply', exact: true }).click();
++await productKeyword.fill('Tea');
++await page.getByRole('button', { name: 'Apply', exact: true }).click();
++await expect(results).toHaveText('Tea');
++await page.waitForTimeout(300);
++await expect(results).toHaveText('Tea');
++await page.goBack();
++await expect(page.getByLabel('Product keyword', { exact: true })).toHaveValue('Cap');
++await expect(results).toHaveText('Cap');
++
++await page.goto('http://app.test/?page=orders&utm=keep');
++await expect(results.getByRole('listitem')).toHaveCount(3);
++await page.getByLabel('Order keyword', { exact: true }).fill('Alice');
++await expect(results.getByRole('listitem')).toHaveCount(2);
++const applied = page.url();
++await page.getByLabel('From date', { exact: true }).fill('2026-10-30');
++await expect(page.getByRole('alert')).toContainText(/date|range|before|after/i);
++assert.equal(page.url(), applied);
++await expect(results.getByRole('listitem')).toHaveCount(2);
++await page.getByLabel('To date', { exact: true }).fill('2026-11-01');
++await expect(results.getByRole('listitem')).toHaveCount(0);
++await page.getByRole('button', { name: 'Reset', exact: true }).click();
++await expect(page.getByLabel('From date', { exact: true })).toHaveValue('2026-09-20');
++await expect(results.getByRole('listitem')).toHaveCount(3);
++
++await page.setViewportSize({ width: 360, height: 800 });
++await page.goto('http://app.test/?page=products');
++await page.evaluate(() => {
++  document.documentElement.style.fontSize = '200%';
++  for (const span of document.querySelectorAll('label span')) {
++    span.textContent += ' translated label with considerably longer text';
++  }
++});
++const narrowKeyword = page.getByLabel(/Product keyword/);
++await narrowKeyword.fill('Tea');
++await narrowKeyword.press('Enter');
++await expect(results).toHaveText('Tea');
++assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
++
++await browser.close();
++console.log('Browser fallback checks passed');
+diff --git a/src/app.mjs b/src/app.mjs
+index 689a220..1a6dfac 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,10 +1,207 @@
+-import { node, field, input, button } from './ui.mjs';
+-import { products } from './data.mjs';
+-const app=document.querySelector('#app');
+-const nav=node('nav');
+-for(const [name,page] of [['Products','products'],['Orders','orders']]){const a=node('a',name);a.href='/?page='+page;nav.append(a);}
+-const heading=node('h1','Products');
+-const form=node('form');form.append(field('Product keyword',input()),button('Apply',e=>e.preventDefault()),button('Reset'));
+-const count=node('p',products.length+' results');count.setAttribute('role','status');
+-const list=node('ul');list.setAttribute('aria-label','Results');for(const row of products)list.append(node('li',row.name));
+-app.append(nav,heading,form,count,list);
++import { node, field, input, select, button } from './ui.mjs';
++import { queryProducts, queryOrders } from './query.mjs';
++import {
++  defaultProductFilters,
++  defaultOrderFilters,
++  productFiltersFromUrl,
++  orderDraftFromUrl,
++  urlWithProductFilters,
++  urlWithOrderFilters,
++  validateOrderFilters,
++} from './filters.mjs';
++
++const app = document.querySelector('#app');
++let requestGeneration = 0;
++
++function currentUrl() {
++  return new URL(window.location.href);
++}
++
++function createNavigation() {
++  const nav = node('nav');
++  nav.setAttribute('aria-label', 'Pages');
++  for (const [name, page] of [['Products', 'products'], ['Orders', 'orders']]) {
++    const link = node('a', name);
++    link.href = `/?page=${page}`;
++    nav.append(link);
++  }
++  return nav;
++}
++
++function createResults(query) {
++  const message = node('p');
++  message.className = 'filter-message';
++  message.setAttribute('role', 'alert');
++
++  const count = node('p', 'Loading results');
++  count.setAttribute('role', 'status');
++
++  const list = node('ul');
++  list.setAttribute('aria-label', 'Results');
++
++  function setMessage(text = '') {
++    message.textContent = text;
++  }
++
++  async function run(filters) {
++    const generation = ++requestGeneration;
++    setMessage();
++
++    try {
++      const result = await query({ ...filters });
++      if (generation !== requestGeneration) return;
++
++      list.replaceChildren(...result.rows.map(row => node('li', row.name)));
++      count.textContent = `${result.count} ${result.count === 1 ? 'result' : 'results'}`;
++    } catch (error) {
++      if (generation !== requestGeneration) return;
++      setMessage(error instanceof Error ? error.message : 'The query failed.');
++    }
++  }
++
++  return { message, count, list, run, setMessage };
++}
++
++function createProductPage(url) {
++  const filters = productFiltersFromUrl(url);
++  const form = node('form');
++  const keyword = input();
++  const category = select([
++    ['', 'All categories'],
++    ['wear', 'Wear'],
++    ['food', 'Food'],
++    ['home', 'Home'],
++  ]);
++  const status = select([
++    ['', 'All statuses'],
++    ['published', 'Published'],
++    ['draft', 'Draft'],
++  ]);
++  const results = createResults(queryProducts);
++
++  keyword.value = filters.q;
++  category.value = filters.category;
++  status.value = filters.status;
++
++  function readDraft() {
++    return { q: keyword.value, category: category.value, status: status.value };
++  }
++
++  function apply(draft) {
++    const nextUrl = urlWithProductFilters(currentUrl(), draft);
++    history.pushState(null, '', nextUrl);
++    results.run(draft);
++  }
++
++  form.addEventListener('submit', event => {
++    event.preventDefault();
++    apply(readDraft());
++  });
++
++  form.append(
++    field('Product keyword', keyword),
++    field('Product category', category),
++    field('Product status', status),
++    button('Apply', undefined, 'submit'),
++    button('Reset', () => {
++      const defaults = defaultProductFilters();
++      keyword.value = defaults.q;
++      category.value = defaults.category;
++      status.value = defaults.status;
++      apply(defaults);
++    }),
++  );
++
++  results.run(filters);
++  return [node('h1', 'Products'), form, results.message, results.count, results.list];
++}
++
++function createOrderPage(url) {
++  const draft = orderDraftFromUrl(url);
++  const form = node('form');
++  const keyword = input();
++  const status = select([
++    ['', 'All statuses'],
++    ['new', 'New'],
++    ['paid', 'Paid'],
++  ]);
++  const from = input('date');
++  const to = input('date');
++  const results = createResults(queryOrders);
++  const errorId = 'order-filter-error';
++
++  results.message.id = errorId;
++  keyword.value = draft.q;
++  status.value = draft.status;
++  from.value = draft.from;
++  to.value = draft.to;
++  from.setAttribute('aria-describedby', errorId);
++  to.setAttribute('aria-describedby', errorId);
++
++  function readDraft() {
++    return { q: keyword.value, status: status.value, from: from.value, to: to.value };
++  }
++
++  function applyValidDraft() {
++    const next = readDraft();
++    const validationMessage = validateOrderFilters(next);
++    if (validationMessage) {
++      from.setAttribute('aria-invalid', 'true');
++      to.setAttribute('aria-invalid', 'true');
++      results.setMessage(validationMessage);
++      return;
++    }
++
++    from.removeAttribute('aria-invalid');
++    to.removeAttribute('aria-invalid');
++    history.replaceState(null, '', urlWithOrderFilters(currentUrl(), next));
++    results.run(next);
++  }
++
++  keyword.addEventListener('input', applyValidDraft);
++  status.addEventListener('change', applyValidDraft);
++  from.addEventListener('input', applyValidDraft);
++  to.addEventListener('input', applyValidDraft);
++  form.addEventListener('submit', event => event.preventDefault());
++
++  form.append(
++    field('Order keyword', keyword),
++    field('Order status', status),
++    field('From date', from),
++    field('To date', to),
++    button('Reset', () => {
++      const defaults = defaultOrderFilters();
++      keyword.value = defaults.q;
++      status.value = defaults.status;
++      from.value = defaults.from;
++      to.value = defaults.to;
++      applyValidDraft();
++    }),
++  );
++
++  const validationMessage = validateOrderFilters(draft);
++  if (validationMessage) {
++    from.setAttribute('aria-invalid', 'true');
++    to.setAttribute('aria-invalid', 'true');
++    results.setMessage(validationMessage);
++    results.count.textContent = 'Results unavailable';
++  } else {
++    results.run(draft);
++  }
++
++  return [node('h1', 'Orders'), form, results.message, results.count, results.list];
++}
++
++function renderFromUrl() {
++  ++requestGeneration;
++  const url = currentUrl();
++  const page = url.searchParams.get('page') === 'orders' ? 'orders' : 'products';
++  document.title = page === 'orders' ? 'Orders' : 'Products';
++  app.replaceChildren(
++    createNavigation(),
++    ...(page === 'orders' ? createOrderPage(url) : createProductPage(url)),
++  );
++}
++
++window.addEventListener('popstate', renderFromUrl);
++renderFromUrl();
+diff --git a/src/filters.mjs b/src/filters.mjs
+new file mode 100644
+index 0000000..571244d
+--- /dev/null
++++ b/src/filters.mjs
+@@ -0,0 +1,88 @@
++import { today } from './data.mjs';
++
++const PRODUCT_CATEGORIES = new Set(['', 'wear', 'food', 'home']);
++const PRODUCT_STATUSES = new Set(['', 'published', 'draft']);
++const ORDER_STATUSES = new Set(['', 'new', 'paid']);
++
++export function defaultProductFilters() {
++  return { q: '', category: '', status: 'published' };
++}
++
++export function defaultOrderFilters() {
++  const end = new Date(`${today}T00:00:00Z`);
++  const start = new Date(end);
++  start.setUTCDate(start.getUTCDate() - 29);
++
++  return {
++    q: '',
++    status: '',
++    from: start.toISOString().slice(0, 10),
++    to: today,
++  };
++}
++
++export function productFiltersFromUrl(url) {
++  const defaults = defaultProductFilters();
++  const category = url.searchParams.get('p_category') ?? defaults.category;
++  const status = url.searchParams.has('p_status')
++    ? url.searchParams.get('p_status')
++    : defaults.status;
++
++  return {
++    q: url.searchParams.get('p_q') ?? defaults.q,
++    category: PRODUCT_CATEGORIES.has(category) ? category : defaults.category,
++    status: PRODUCT_STATUSES.has(status) ? status : defaults.status,
++  };
++}
++
++export function orderDraftFromUrl(url) {
++  const defaults = defaultOrderFilters();
++  const status = url.searchParams.get('o_status') ?? defaults.status;
++
++  return {
++    q: url.searchParams.get('o_q') ?? defaults.q,
++    status: ORDER_STATUSES.has(status) ? status : defaults.status,
++    from: url.searchParams.get('o_from') ?? defaults.from,
++    to: url.searchParams.get('o_to') ?? defaults.to,
++  };
++}
++
++function updateParam(url, key, value, defaultValue) {
++  if (value === defaultValue) url.searchParams.delete(key);
++  else url.searchParams.set(key, value);
++}
++
++export function urlWithProductFilters(currentUrl, filters) {
++  const url = new URL(currentUrl);
++  const defaults = defaultProductFilters();
++  updateParam(url, 'p_q', filters.q, defaults.q);
++  updateParam(url, 'p_category', filters.category, defaults.category);
++  updateParam(url, 'p_status', filters.status, defaults.status);
++  return url;
++}
++
++export function urlWithOrderFilters(currentUrl, filters) {
++  const url = new URL(currentUrl);
++  const defaults = defaultOrderFilters();
++  updateParam(url, 'o_q', filters.q, defaults.q);
++  updateParam(url, 'o_status', filters.status, defaults.status);
++  updateParam(url, 'o_from', filters.from, defaults.from);
++  updateParam(url, 'o_to', filters.to, defaults.to);
++  return url;
++}
++
++function isCalendarDate(value) {
++  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
++  const date = new Date(`${value}T00:00:00Z`);
++  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
++}
++
++export function validateOrderFilters(filters) {
++  if (!isCalendarDate(filters.from) || !isCalendarDate(filters.to)) {
++    return 'Enter both dates to apply the date range.';
++  }
++  if (filters.from > filters.to) {
++    return 'The From date must be before or the same as the To date.';
++  }
++  return null;
++}
+diff --git a/src/style.css b/src/style.css
+index eca33e7..e0326d6 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -1 +1,73 @@
+-:root{font:16px system-ui;color:#17212b;background:#f5f7fa}body{margin:0}main{padding:1rem;max-width:64rem;margin:auto}nav{display:flex;gap:1rem}form{display:flex;gap:1rem;padding:1rem;background:white}label{display:flex;flex-direction:column}input,select,button{font:inherit;padding:.5rem}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #1266be;outline-offset:2px}li{padding:.4rem}
++:root {
++  font: 16px system-ui;
++  color: #17212b;
++  background: #f5f7fa;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  margin: 0;
++}
++
++main {
++  max-width: 64rem;
++  margin: auto;
++  padding: 1rem;
++  overflow-wrap: anywhere;
++}
++
++nav {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 1rem;
++}
++
++form {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
++  align-items: end;
++  gap: 1rem;
++  padding: 1rem;
++  background: white;
++}
++
++label {
++  display: flex;
++  min-width: 0;
++  flex-direction: column;
++  gap: .25rem;
++}
++
++input,
++select,
++button {
++  min-width: 0;
++  max-width: 100%;
++  padding: .5rem;
++  font: inherit;
++}
++
++button:focus-visible,
++input:focus-visible,
++select:focus-visible,
++a:focus-visible {
++  outline: 3px solid #1266be;
++  outline-offset: 2px;
++}
++
++.filter-message:empty {
++  display: none;
++}
++
++.filter-message:not(:empty) {
++  padding: .75rem;
++  border-inline-start: .25rem solid #b42318;
++  background: #fff0ee;
++}
++
++li {
++  padding: .4rem;
++}
+diff --git a/tests/filter-contracts.node.mjs b/tests/filter-contracts.node.mjs
+new file mode 100644
+index 0000000..24f9597
+--- /dev/null
++++ b/tests/filter-contracts.node.mjs
+@@ -0,0 +1,53 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  defaultOrderFilters,
++  productFiltersFromUrl,
++  urlWithProductFilters,
++  urlWithOrderFilters,
++  validateOrderFilters,
++} from '../src/filters.mjs';
++
++test('product URL distinguishes its default status from explicit all statuses', () => {
++  const initial = new URL('http://example.test/?page=products&utm=keep');
++  assert.deepEqual(productFiltersFromUrl(initial), {
++    q: '', category: '', status: 'published',
++  });
++
++  const updated = urlWithProductFilters(initial, {
++    q: 'Tea', category: 'food', status: '',
++  });
++  assert.equal(updated.searchParams.get('utm'), 'keep');
++  assert.equal(updated.searchParams.get('p_q'), 'Tea');
++  assert.equal(updated.searchParams.get('p_category'), 'food');
++  assert.equal(updated.searchParams.get('p_status'), '');
++  assert.equal(productFiltersFromUrl(updated).status, '');
++});
++
++test('order defaults and validation follow the fixed project calendar', () => {
++  assert.deepEqual(defaultOrderFilters(), {
++    q: '', status: '', from: '2026-09-20', to: '2026-10-19',
++  });
++  assert.match(
++    validateOrderFilters({ q: '', status: '', from: '2026-10-20', to: '2026-10-19' }),
++    /before/i,
++  );
++  assert.match(
++    validateOrderFilters({ q: '', status: '', from: '', to: '2026-10-19' }),
++    /date/i,
++  );
++  assert.equal(
++    validateOrderFilters({ q: '', status: '', from: '2026-10-19', to: '2026-10-19' }),
++    null,
++  );
++});
++
++test('order URL updates retain parameters outside the order contract', () => {
++  const updated = urlWithOrderFilters(
++    new URL('http://example.test/?page=orders&utm=keep'),
++    { q: 'Alice', status: 'paid', from: '2026-10-01', to: '2026-10-19' },
++  );
++  assert.equal(updated.searchParams.get('utm'), 'keep');
++  assert.equal(updated.searchParams.get('o_q'), 'Alice');
++  assert.equal(updated.searchParams.get('o_status'), 'paid');
++});

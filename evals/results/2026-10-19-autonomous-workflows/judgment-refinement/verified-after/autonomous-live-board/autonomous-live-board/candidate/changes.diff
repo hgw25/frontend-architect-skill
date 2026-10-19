@@ -1,0 +1,327 @@
+diff --git a/README.md b/README.md
+index cbfc76c..f1b61b3 100644
+--- a/README.md
++++ b/README.md
+@@ -3,6 +3,8 @@
+ 实现当前项目的卡片排序。`src/data.mjs` 提供 80 张稳定 ID、不同内容长度的卡片，
+ `src/api.mjs` 已提供保存顺序的调用。页面使用原生 ESM，不更换技术栈。
+ 
++实现设计见 [docs/board-reordering.md](docs/board-reordering.md)。
++
+ 用户可用每张卡片的 Move up / Move down 按钮，也可从 Move card N 手柄拖到另一张
+ 卡片上。成功操作立刻更新业务顺序，卡片在新旧位置之间平滑移动；移动中仍可继续操作，
+ 位置不能突然跳回旧位置。按钮操作后焦点跟随同一卡片。只有一个顺序事实；保存中可
+diff --git a/docs/board-reordering.md b/docs/board-reordering.md
+new file mode 100644
+index 0000000..e3b195c
+--- /dev/null
++++ b/docs/board-reordering.md
+@@ -0,0 +1,77 @@
++# 看板卡片排序技术设计
++
++## 目标与已知事实
++
++本次交付使 80 张固定 ID 的卡片可以通过上下按钮或拖动手柄排序。一次操作必须立即反映
++在页面的唯一顺序事实中；保存服务只接收该顺序的快照。后续操作可在保存和动画期间继续，
++失败需要可见提示和重试。`Board` 的可访问名称和每张卡的 `data-card-id` 是既有公开标记，
++Hide/Show 需要能安全处置进行中的动画和请求回调。
++
++已检查的事实：`src/data.mjs` 提供稳定卡片数据，`src/api.mjs` 已封装 `saveOrder(ids)`；
++当前实现每次排序都会销毁所有 DOM 节点，且在每个卡片写入后读取布局。浏览器测试已覆盖
++键盘焦点、拖动、快速重复操作、保存失败、隐藏和减少动态效果。
++
++## 实施序列
++
++共 4 个有依赖的步骤：
++
++1. 在 `src/app.mjs` 建立 `order` 作为唯一业务顺序，按该顺序复用/移动卡片节点；验收：按钮
++   和拖动后公开 ID 顺序正确，焦点仍在同一张卡的操作按钮上。
++2. 为节点重排接入 FLIP：批量读取重排前后的矩形，DOM 先到最终位置，再从旧视觉位置变换至
++   新位置；新操作先以当前视觉矩形为下一次 First，取消旧动画。验收：连续操作中卡片不跳回
++   旧位置，减少动态效果时直接到静态终态。
++3. 由 `requestSave`/`startNextSave` 拥有保存队列：同一时刻只发送一个快照，新的顺序取代尚未
++   发送的快照；失败保留最新未确认快照供 `retrySave` 重发。验收：旧确认不覆盖新意图，失败
++   后 Retry 发出最新顺序。
++4. Hide 时由看板视图所有者取消动画并移除列表；请求结果只更新仍存在的状态元素。验收：隐藏、
++   调整窗口和滚动后无运行中的动画或幽灵列表，重新显示使用当前顺序。
++
++## 契约与职责
++
++- `moveCard(id, targetIndex)`：`id` 是 `order` 中的卡片 ID，目标为最终数组插入索引；边界外或
++  无变化时不产生副作用。它更新 `order`、调用 `renderBoard`，并把不可变顺序快照交给
++  `requestSave`。
++- `renderBoard()`：列表 DOM 和其 FLIP 动画的所有者。卡片节点由 ID 缓存并复用，因而浏览器能
++  保留已聚焦按钮。动画只表达 DOM 已完成的最终排序，不保存业务状态。
++- `requestSave(snapshot)`、`startNextSave()`、`retrySave()`：保存传输状态的所有者。`queuedSave`
++  永远是最新待发送快照；`activeSave` 的响应不能改写当前 `order`；`failedSave` 是 Retry 的唯一
++  来源。
++- 拖动手柄以 Pointer Events 在 pointer up 时计算目标卡片，并复用 `moveCard`，不另设拖动顺序。
++  上下按钮是非拖动的单指针/键盘替代路径。
++
++## 技术架构
++
++```text
++[Move up/down buttons] ----\
++                          -> moveCard -> order (唯一真相) -> renderBoard
++[Pointer drag handle] ----/                                  |       |
++                                                             |       +--> keyed <li> DOM
++                                                             |                -> FLIP WAAPI
++                                                             v
++                                                     requestSave snapshot
++                                                             |
++                                                       saveOrder (HTTP)
++                                                             |
++                                                  status / alert / Retry button
++```
++
++## 数据流
++
++```text
++用户按下 "Move down"（或拖动手柄）
++  -> moveCard("1", 新索引)
++  -> order: ["2", "1", ...]
++  -> renderBoard: 读取旧视觉 rect -> 重新排列复用的 <li> -> 读取新 rect
++       -> cancel 旧动画 -> 从旧 rect 到新 rect 播放 transform（reduce: 不播放）
++  -> requestSave([...order]) -> queuedSave
++  -> startNextSave -> POST /api/order { ids }
++       -> 成功：若 queuedSave 存在，发送其最新快照；否则显示 Saved
++       -> 失败：failedSave = queuedSave ?? activeSave，显示 alert + Retry
++  -> Retry -> queuedSave = failedSave -> POST 最新失败快照
++```
++
++## 验证与演进
++
++运行 `npm run check` 验证实际 Chromium 中的排序、拖动、焦点、保存恢复、隐藏清理、减少动态效果
++及固定交互成本记录。一个现实的后续变化是增加“移到列首/列尾”：它只需把目标索引交给
++`moveCard`，不需要复制动画或保存策略。
+diff --git a/src/app.mjs b/src/app.mjs
+index a238c98..69462dd 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,17 +1,211 @@
+ import { cards } from './data.mjs';
+ import { saveOrder } from './api.mjs';
+-const app=document.querySelector('#app');let order=cards.map(c=>c.id),visible=true;
+-function draw(){
+- app.innerHTML='<button id="toggle">'+(visible?'Hide board':'Show board')+'</button><p role="status"></p>';
+- app.querySelector('#toggle').onclick=()=>{visible=!visible;draw();};
+- if(!visible)return;
+- const list=document.createElement('ol');list.setAttribute('aria-label','Board');app.append(list);
+- for(const id of order){const card=cards.find(c=>c.id===id),li=document.createElement('li');li.dataset.cardId=id;
+- li.innerHTML='<h2>'+card.title+'</h2><p>'+card.body+'</p><button>Move up</button><button>Move down</button><button>Move card '+id+'</button>';
+- li.querySelectorAll('button')[0].onclick=()=>move(id,-1);li.querySelectorAll('button')[1].onclick=()=>move(id,1);list.append(li);
+- // The existing layout adjustment reads after each write.
+- li.style.minHeight=(60+(list.getBoundingClientRect().height%5))+'px';
+- }
+-}
+-function move(id,delta){const i=order.indexOf(id),j=i+delta;if(j<0||j>=order.length)return;[order[i],order[j]]=[order[j],order[i]];draw();saveOrder(order).then(()=>app.querySelector('[role=status]').textContent='Saved').catch(()=>{});}
+-draw();
++
++const app = document.querySelector('#app');
++const cardsById = new Map(cards.map(card => [card.id, card]));
++const cardNodes = new Map();
++const activeAnimations = new Map();
++let order = cards.map(card => card.id);
++let visible = true;
++let list = null;
++let queuedSave = null;
++let activeSave = null;
++let failedSave = null;
++let draggedCardId = null;
++let dragPointerId = null;
++
++app.replaceChildren();
++const toggle = document.createElement('button');
++const status = document.createElement('p');
++const feedback = document.createElement('div');
++status.setAttribute('role', 'status');
++app.append(toggle, status, feedback);
++
++function setStatus(message) {
++  status.textContent = message;
++}
++
++function showSaveError() {
++  feedback.replaceChildren();
++  const alert = document.createElement('p');
++  alert.setAttribute('role', 'alert');
++  alert.textContent = 'Unable to save the card order.';
++  const retry = document.createElement('button');
++  retry.type = 'button';
++  retry.textContent = 'Retry save';
++  retry.addEventListener('click', retrySave);
++  feedback.append(alert, retry);
++}
++
++function clearSaveError() {
++  feedback.replaceChildren();
++}
++
++function cancelAnimations() {
++  for (const animation of activeAnimations.values()) animation.cancel();
++  activeAnimations.clear();
++}
++
++function createCardNode(id) {
++  const card = cardsById.get(id);
++  const item = document.createElement('li');
++  item.dataset.cardId = id;
++
++  const title = document.createElement('h2');
++  title.textContent = card.title;
++  const body = document.createElement('p');
++  body.textContent = card.body;
++  const up = document.createElement('button');
++  up.type = 'button';
++  up.textContent = 'Move up';
++  up.addEventListener('click', () => moveCard(id, order.indexOf(id) - 1));
++  const down = document.createElement('button');
++  down.type = 'button';
++  down.textContent = 'Move down';
++  down.addEventListener('click', () => moveCard(id, order.indexOf(id) + 1));
++  const handle = document.createElement('button');
++  handle.type = 'button';
++  handle.textContent = `Move card ${id}`;
++  handle.setAttribute('aria-label', `Move card ${id}`);
++  handle.addEventListener('pointerdown', event => startDrag(event, id, handle));
++  handle.addEventListener('pointerup', finishDrag);
++  handle.addEventListener('pointercancel', cancelDrag);
++
++  item.append(title, body, up, down, handle);
++  cardNodes.set(id, item);
++  return item;
++}
++
++function renderBoard() {
++  if (!visible) return;
++  if (!list) {
++    list = document.createElement('ol');
++    list.setAttribute('aria-label', 'Board');
++    app.append(list);
++  }
++
++  const focusTarget = list.contains(document.activeElement) ? document.activeElement : null;
++  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
++  const firstRects = new Map();
++  if (!reduceMotion) {
++    for (const [id, item] of cardNodes) {
++      if (item.isConnected) firstRects.set(id, item.getBoundingClientRect());
++    }
++  }
++  cancelAnimations();
++
++  for (const id of order) list.append(cardNodes.get(id) ?? createCardNode(id));
++  if (focusTarget && document.activeElement !== focusTarget) focusTarget.focus({ preventScroll: true });
++
++  if (reduceMotion) return;
++  for (const id of order) {
++    const first = firstRects.get(id);
++    const item = cardNodes.get(id);
++    if (!first) continue;
++    const last = item.getBoundingClientRect();
++    const x = first.left - last.left;
++    const y = first.top - last.top;
++    if (x === 0 && y === 0) continue;
++    const animation = item.animate(
++      [{ transform: `translate(${x}px, ${y}px)` }, { transform: 'translate(0, 0)' }],
++      { duration: 420, easing: 'cubic-bezier(.2, .8, .2, 1)' },
++    );
++    activeAnimations.set(id, animation);
++    animation.onfinish = () => {
++      if (activeAnimations.get(id) === animation) activeAnimations.delete(id);
++    };
++  }
++}
++
++function moveCard(id, targetIndex) {
++  const currentIndex = order.indexOf(id);
++  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= order.length || currentIndex === targetIndex) return;
++  const nextOrder = [...order];
++  nextOrder.splice(currentIndex, 1);
++  nextOrder.splice(targetIndex, 0, id);
++  order = nextOrder;
++  renderBoard();
++  requestSave(order);
++}
++
++function requestSave(snapshot) {
++  queuedSave = [...snapshot];
++  failedSave = null;
++  clearSaveError();
++  if (activeSave) {
++    setStatus('Saving…');
++    return;
++  }
++  startNextSave();
++}
++
++function startNextSave() {
++  if (activeSave || !queuedSave) return;
++  activeSave = queuedSave;
++  queuedSave = null;
++  setStatus('Saving…');
++  saveOrder(activeSave).then(() => {
++    activeSave = null;
++    if (queuedSave) {
++      startNextSave();
++      return;
++    }
++    setStatus('Saved');
++  }).catch(() => {
++    const failedSnapshot = queuedSave ?? activeSave;
++    activeSave = null;
++    queuedSave = null;
++    failedSave = failedSnapshot;
++    setStatus('Save failed');
++    showSaveError();
++  });
++}
++
++function retrySave() {
++  if (!failedSave) return;
++  queuedSave = failedSave;
++  failedSave = null;
++  clearSaveError();
++  startNextSave();
++}
++
++function startDrag(event, id, handle) {
++  if (event.button !== 0) return;
++  draggedCardId = id;
++  dragPointerId = event.pointerId;
++  handle.setPointerCapture(event.pointerId);
++}
++
++function finishDrag(event) {
++  if (event.pointerId !== dragPointerId || !draggedCardId) return;
++  const sourceId = draggedCardId;
++  cancelDrag(event);
++  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-card-id]');
++  if (!target) return;
++  moveCard(sourceId, order.indexOf(target.dataset.cardId));
++}
++
++function cancelDrag(event) {
++  if (event.pointerId !== dragPointerId) return;
++  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
++  draggedCardId = null;
++  dragPointerId = null;
++}
++
++function updateVisibility() {
++  toggle.textContent = visible ? 'Hide board' : 'Show board';
++  if (visible) {
++    renderBoard();
++    return;
++  }
++  cancelAnimations();
++  list?.remove();
++  list = null;
++}
++
++toggle.addEventListener('click', () => {
++  visible = !visible;
++  updateVisibility();
++});
++
++updateVisibility();

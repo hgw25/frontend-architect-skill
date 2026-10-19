@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-terra",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "autonomous-live-runtime",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "设计文档明确了登录、报价身份隔离、有效期、语言、无脚本回退和平台契约。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用现有 platform 服务，以小型服务端缓存和展示模型完成需求，未引入不必要依赖或基建。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "路由/缓存/授权、服务端展示和客户端交互状态的职责边界清晰，浏览器不参与授权或报价所有权。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "主路径、授权、缓存失效与测试一致；但购买已成功后若刷新报价失败，会被 catch 呈现为“购买失败”，可能诱导用户重复购买。"
+          },
+          {
+            "key": "runtime_delivery",
+            "score": 2,
+            "reason": "明确服务端缓存范围、有效期、仅服务端私有报价字段，以及无脚本和增强两种运行路径。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "授权仅依据服务端会话与 canBuy，缓存按租户/用户隔离，私密字段未进入页面；运行时测试覆盖危险描述不执行。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "覆盖身份键、过期、授权、上游失败和定向失效；但成功购买与后续报价加载被同一失败路径混淆。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "提供无脚本表单、提交中/成功/失败状态、禁用重复提交、语义状态区域及本地化货币显示。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "生成阶段在安装依赖后实际通过 4 项 Node 测试和 3 项 Playwright；主机随后复现全部通过，且浏览器验证对应真实交互边界。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结果优先，简洁说明实现范围、关键安全特性和实际验证命令及结果。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 14.4,
+        "case_failures": [
+          {
+            "rule": "已确认购买被后续报价失败掩盖，或原生与增强路径对确认结果不一致",
+            "reason": "After `services.purchase` succeeds, the native path awaits `loadQuote` within the same `try`; if that refresh fails, the catch returns “Purchase failed” (502), masking an already confirmed purchase."
+          }
+        ],
+        "verdict": "fail"
+      }
+    ]
+  }
+}

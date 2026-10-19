@@ -1,0 +1,178 @@
+--- before/SKILL.md
++++ after/SKILL.md
+@@ -119,6 +119,12 @@
+ document completeness and passing behavior tests alone do not establish it.
+ Select the applicable depth yourself; topic names and prescribed patterns are not
+ a quota for every design.
++Infer applicable methods from the requested behavior, even when the user names no
++technique. Use the [behavior-to-design lenses](references/architecture-and-code.md#match-design-lenses-to-behavior)
++before settling steps and contracts, then read the matching sections. For example,
++spatial continuity during reordering calls for transition-mechanism evaluation,
++including FLIP when geometry mapping is needed. Carry the selected method's
++invariants, ownership and checks into the design and implementation.
+ 
+ A settled local edit that only follows established behavior and boundaries needs
+ no design document: for example a label, spacing token or existing filter binding.
+@@ -156,7 +162,8 @@
+ | Measured update-to-display, frames, lists, images or memory | [Rendering contents](references/rendering-and-performance.md#contents): common model and the relevant platform extension; multiple extensions only for an actual cross-platform difference |
+ | Libraries, SDKs, shared packages, build tools or versioned contracts | [Infrastructure contract](references/frontend-infrastructure.md#design-the-contract-before-the-internals), then applicable artifact, consumer and evolution obligations |
+ | Untrusted data, DOM sinks, permissions, secrets or third parties | [Security and trust](references/security-and-trust.md), select the actual boundary |
+-| Layout, interaction, accessibility or motion | [Interface contents](references/interface-and-motion.md#contents), then the relevant behavior |
++| Layout, interaction, accessibility or component systems | [Interface contents](references/interface-and-motion.md#contents), then the relevant behavior |
++| Reordering, shared elements or interrupted spatial transitions | [Transition mechanism](references/interface-and-motion.md#choose-the-lightest-transition-mechanism); [FLIP](references/interface-and-motion.md#apply-flip-deliberately) when geometry mapping is needed |
+ | Requested review | [Scope and coverage](references/verification-and-review.md#establish-review-scope-and-coverage), [code quality](references/verification-and-review.md#review-architecture-and-implementation) and [findings](references/verification-and-review.md#report-findings-and-evidence); add interface/security/performance checks when applicable |
+ | Uncertain check, root cause, performance claim or durable evidence | [Verification contents](references/verification-and-review.md#contents), then the relevant section |
+ 
+--- before/references/architecture-and-code.md
++++ after/references/architecture-and-code.md
+@@ -14,6 +14,7 @@
+ - [Understand before changing](#understand-before-changing)
+ - [Preserve domain knowledge and decisions](#preserve-domain-knowledge-and-decisions)
+ - [Turn requirements into an executable technical design](#turn-requirements-into-an-executable-technical-design)
++- [Match design lenses to behavior](#match-design-lenses-to-behavior)
+ - [Construct a readable operation](#construct-a-readable-operation)
+ - [Choose data representations](#choose-data-representations)
+ - [Model data and state](#model-data-and-state)
+@@ -116,6 +117,42 @@
+ beside the affected contract or step in the same document; naming principles
+ does not demonstrate their application. A prescribed architecture, paradigm or
+ extra layer needs a reason in this system.
++
++### Match design lenses to behavior
++
++Discover applicable ideas from the behavior and constraints, without requiring the
++user to name a method. This is a navigation map into existing decision guidance;
++read the relevant sections and use their tradeoffs and stopping conditions.
++
++| Requirement signal | Design lens and consequential decision | Guidance |
++| --- | --- | --- |
++| Features change independently or technical folders scatter one change | Colocation, information hiding and Feature-Sliced Design: choose owned feature boundaries, public APIs and dependency direction that fit this ecosystem | [Module grouping](module-boundaries.md#compare-the-two-grouping-strategies); [hide complexity](module-boundaries.md#hide-complexity-not-just-code) |
++| Screens share controls or visual patterns but differ in product rules | Atomic Design and composition: identify stable parts and wholes, shared policy and product ownership | [Component-system boundaries](interface-and-motion.md#choose-component-system-boundaries) |
++| Business rules mix with effects, identity or legal state transitions | Functional core/imperative shell, objects and reducers/state machines: choose representation per responsibility and lifecycle | [Paradigm choices](programming-paradigms.md#decision-matrix); [functional boundary](programming-paradigms.md#use-a-functional-core-and-imperative-shell-by-default) |
++| UI facts duplicate source data or effects copy derived values | Minimal state and synchronization boundaries: derive facts, keep genuine edit state, give effects an external owner | [State model](#model-data-and-state); [forms](#model-forms-and-navigation-state) |
++| Similar code or expected change suggests a shared abstraction | AHA and the wrong-abstraction lens: compare stable common semantics, caller convenience and change locality | [Abstraction timing](#abstract-at-the-right-time) |
++| Content, translations, zoom or available space vary | Intrinsic layout, inclusive interaction and progressive enhancement: use content constraints, native semantics and a supported baseline | [Layout constraints](interface-and-motion.md#design-layout-from-content-and-constraints); [resilient baseline](interface-and-motion.md#build-the-semantic-and-resilient-layer-first); [locale](interface-and-motion.md#control-styles-and-internationalized-content) |
++| Reordering, expansion or shared elements must preserve spatial continuity | Compare the lightest transition mechanism; use FLIP when measured geometry must map old to new layout | [Mechanism choice](interface-and-motion.md#choose-the-lightest-transition-mechanism); [First/Last/Invert/Play](interface-and-motion.md#apply-flip-deliberately) |
++| Input response, motion, loading, frames or memory are problematic | RAIL and update-to-display cost: localize work, invalidation, transfer, layout/paint or resource cost on the actual runtime | [Perceived response](interface-and-motion.md#protect-accessibility-and-performance); [rendering model](rendering-and-performance.md#model-the-path-from-update-to-display) |
++| Async results race, optimistic edits fail or resources outlive a view | Execution versus publication, ordering and acknowledgement: choose current-result or ordered-command policy, reconcile authority and own acquisition/release | [Async policy](async-and-lifecycles.md#choose-policy-from-the-operation); [reconciliation](async-and-lifecycles.md#reconcile-optimistic-state-with-acknowledgements); [resource ownership](async-and-lifecycles.md#own-acquisition-replacement-and-release) |
++| Data crosses environments or caches represent remote facts | Runtime placement and cache ownership: define serialization, scope, authority, freshness and invalidation | [Environment boundaries](runtime-and-delivery.md#map-environments-before-components); [cache owner](runtime-and-delivery.md#give-every-cache-an-owner) |
++| Untrusted content or privileged actions cross a boundary | Source-to-sink reasoning and server authorization: reuse established guarantees and protect the actual trust boundary | [Data path](security-and-trust.md#trace-data-from-source-to-sink); [authorization](security-and-trust.md#separate-presentation-from-authorization) |
++| A capability becomes a shared package, SDK or tool | Contract-first design and consumer evolution: define public types/artifacts, compatibility and verification at real consumers | [Infrastructure contract](frontend-infrastructure.md#design-the-contract-before-the-internals); [public artifact](frontend-infrastructure.md#verify-the-public-artifact) |
++
++Selecting a lens means applying its decision rules, not adding its name or folder
++template to the document. Preserve the original method's conditional scope: FLIP
++is appropriate only when its visual relationship and measurement needs exist;
++Atomic Design and Feature-Sliced Design do not mandate directory trees; RAIL
++does not prove performance or impose a universal frame budget. Other tasks may
++need other sections from the existing topic navigation.
++
++For a selected motion method, make the visual contract part of the functional
++steps: underlying business/DOM state, geometry or snapshot data, interruption,
++cleanup, reduced motion and real-runtime verification must have owners. Likewise,
++carry each other selected lens's material constraints into contracts and checks.
++Do not force every lens into a local edit or narrate a rejected-method checklist.
++
++### Connect the design deliverable
+ 
+ Keep the following information connected, using the project's format rather than
+ a mandatory heading template:
+--- before/README.md
++++ after/README.md
+@@ -205,6 +205,10 @@
+ 资源所有权、扩展边界，以及适用的运行时、交互、安全和性能要求，都要对应到具体设计取舍。
+ 重要选择在原技术文档中留下理由和检查依据，设计稿与实际代码均按同一标准自审；不以列出
+ 原则名称、文档齐全或功能测试通过代替工程质量判断，也不机械地给每个任务套上所有模式。
++具体方法也由业务行为触发：重排与空间连续性会引出 FLIP 等过渡机制的取舍；共享界面部件会
++引出 Atomic Design 与组合边界；独立业务变化会引出 Colocation/FSD；状态与副作用会引出
++函数式核心、对象或状态机；响应与帧成本会引出 RAIL 和渲染链路分析。适用条件、停止条件
++及原专题位置见[行为到设计方法的导航](references/architecture-and-code.md#match-design-lenses-to-behavior)。
+ 用户只提出开发目标，也默认包含适用的架构设计、代码质量检查和验证；明确只要设计时，
+ 沿同一过程交付可实施的技术文档，并在该交付边界停止。代码审查自行寻找当前有效契约，沿调用
+ 关系检查需求符合度及完整的适用工程标准，给出具体发现和有证据边界的质量结论。
+--- before/CHANGELOG.md
++++ after/CHANGELOG.md
+@@ -5,6 +5,7 @@
+ 
+ ## [Unreleased]
+ 
++- 补充从业务行为识别具体设计思想的导航，将 FLIP、Atomic Design、Colocation/FSD、函数式核心与命令式外壳、AHA、RAIL、渐进增强及既有状态/异步/运行时边界指导接入设计取舍；保留按场景选用和停止条件，增加不点名方法的重排与筛选区设计用例。
+ - 将需求开发与架构设计贯通：从简短目标自主发现上下文，结合功能拆分设计职责、接口与数据流，并用实现和验证反馈修正设计；仅设计或仅审查按请求限定交付边界，开发交付前用同一工程标准检查实际代码。
+ - 将共同工程原则与按需专题明确用于需求拆分和设计取舍，保存重大选择的具体理由及检查依据；设计稿和实际实现均自审职责、范式、所有权与维护成本，以及适用的运行时、交互、安全和性能要求。
+ - 普通审查默认同时核对当前有效需求和工程质量，涵盖现有代码及调用关系；不以全绿测试代替可维护性判断，不依赖用户额外列出审查维度。简化技能调用示例和默认提示。
+--- before/evals/cases.yaml
++++ after/evals/cases.yaml
+@@ -1,5 +1,59 @@
+ version: 1
+ cases:
++  - id: autonomous-reorder-design
++    title: 仅给看板排序需求时自主选择动效方法并设计其边界
++    prompt: 设计这个看板卡片排序的技术方案。
++    artifact: |
++      项目事实：浏览器 React + TypeScript 看板。已有 Card、Button、错误提示和 boardApi。
++      卡片用稳定 card.id 作为 React key；列表在可滚动容器中以 CSS Grid 渲染，卡片高度随内容变化。
++      当前按新数组渲染后位置直接跳变，没有过渡，也没有已安装的专用动画或拖拽库。
++      boardApi.saveOrder(ids) 及其标准错误已经存在，本次应沿用；真实应用文件未附在此工作区。
++
++      已接受产品需求：用户可拖动卡片，也可使用每张卡的上移/下移按钮调整顺序。
++      顺序变更立即生效，用户能看清同一卡片从哪里移到哪里；视觉过程不能阻塞下一次排序。
++      用户会在上一次位置变化尚未结束时再次操作，期间也可能滚动、改变容器大小或离开页面。
++      页面应尊重系统减少动态效果的偏好，操作后焦点保持在同一卡片的可操作控件上。
++      排序规则、保存错误和可访问操作要保持一致，不能因视觉过程失败而出现另一份卡片顺序。
++      当前没有指定目标浏览器版本或提供性能测量结果；设计应区分这些待核对项与已知事实。
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, user_experience, verification_evidence, communication_quality]
++    must_observe:
++      - 不依赖请求点名方法，自主依据空间连续性、布局变化和连续输入选择合适的过渡层级，并比较简单机制与测量几何方案的适用性
++      - 若选用 FLIP，设计 First/Last/Invert/Play、稳定身份、批量读写与中断时的当前视觉位置；合理的其他机制须给出与产品约束相符的理由和降级
++      - 保存包含功能步骤、函数或类契约、架构图和数据流图的设计，明确业务顺序、视觉投影与持久化的所有权
++      - 覆盖滚动、resize、移除/卸载、重复输入、焦点与减少动态效果，并提出真实浏览器下的行为和成本验证
++    fail_if:
++      - 只罗列方法名或给出 transform 片段，缺少具体状态、测量/投影、生命周期和验证边界
++      - 视觉状态成为第二份业务顺序，动画未结束就锁住后续排序，或只允许拖拽而没有已接受的按钮路径
++      - 机械强制某种动效、目录或新依赖，或用文档、jsdom、帧数推算宣称已验证浏览器性能
++      - 未保存实际设计文件，或擅自实施应用代码并声称未执行的运行时检查通过
++
++  - id: autonomous-filter-design
++    title: 仅给双页面筛选需求时自主结合组件边界与状态设计思想
++    prompt: 设计商品页和订单页筛选区的技术方案。
++    artifact: |
++      项目事实：React + TypeScript 管理系统，两个页面目前各自使用简单表单。
++      既有设计系统已经提供 Field、Input、Select、Button 和布局 tokens，拥有主题、标签、键盘与禁用语义。
++      路由已有读写查询参数的能力；页面查询层负责数据、加载和标准错误。本次沿用这些能力。
++      当前组件、路由和查询层的实际源码未附在工作区；可据此做拟议设计，不虚构现有符号。
++
++      已接受需求：商品筛选有关键词、分类和上架状态；订单筛选有关键词、日期范围和订单状态。
++      同名状态的枚举与业务含义不同。两个页面需要一致的视觉密度、操作反馈和长标签布局。
++      商品页允许先编辑草稿，点击应用后才更新 URL 并查询；订单页在合法编辑后立即更新 URL 并查询。
++      URL 是已生效筛选的来源，刷新和前进后退必须恢复相应筛选。商品重置回到已上架/不限分类，
++      订单重置回到近 30 天/全部状态。筛选结果与结果数量由查询数据产生，不单独维护另一份计数。
++      支持窄容器、200% 缩放、较长翻译和键盘操作。没有动画、拖拽或性能优化要求。
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, paradigm_choice, correctness_boundary, user_experience, verification_evidence, communication_quality]
++    must_observe:
++      - 自主复用既有设计系统，区分稳定视觉部件与页面业务策略，按真实变化原因选择共享、组合和领域边界
++      - 理解部件与整体关系及功能内聚思想，不强制 Atomic/FSD 文件夹，也不以出现这些名称作为成功依据
++      - 区分商品编辑草稿与 URL 中已生效筛选，保留订单即时生效规则，派生结果与数量并清楚拥有路由同步和查询副作用
++      - 保存含步骤、代码契约、两类图示和验收的设计，解释扩展与抽象取舍，按内容约束处理布局、翻译、焦点和键盘语义
++    fail_if:
++      - 以一组商品/订单开关拼出理解成本更高的通用业务表单，或重复建设现有基础控件
++      - 抹平两个页面的提交和重置语义，重复保存已生效筛选/结果数量而没有独立语义，或不能处理浏览器前进后退
++      - 只罗列原则名称或机械生成层级，强加无关的动画和优化机制，或未保存设计文件
++      - 擅自实施应用代码或把拟议验证写成真实应用验收通过
++
+   - id: autonomous-feature-development
+     title: 简短功能目标自主完成发现设计实现与检查
+     prompt: 把这个表单的条件字段支持做完。
+--- before/evals/cases.md
++++ after/evals/cases.md
+@@ -162,6 +162,12 @@
+ 
+ ## 从真实使用记录验证改进
+ 
++`autonomous-reorder-design` 和 `autonomous-filter-design` 的原始请求与项目事实不点名 FLIP、
++Atomic Design、FSD、函数式核心等方法，检验是否从空间连续性或真实复用/状态差异自主选用指导。
++旧 `reorder-motion` 有意给出机制名，继续作为详细技术判断用例，不能替代这里的自主发现证据。
++比较新旧指导时保持这两个新用例输入和模型一致；判断依据是具体取舍与契约，不要求复述方法名，
++也不把合理选择另一种机制判为失败。没有相关需求的筛选场景同时检查是否误加动效或优化。
++
+ 自主工作流用例仅给“把条件字段支持做完”“设计这个模块的架构”或“审查这次改动”等简短
+ 目标，不在请求中补充设计步骤、图示或工程审查维度。`autonomous-feature-development`
+ 和 `autonomous-architecture-design` 检查需求拆分、架构及实际实现之间的对应关系，后者

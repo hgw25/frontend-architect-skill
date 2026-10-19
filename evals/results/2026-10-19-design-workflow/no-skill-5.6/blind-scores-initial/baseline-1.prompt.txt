@@ -1,0 +1,178 @@
+You are an independent evaluator. Score only the supplied evidence.
+You are seeing one anonymous evaluation condition. Do not guess or compare against another condition.
+The case-specific expected observations and failure list are intentionally hidden.
+Score every applicable dimension exactly once with an integer 0, 1, or 2.
+Match evidence requirements to the request: a plan-only task can establish a sound verification design without executing an absent application; do not impose release/rollout work outside scope.
+The RESPONSE predates HOST VALIDATIONS. Generator self-checks ran during generation in its sandbox; host checks ran afterwards and may have different browser/network permissions. Distinguish these origins rather than treating different results as automatically contradictory.
+Judge unresolved failures and false claims against their actual phase evidence; a later host pass does not make an earlier false self-test claim true, and a correctly reported sandbox failure does not contradict a later host pass.
+A final unresolved validation failure is direct evidence against implementation_integrity and verification_evidence. An intermediate failed check followed by relevant edits and a passing rerun is a repaired state, not proof that the final code still fails. Do not require a delivery summary to list every repaired intermediate error; assess remaining risk and consistency of readiness claims.
+List only triggered global rubric failures. Record missing evidence under evidence_limits.
+
+RUBRIC:
+[missing]
+
+CASE
+id: requirement-only-export-refactor
+request: 重构这个前端选中项导出能力。工具栏和键盘入口现在分别了解了内部准备、检查、编码 和发送步骤，后续协议变化很容易漏改其中一个入口。让调用方只表达一次完整导出意图， 保持现有两个公开入口、返回值、提交顺序、一次发送和错误传递契约。现有测试已经 全部通过；请完成职责调整，不增加依赖，也不要引入可暂停工作流或通用插件系统。
+artifact: 
+applicable_dimensions: ["requirements_context", "solution_complexity", "module_boundaries", "implementation_integrity", "verification_evidence", "communication_quality"]
+
+RESPONSE:
+已完成导出职责重构：
+
+- 将检查、编码、发送和结果生成统一收拢到 [export-steps.mjs](/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-baseline-fhl_4doe/src/export-steps.mjs) 的 `exportSelection`。
+- 工具栏与键盘入口保持原有公开函数，仅转交一次完整导出意图。
+- 保持选择顺序、单次发送、返回值、错误透传及等待期间 ID 稳定性。
+- 未增加依赖，未修改 `README.md` 或测试文件。
+
+验证结果：`node --test test/export.test.mjs`，10 项测试全部通过；`git diff --check` 通过。
+
+DIFF:
+diff --git a/src/export-steps.mjs b/src/export-steps.mjs
+index 06dcb55..71a2d5e 100644
+--- a/src/export-steps.mjs
++++ b/src/export-steps.mjs
+@@ -1,24 +1,15 @@
+-export function begin(rows, write) {
+-  return { rows, write, decision: undefined, payload: undefined };
+-}
++export async function exportSelection(rows, write) {
++  if (rows.length === 0) return { kind: 'empty' };
+ 
+-export function classify(context) {
+-  const blocked = context.rows.filter((row) => row.status !== 'ready');
+-  context.decision = context.rows.length === 0
+-    ? { kind: 'empty' }
+-    : blocked.length
+-      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }
+-      : { kind: 'ready', ids: context.rows.map((row) => row.id) };
+-}
++  const blockedIds = rows
++    .filter((row) => row.status !== 'ready')
++    .map((row) => row.id);
+ 
+-export function encode(context) {
+-  if (context.decision.kind === 'ready') {
+-    context.payload = { schema: 1, document_ids: context.decision.ids };
++  if (blockedIds.length > 0) {
++    return { kind: 'blocked', ids: blockedIds };
+   }
+-}
+ 
+-export async function dispatch(context) {
+-  if (context.decision.kind !== 'ready') return context.decision;
+-  await context.write(context.payload);
+-  return { kind: 'sent', ids: context.decision.ids };
++  const ids = rows.map((row) => row.id);
++  await write({ schema: 1, document_ids: ids });
++  return { kind: 'sent', ids };
+ }
+diff --git a/src/keyboard.mjs b/src/keyboard.mjs
+index c04db7c..0db4b63 100644
+--- a/src/keyboard.mjs
++++ b/src/keyboard.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-steps.mjs';
+ 
+ export async function handleKeyboardExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++  return exportSelection(rows, write);
+ }
+diff --git a/src/toolbar.mjs b/src/toolbar.mjs
+index 4ee21aa..9fd844d 100644
+--- a/src/toolbar.mjs
++++ b/src/toolbar.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-steps.mjs';
+ 
+ export async function handleToolbarExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++  return exportSelection(rows, write);
+ }
+
+
+GENERATOR SELF-CHECKS (during generation; output tails, not a full command audit):
+[{"attempt": 0, "kind": "source changes", "paths": ["/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-baseline-fhl_4doe/src/export-steps.mjs", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-baseline-fhl_4doe/src/keyboard.mjs", "/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-requirement-only-export-refactor-baseline-fhl_4doe/src/toolbar.mjs"]}, {"attempt": 0, "command": "/bin/zsh -lc 'git diff --check && git diff -- src/export-steps.mjs src/toolbar.mjs src/keyboard.mjs && git status --short'", "exit_code": 0, "kind": "executed check", "output_tail": "blocked = context.rows.filter((row) => row.status !== 'ready');\n-  context.decision = context.rows.length === 0\n-    ? { kind: 'empty' }\n-    : blocked.length\n-      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }\n-      : { kind: 'ready', ids: context.rows.map((row) => row.id) };\n-}\n+  const blockedIds = rows\n+    .filter((row) => row.status !== 'ready')\n+    .map((row) => row.id);\n \n-export function encode(context) {\n-  if (context.decision.kind === 'ready') {\n-    context.payload = { schema: 1, document_ids: context.decision.ids };\n+  if (blockedIds.length > 0) {\n+    return { kind: 'blocked', ids: blockedIds };\n   }\n-}\n \n-export async function dispatch(context) {\n-  if (context.decision.kind !== 'ready') return context.decision;\n-  await context.write(context.payload);\n-  return { kind: 'sent', ids: context.decision.ids };\n+  const ids = rows.map((row) => row.id);\n+  await write({ schema: 1, document_ids: ids });\n+  return { kind: 'sent', ids };\n }\ndiff --git a/src/keyboard.mjs b/src/keyboard.mjs\nindex c04db7c..0db4b63 100644\n--- a/src/keyboard.mjs\n+++ b/src/keyboard.mjs\n@@ -1,8 +1,5 @@\n-import { begin, classify, encode, dispatch } from './export-steps.mjs';\n+import { exportSelection } from './export-steps.mjs';\n \n export async function handleKeyboardExport(rows, write) {\n-  const context = begin(rows, write);\n-  classify(context);\n-  encode(context);\n-  return dispatch(context);\n+  return exportSelection(rows, write);\n }\ndiff --git a/src/toolbar.mjs b/src/toolbar.mjs\nindex 4ee21aa..9fd844d 100644\n--- a/src/toolbar.mjs\n+++ b/src/toolbar.mjs\n@@ -1,8 +1,5 @@\n-import { begin, classify, encode, dispatch } from './export-steps.mjs';\n+import { exportSelection } from './export-steps.mjs';\n \n export async function handleToolbarExport(rows, write) {\n-  const context = begin(rows, write);\n-  classify(context);\n-  encode(context);\n-  return dispatch(context);\n+  return exportSelection(rows, write);\n }\n M src/export-steps.mjs\n M src/keyboard.mjs\n M src/toolbar.mjs\n"}, {"attempt": 0, "command": "/bin/zsh -lc 'node --test test/export.test.mjs'", "exit_code": 0, "kind": "executed check", "output_tail": "TAP version 13\n# Subtest: toolbar: empty does not write\nok 1 - toolbar: empty does not write\n  ---\n  duration_ms: 0.892208\n  type: 'test'\n  ...\n# Subtest: toolbar: ineligible selection is all-or-nothing\nok 2 - toolbar: ineligible selection is all-or-nothing\n  ---\n  duration_ms: 0.153333\n  type: 'test'\n  ...\n# Subtest: toolbar: ready selection writes the owned protocol once in selection order\nok 3 - toolbar: ready selection writes the owned protocol once in selection order\n  ---\n  duration_ms: 0.099417\n  type: 'test'\n  ...\n# Subtest: toolbar: transport errors retain their meaning\nok 4 - toolbar: transport errors retain their meaning\n  ---\n  duration_ms: 0.18\n  type: 'test'\n  ...\n# Subtest: toolbar: accepted intent does not drift during a pending write\nok 5 - toolbar: accepted intent does not drift during a pending write\n  ---\n  duration_ms: 0.069875\n  type: 'test'\n  ...\n# Subtest: keyboard: empty does not write\nok 6 - keyboard: empty does not write\n  ---\n  duration_ms: 0.078\n  type: 'test'\n  ...\n# Subtest: keyboard: ineligible selection is all-or-nothing\nok 7 - keyboard: ineligible selection is all-or-nothing\n  ---\n  duration_ms: 0.031333\n  type: 'test'\n  ...\n# Subtest: keyboard: ready selection writes the owned protocol once in selection order\nok 8 - keyboard: ready selection writes the owned protocol once in selection order\n  ---\n  duration_ms: 0.031\n  type: 'test'\n  ...\n# Subtest: keyboard: transport errors retain their meaning\nok 9 - keyboard: transport errors retain their meaning\n  ---\n  duration_ms: 0.159042\n  type: 'test'\n  ...\n# Subtest: keyboard: accepted intent does not drift during a pending write\nok 10 - keyboard: accepted intent does not drift during a pending write\n  ---\n  duration_ms: 0.208625\n  type: 'test'\n  ...\n1..10\n# tests 10\n# suites 0\n# pass 10\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 34.30775\n"}]
+
+HOST VALIDATIONS (after RESPONSE, by the capture runner):
+COMMAND verify protected evaluation harness EXIT 0
+
+COMMAND node --test test/export.test.mjs EXIT 0
+TAP version 13
+# Subtest: toolbar: empty does not write
+ok 1 - toolbar: empty does not write
+  ---
+  duration_ms: 1.178291
+  type: 'test'
+  ...
+# Subtest: toolbar: ineligible selection is all-or-nothing
+ok 2 - toolbar: ineligible selection is all-or-nothing
+  ---
+  duration_ms: 0.149458
+  type: 'test'
+  ...
+# Subtest: toolbar: ready selection writes the owned protocol once in selection order
+ok 3 - toolbar: ready selection writes the owned protocol once in selection order
+  ---
+  duration_ms: 0.104375
+  type: 'test'
+  ...
+# Subtest: toolbar: transport errors retain their meaning
+ok 4 - toolbar: transport errors retain their meaning
+  ---
+  duration_ms: 0.196542
+  type: 'test'
+  ...
+# Subtest: toolbar: accepted intent does not drift during a pending write
+ok 5 - toolbar: accepted intent does not drift during a pending write
+  ---
+  duration_ms: 0.223
+  type: 'test'
+  ...
+# Subtest: keyboard: empty does not write
+ok 6 - keyboard: empty does not write
+  ---
+  duration_ms: 0.17125
+  type: 'test'
+  ...
+# Subtest: keyboard: ineligible selection is all-or-nothing
+ok 7 - keyboard: ineligible selection is all-or-nothing
+  ---
+  duration_ms: 0.058875
+  type: 'test'
+  ...
+# Subtest: keyboard: ready selection writes the owned protocol once in selection order
+ok 8 - keyboard: ready selection writes the owned protocol once in selection order
+  ---
+  duration_ms: 0.04825
+  type: 'test'
+  ...
+# Subtest: keyboard: transport errors retain their meaning
+ok 9 - keyboard: transport errors retain their meaning
+  ---
+  duration_ms: 0.243917
+  type: 'test'
+  ...
+# Subtest: keyboard: accepted intent does not drift during a pending write
+ok 10 - keyboard: accepted intent does not drift during a pending write
+  ---
+  duration_ms: 0.304708
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 52.763333

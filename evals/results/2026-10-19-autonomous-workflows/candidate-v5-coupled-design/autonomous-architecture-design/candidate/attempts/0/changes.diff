@@ -1,0 +1,353 @@
+diff --git a/docs/uploads-architecture.md b/docs/uploads-architecture.md
+new file mode 100644
+index 0000000..1ffd71a
+--- /dev/null
++++ b/docs/uploads-architecture.md
+@@ -0,0 +1,347 @@
++# 多文件分片上传架构设计
++
++状态：待实现的设计稿。本文只基于题面提供的源码和已接受产品契约；当前工作区没有应用源码，因此下述代码路径与符号均为拟议，不能视为已存在或已验证。
++
++## 1. 目标、事实与边界
++
++### 已知事实
++
++- 应用是浏览器 React + TypeScript 应用。
++- 题面给出的现有入口 `src/uploads/upload.ts` 只通过 `appApi.upload(file, { signal })` 上传单个文件。
++- `appApi` 已拥有认证、取消信号传递和标准错误；新模块继续使用它，不另建 HTTP、认证或错误框架。
++- `docs/uploads.md` 是权威产品契约：用户可加入多个文件；最多两个文件同时处于上传工作流；逐文件显示进度；支持暂停、继续、取消、失败重试；服务端已确认分片不得重传。
++- 服务端稳定接口为 `create`、`putPart`、`inspect`、`complete`、`status`、`abort`。只有 `complete` 的响应或 `status=completed` 携带的 `fileId` 能证明成功。
++- 只要求页面存活期间恢复；不需要刷新后保存 `File`，也不做后台上传。页面关闭/组件卸载时要释放本地资源。
++
++### 设计决定
++
++1. 一个文件占一个调度槽，并在该槽内串行发送分片；全局最多两个槽。这样“最多两个文件处于上传状态”有唯一含义，也不会额外制造片级并发策略。
++2. 展示的是“服务端已确认进度”：`confirmedBytes / file.size`。当前 `putPart` 契约没有上传中进度事件，所以进度按分片确认阶梯式增长。若产品后来要求平滑的线速进度，需要先扩展 `appApi.putPart` 的进度契约；不能用定时器伪造。
++3. 暂停是可恢复的本地控制：中止该文件在途 `putPart`、保留 `uploadId`；若正在执行题面未声明可取消的调用，则等待它收敛后释放槽。继续和失败重试都先 `inspect(uploadId)`，以服务端确认为准重建缺片集合。
++4. 取消是终结服务端会话：先阻止新工作并中止在途 `putPart`，待不可取消的 API 调用收敛后调用 `abort(uploadId)`。只有 `abort` 成功才进入 `canceled`；失败进入可再次取消的错误状态，避免把仍存活的服务端会话显示成已取消。进入 `finalizing` 后不再提供取消，因为服务端可能已经完成且不可逆。
++5. reducer 保存可解释的业务状态；`AbortController`、运行中的 Promise 和对象 URL 等不可序列化资源由页面期协调器私有持有。无需状态机库。
++6. `complete` 的错误属于“结果未知”，统一调用 `status` 对账：`completed` 才发布成功，`uploading` 则进入可重试的 `finalize` 失败态。重试不会重新发送已确认分片。
++7. 现有 `uploadFile` 入口先保持兼容。实现前检查真实调用者；调用者迁移完成后才能在独立清理中删除它。本设计不假定它无人使用。
++
++### 不在范围内
++
++- 刷新恢复、IndexedDB/File System Access 持久化、Service Worker 或后台上传。
++- 跨标签页协调、服务端孤儿会话清理策略、文件预览和拖放视觉设计。
++- 自建认证、请求重试中间件、通用任务队列或跨业务上传 SDK。
++
++### 接受条件
++
++- 任意可控请求时序下，同时执行工作流的文件数不超过 2；暂停中的请求结束后，排队文件能取得空槽。
++- 每个文件独立显示排队、上传、暂停、完成、取消和可操作错误；进度只由服务端确认产生且不倒退。
++- 暂停后无新分片发出；继续/重试先对账，已确认索引不再传输。
++- `complete` 响应丢失时，`status=completed` 可使该文件成功；`status=uploading` 不得误报成功。
++- 取消成功后不再发布该文件任何旧请求结果；卸载后在途 `putPart` 被中止、其他晚到回调不再更新 React、所拥有的本地资源被释放。
++
++## 2. 领域模型与状态转换
++
++拟议的公开视图与内部状态：
++
++```ts
++type UploadPhase =
++  | { kind: 'queued' }
++  | { kind: 'preparing' }
++  | { kind: 'uploading'; currentPart: number | null }
++  | { kind: 'pausing' }
++  | { kind: 'paused' }
++  | { kind: 'finalizing' }
++  | { kind: 'canceling' }
++  | { kind: 'failed'; stage: 'create' | 'inspect' | 'part' | 'finalize' | 'cancel'; error: AppError }
++  | { kind: 'completed'; fileId: string }
++  | { kind: 'canceled' };
++
++type UploadSession = {
++  uploadId: string;
++  partSize: number;
++  confirmedIndices: ReadonlySet<number>;
++};
++
++type UploadItemState = {
++  clientId: string;
++  file: File;
++  session?: UploadSession;
++  phase: UploadPhase;
++  runId: number;
++};
++
++type UploadItemView = {
++  clientId: string;
++  fileName: string;
++  size: number;
++  phase: UploadPhase;
++  confirmedBytes: number;
++  progress: number;
++  actions: ReadonlyArray<'pause' | 'resume' | 'retry' | 'cancel'>;
++};
++```
++
++`AppError` 沿用项目中 `appApi` 的标准错误类型，实际名称在实施时从现有 API 契约确认，不新造并行错误体系。`File` 只存在内存。`runId` 每次开始、继续、重试或取消时递增；异步事件都携带捕获的 `runId`，reducer 忽略旧运行结果。
++
++`confirmedBytes` 是纯 selector：遍历已确认索引，逐片取 `min(partSize, file.size - index * partSize)` 后求和；空文件的完成前进度定义为 0，服务端确认完成后为 1。集合更新必须取服务端 `inspect` 的结果或成功 `putPart` 的索引，并校验索引位于本文件合法分片范围内；这是外部响应进入领域状态的信任边界。
++
++主要合法转换如下：
++
++```text
++add -> queued -> preparing -> uploading -> finalizing -> completed
++queued -> paused -> resume -> queued
++preparing/uploading -> pausing -> paused -> resume -> queued
++preparing -> failed(create) -> retry -> queued
++uploading -> failed(inspect|part) -> retry -> queued
++finalizing -> failed(finalize) -> retry -> queued
++
++queued/preparing/uploading/paused/failed -> canceling -> canceled
++                                                   +-> failed(cancel) -> canceling（再次取消）
++```
++
++- `queued` 不算占槽；`preparing | uploading | finalizing | pausing | canceling` 中存在该文件的运行 Promise 时占一个槽。槽由协调器的运行表计算，不从一组易矛盾的布尔值推导。
++- 对 `paused`/`failed` 的继续或重试会创建新 `runId`；若已有 `uploadId`，先 `inspect`，否则重新 `create`。
++- 重复点击由命令 guard 拒绝，不启动第二个同文件工作器。
++- 成功、取消是终态。是否从列表移除是 UI 的显式后续命令，不和取消混为一谈。
++
++## 3. 模块与代码契约
++
++拟议采用一个浅层 feature 目录，保持依赖单向：
++
++```text
++src/uploads/
++  index.ts                 # 对外只导出 UploadQueue/useUploadManager 及必要公开类型
++  types.ts                 # 领域状态、事件、UploadGateway 契约
++  uploadModel.ts           # reducer、selectors、合法命令判断；纯函数
++  uploadGateway.ts         # appApi 的薄适配器与外部响应规范化
++  uploadProtocol.ts        # 单文件 create/inspect/putPart/complete/status 流程
++  useUploadManager.ts      # 页面期队列、2 槽调度、资源和卸载生命周期
++  UploadQueue.tsx          # 添加文件、列表组合和队列级反馈
++  UploadRow.tsx            # 单文件语义化进度与动作
++  *.test.ts(x)             # 与责任文件共置，若仓库已有别的测试约定则沿用
++```
++
++实施时如果既有项目约定要求不同命名/测试位置，应按该约定调整，但保持下列责任边界。
++
++### `UploadGateway`：复用现有数据层
++
++```ts
++interface UploadGateway {
++  create(fileName: string, size: number): Promise<{ uploadId: string; partSize: number }>;
++  putPart(uploadId: string, index: number, bytes: Blob, signal: AbortSignal): Promise<void>;
++  inspect(uploadId: string): Promise<{ confirmedIndices: number[] }>;
++  complete(uploadId: string): Promise<{ fileId: string }>;
++  status(uploadId: string):
++    Promise<{ status: 'uploading' } | { status: 'completed'; fileId: string }>;
++  abort(uploadId: string): Promise<void>;
++}
++```
++
++该接口按题面给出的后端契约建模，只有 `putPart` 明确可取消；适配器只做 `appApi` 调用形状映射，不拼 URL/认证头、不吞错、不自行重试。若真实 `appApi` 已让其他方法接受 signal，可在不改变上层语义的前提下传入，但设计不能依赖未提供的取消能力。响应中的 `partSize > 0`、`uploadId/fileId` 非空、确认索引合法等在该外部边界检查，失败作为标准协议错误上抛。
++
++### `uploadModel.ts`：纯状态规则
++
++```ts
++function uploadReducer(state: UploadState, event: UploadEvent): UploadState;
++function selectUploadItems(state: UploadState): UploadItemView[];
++function selectRunnableIds(state: UploadState, capacity: number): string[];
++function confirmedBytes(fileSize: number, partSize: number, indices: ReadonlySet<number>): number;
++```
++
++reducer 原子地更新 phase、session 和确认索引，按 `clientId + runId` 拒绝过期事件。selector 决定可见动作，组件不重复实现状态规则。
++
++### `uploadProtocol.ts`：一个文件的一次运行
++
++```ts
++type RunContext = {
++  item: UploadItemState;
++  runId: number;
++  signal: AbortSignal;
++  gateway: UploadGateway;
++  publish(event: UploadEvent): void;
++};
++
++async function runUpload(context: RunContext): Promise<void>;
++```
++
++算法顺序：
++
++1. 无会话时调用 `create` 并发布会话；若此时运行已被暂停/取消，绝不继续传片。取消已返回的会话时转交取消收尾逻辑，避免泄漏。
++2. 有会话（包括继续/重试）时调用 `inspect`，以返回集合替换本地确认集合；新建会话可直接以空集合开始。
++3. 按索引从小到大找缺片，通过 `file.slice(start, end)` 得到 `Blob`，一次只调用一个 `putPart`。每次成功确认后发布 `partConfirmed`；失败片不会加入集合。
++4. 全部片确认后调用 `complete`。成功响应发布 `completed(fileId)`。
++5. `complete` 抛错时调用 `status`。返回 `completed` 则发布成功；返回 `uploading` 或对账本身失败则发布 `failed(finalize)`，保留会话供重试。
++
++`runUpload` 不管理全局并发、不直接 setState、不展示 toast；取消类异常只有在当前意图确为暂停/取消/卸载时才静默收敛，否则按当前阶段成为可见错误。
++
++### `useUploadManager.ts`：页面期协调与资源所有权
++
++```ts
++type UploadManager = {
++  items: UploadItemView[];
++  add(files: Iterable<File>): void;
++  pause(clientId: string): void;
++  resume(clientId: string): void;
++  retry(clientId: string): void;
++  cancel(clientId: string): void;
++  remove(clientId: string): void;
++};
++
++function useUploadManager(options?: { concurrency?: 2 }): UploadManager;
++```
++
++- hook 用 `useReducer` 持有业务状态，用私有 `Map<clientId, { runId, controller, promise }>` 持有运行资源。产品固定并发为 2；参数只用于测试或同一产品契约下的配置，生产调用不暴露任意值。
++- 一个调度 effect/泵根据运行表的空位和 `queued` 项启动工作器。先登记运行表再调用异步协议，避免同一 render/effect 重复启动。
++- `promise.finally` 只有在表中仍是同一 `runId` 时才删除该运行；随后再次泵队列。旧运行的 finally 不能释放替代运行的槽。
++- `pause` 对排队项可立即转为 `paused`；对上传项先发布 `pauseRequested`，再中止对应 `putPart` controller。若此刻正在不可取消的 `create/inspect`，其返回后由意图/runId guard 停止后续步骤，再发布 `paused` 并释放槽。`finalizing` 不再提供暂停。`resume` 生成新运行并重新排队。
++- `cancel` 先使该项不可再调度、增加 `runId`、中止在途 `putPart`；等待旧 Promise 收敛后调用 `abort`。若 `create` 恰好在取消后返回，新会话也进入这条收尾路径。重复取消复用当前取消 Promise；无会话的排队项可直接本地取消。`finalizing` 已跨过可取消边界，只能等待完成或进入可重试错误。
++- 卸载时设置 disposed 标记、中止全部在途 `putPart` controller、清空运行表并释放该 hook 创建的对象 URL/订阅。卸载不是用户取消，不依赖不可靠的离页网络调用去逐个 `abort` 服务端会话，也不再 publish。不可取消调用的晚到结果仅被丢弃。服务端孤儿会话 TTL 不在已提供前端契约内，应由后端策略另行确认。
++
++### `UploadQueue` / `UploadRow`：呈现与可访问交互
++
++- 文件选择器使用原生 `<input type="file" multiple>`；按钮使用原生 `<button>`，动作可用性来自 `UploadItemView.actions`。
++- 每行用文件名标识，使用 `<progress max={1} value={progress}>` 展示确认进度，并给出文本百分比/状态，不能只靠颜色；这也为大小为 0 的合法文件保留有效的 progress 范围。
++- 暂停请求处理中显示“正在暂停”；取消只在服务端确认后显示“已取消”；失败展示阶段对应的标准错误及“重试”或“再次取消”。
++- 状态文本放在合适的 `aria-live="polite"` 区域；分片级更新不反复抢焦点。动作后焦点留在触发按钮；按钮消失时移到该行下一个可用动作或行容器。
++- 队列级组件只组合 manager，不复制内部状态或直接调用 `appApi`。
++
++## 4. 技术架构图
++
++使用纯文本避免引入仓库中不存在的图表工具；箭头表示调用/依赖方向。
++
++```text
++[页面/路由]
++     |
++     v
++[UploadQueue.tsx] ----渲染----> [UploadRow.tsx]
++     | items + commands                 |
++     v                                  | 只消费 UploadItemView
++[useUploadManager.ts]
++  - useReducer
++  - 两槽调度器
++  - AbortController/Promise 所有权
++     | dispatch events          | runUpload(context)
++     v                          v
++[uploadModel.ts] <-------- [uploadProtocol.ts]
++  - reducer/selectors        - 单文件分片协议
++  - 无 React/网络依赖         - 暂停/重试/complete 对账
++                                 |
++                                 | UploadGateway
++                                 v
++                         [uploadGateway.ts]
++                           - 外部响应规范化
++                           - 不处理认证头
++                                 |
++                                 v
++                    [已有 appApi / 标准错误 / signal]
++                                 |
++                                 v
++                    [后端分片上传 API，权威状态]
++
++公开边界：src/uploads/index.ts -> UploadQueue、useUploadManager、公开类型
++内部依赖不得反向指向 UI；外部消费者不得从内部文件深层导入。
++```
++
++## 5. 代表性数据流与竞态分支
++
++```text
++用户选择 File[]
++  -> UploadQueue.add(files)
++  -> reducer 为每个 File 建立 clientId + queued
++  -> scheduler 取最多 2 个 queued，登记 runId/controller/promise
++  -> runUpload
++       -> 无 uploadId: gateway.create(name, size)
++       <- {uploadId, partSize}
++       -> 有旧会话: gateway.inspect(uploadId)
++       <- confirmedIndices（替换本地确认集合）
++       -> 对每个缺片：File.slice -> gateway.putPart(index, Blob, signal)
++       <- 服务端确认 -> reducer.addConfirmed(index)
++       -> selector 计算 confirmedBytes -> UploadRow 的 <progress>
++       -> gateway.complete(uploadId)
++          <- {fileId} ---------------------------> completed -> UI 成功
++          x 响应/网络错误
++             -> gateway.status(uploadId)
++                <- completed + fileId ----------> completed -> UI 成功
++                <- uploading / 再次错误 --------> failed(finalize) -> UI 可重试
++
++暂停分支：
++用户 pause -> phase=pausing + 在途 putPart controller.abort()
++  -> 当前执行段收敛；旧 runId 的后续事件被 reducer 丢弃
++  -> phase=paused + 释放槽 -> scheduler 启动下一个 queued
++用户 resume -> 新 runId -> inspect -> 只发送 missing indices
++
++取消分支：
++用户 cancel -> phase=canceling + 旧 runId 失效 + abort 在途 putPart
++  -> 等旧执行段收敛 -> gateway.abort(uploadId)
++     <- 成功 -> canceled
++     x 失败 -> failed(cancel)，保留 uploadId 供再次取消
++
++卸载分支：
++React cleanup -> disposed=true -> abort 全部本地 controller -> 释放本地资源
++任何晚到回调 -> disposed/runId guard -> 不写 React 状态
++```
++
++## 6. 依赖顺序：5 个实施步骤
++
++### 步骤 1：锁定传输边界与纯模型
++
++- 功能：定义状态、事件、合法动作、确认字节计算和 `UploadGateway`；实现 `appApi` 薄适配。
++- 前置：检查真实 `appApi` 方法签名、标准错误类型及现有测试约定；检查 `uploadFile` 调用者。
++- 文件/符号：`types.ts`、`uploadModel.ts`、`uploadGateway.ts`；保留现有 `upload.ts`。
++- 完成检查：reducer 表驱动测试覆盖合法/非法转换、过期 `runId`、末片字节计算和恶意/越界确认索引；适配测试证明所有调用经过 `appApi` 且 `putPart` 的 signal 原样传递。
++
++### 步骤 2：实现可对账的单文件协议
++
++- 功能：create/inspect/缺片上传/complete/status 的完整链路。
++- 前置：步骤 1 的模型和 gateway。
++- 文件/符号：`uploadProtocol.ts` 的 `runUpload`。
++- 完成检查：用可控 Promise 的 gateway fake 证明分片串行、确认后才涨进度、inspect 已确认片不再 put、complete 丢响应后 status 可确认成功、status=uploading 保持可重试失败。
++
++### 步骤 3：实现两槽调度与生命周期命令
++
++- 功能：多文件排队、最多两个工作器、暂停/继续/取消/重试、卸载清理。
++- 前置：步骤 2。
++- 文件/符号：`useUploadManager.ts`。
++- 完成检查：hook 集成测试以挂起请求证明运行文件峰值为 2；暂停释放槽；继续/重试先 inspect；取消与 create/putPart 返回竞态不泄漏会话、不发布旧结果；卸载中止全部本地信号且无卸载后更新。
++
++### 步骤 4：接入可访问界面与真实页面
++
++- 功能：多文件添加、逐文件进度和状态、上下文动作；在真实页面替换单文件入口的使用点。
++- 前置：步骤 3 和真实调用者调查。
++- 文件/符号：`UploadQueue.tsx`、`UploadRow.tsx`、`index.ts` 及真实页面消费点。
++- 完成检查：React 用户级测试覆盖键盘添加/暂停/继续/取消/重试和状态文案；真实浏览器手工验证同时两个上传、慢网暂停与焦点/动态播报。未完成浏览器检查前不得声称浏览器验收通过。
++
++### 步骤 5：兼容清理与契约收口
++
++- 功能：按真实消费情况迁移或保留 `uploadFile`，同步 `docs/uploads.md` 的实现链接和运维说明。
++- 前置：步骤 4 所有调用者已识别。
++- 文件/符号：现有 `upload.ts`、消费点、产品文档。
++- 完成检查：TypeScript、lint、项目测试全量通过；代码搜索确认没有意外深层导入或被遗漏的旧入口消费者；设计图、符号与实际实现一致。只有确认无消费者且发布兼容策略允许时，才删除旧入口。
++
++## 7. 验证矩阵
++
++以下均为拟议检查，尚未执行：
++
++| 规则 | 决定性检查 |
++| --- | --- |
++| 最多两个文件上传 | 挂起前两文件请求，断言第三文件未调用 gateway；释放/暂停一个后第三个启动 |
++| 不重传确认片 | 初始 inspect 返回 `{0, 2}`，断言只 put 其他合法索引 |
++| 进度权威且不倒退 | put 成功前进度不变；确认后按真实末片大小增加；旧 runId 事件无效 |
++| 暂停/继续 | 请求中 pause 导致 signal aborted；无后续 put；resume 首调用 inspect |
++| 取消终结会话 | 先让在途请求收敛，再断言一次 abort；abort 失败显示可再次取消而非 canceled |
++| create/取消竞态 | cancel 后 create 才返回 uploadId，断言该会话被 abort 且不 putPart |
++| 完成结果未知 | complete 抛错 + status completed => 成功；status uploading/抛错 => finalize 失败 |
++| 失败重试 | part/inspect/finalize 各阶段失败后保留会话，retry 先 inspect 且不重传已确认片 |
++| 页面卸载 | 所有在途 `putPart` controller aborted，本地资源释放，不可取消 Promise 的晚到结果不 dispatch 可见更新 |
++| 可访问操作 | 原生控件可键盘操作，动作/状态名称明确，动态更新可播报且焦点不丢失 |
++
++## 8. 现实后续变化检查
++
++最可能的后续变化是后端允许单文件内多个分片并行。当前边界使变化局限在 `uploadProtocol.ts`：把串行缺片循环替换为每文件有界片调度，`UploadGateway`、服务端确认集合、reducer、UI 和全局“两文件”调度保持不变。届时必须另行决定“每文件片并发上限”和暂停时多 controller 的所有权；现在不预建通用并发池，因为它对当前产品无收益。
++
++另一个可能变化是刷新恢复。它需要持久化可重新取得的文件句柄或要求用户重新选择并校验文件身份，属于新的产品/权限契约；当前 `File` 与运行资源明确归页面期所有，使未来可在 manager 外增加恢复来源，而不把持久化混入传输协议。
++
++## 9. 实施前待核实但不阻塞本设计的事实
++
++- 仓库真实的 React 状态/测试约定以及页面消费点当前不可检查。
++- `appApi` 六个分片方法的准确 TypeScript 调用形状需对照真实源码；当前设计只依赖题面明确提供的 `putPart` signal。
++- 服务端是否保证 `abort` 幂等、孤儿会话的过期策略，以及 `confirmedIndices` 的索引基准需由既有 API 类型/文档确认。若索引基准不是从 0 开始，只在 gateway 归一化，不让 UI/模型同时兼容两套基准。
++- 如果设计稿落入真实仓库，应从现有 `docs/uploads.md` 链接本文；本工作区没有该文件，故未虚构修改。

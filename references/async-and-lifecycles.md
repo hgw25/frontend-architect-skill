@@ -68,6 +68,27 @@ leaking sensitive payloads. Differentiate cancellation caused by supersession
 from a current user-visible failure. If recovery is impossible locally, retain
 an honest error or unknown-result state rather than promising that retry is safe.
 
+For a command followed by refresh, navigation, rendering or other synchronization,
+identify where the authoritative effect is confirmed. Once confirmed, a secondary
+failure cannot turn it into a failed command or erase its confirmation. Keep the
+confirmed result observable and report the secondary failure at its own boundary;
+recovery retries the failed read/projection, not the committed command. If the
+command's outcome is unknown, reconcile it using the existing service contract
+instead of inventing a confirmation or blindly repeating the effect.
+
+The success path must be able to present confirmation without obtaining the
+secondary data. Follow it through the final renderer or navigation destination,
+including redirects across requests. Keeping a private success flag is insufficient
+when the failure view cannot display it. Choose an owned result/receipt or existing
+mutation state that both successful and degraded presentation can consume.
+
+Trace this distinction through each supported consumer, including native forms
+and enhanced interactions where both exist. A shared service call does not prove
+that their final feedback agrees. Exercise the combination of successful command
+and failed follow-on work, as well as command rejection; tests of each operation
+in isolation miss that boundary. Reuse existing mutation/query states and error
+presentation before adding new state machinery.
+
 ## Reconcile optimistic state with acknowledgements
 
 Keep these meanings distinct when optimistic behavior exists:

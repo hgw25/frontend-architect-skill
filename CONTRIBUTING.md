@@ -29,7 +29,7 @@
 5. 优先链接原始作者、标准或官方文档。
 6. 在 `evals/cases.yaml` 增加或更新可复现的真实场景。
 7. 运行 `python3 scripts/validate_skill.py`。
-8. 根据 `evals/cases.md` 的协议和 `evals/rubric.md` 做独立前向评测。
+8. 根据 `evals/cases.md` 的协议和 `evals/rubric.md` 做独立前向评测；必要成果独立验收，质量分不得抵消遗漏。
 
 ## 从失败找到维护位置
 
@@ -65,7 +65,7 @@
 - `references/`：只有相关任务才需要加载的详细决策指导。
 - `templates/engineering-principles/AGENTS.md`：由使用者合并到项目或个人配置的通用工程原则；
   不作为每次前端任务必须加载的 reference，不自动修改全局规则。
-- `evals/cases.yaml`：行为用例的单一数据源，包含完整输入与适用评分维度。
+- `evals/cases.yaml`：行为用例的单一数据源，包含完整输入、适用评分维度及按需复用的必要成果条件。
 - `evals/cases.md`：baseline/candidate 前向评测流程。
 - `evals/rubric.md`：支持不适用维度归一化的评分标准。
 - `scripts/`：重复且确定性的本地检查，不放业务知识。

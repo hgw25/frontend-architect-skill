@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "autonomous-live-completion",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确识别目标与现状：完成快照可能缺少 replyTo，而先前流式消息已保存关联信息；修改范围明确限定在账本合并逻辑。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用既有消息合并结果 stored，仅调整状态更新的数据来源，没有增加抽象、依赖或旁路机制，复杂度与局部缺陷相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "关联恢复和请求进度更新仍封装在 ledger.receive 内；调用者无需了解快照合并的私有步骤，状态所有权清楚。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实际修改一致地从合并后的 stored 读取 scope、replyTo、id 和 status，覆盖 done 与 error；最终自检和宿主测试均为 7/7 通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "测试证据覆盖保存关联后的完成/错误、重复完成、无关联完成、其他请求与 scope 隔离、乱序接受及历史恢复等关键身份与时序边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "提供了实际命令、退出结果和测试数量；初次失败后有相关修改及通过的完整重跑，宿主随后也验证 7/7 通过，不存在最终未解决失败。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给修复结果，再简明说明根因、具体文件、实现原则和验证结果，范围及结论清楚且无过度声明。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供仓库完整源码与完整命令审计，只能依据给出的差异、生成器自检尾部和宿主验证判断。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "autonomous-live-completion",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确识别了完成快照可能缺少 replyTo，而关联信息已存在于持久化消息中的具体契约与故障场景；修改范围保持在账本逻辑内。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "直接复用现有消息合并结果和 mergeProgress 流程，只替换四个数据来源，没有引入新抽象、依赖或旁路机制，复杂度与缺陷相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "关联恢复、终态判断和请求进度更新仍由 ledger 内部负责；调用者不需要了解快照合并的私有步骤，职责边界清晰。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实际实现统一从 stored 读取 scope、replyTo、id 和 status，使持久化关联与终态更新形成一致执行链；最终完整测试集与宿主验证均通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "证据覆盖 done/error、重复完成、无关联完成、多请求与跨 scope 隔离、先完成后接受以及历史恢复等相关状态、身份和顺序边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "生成阶段在修改后重新运行测试并得到 7/7 通过，同时 git diff --check 通过；宿主随后独立运行相同测试也得到 7/7 通过。早期失败后已有相关修改和成功复测，属于已修复的中间状态。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "回复先给出修复结果，再简明说明根因、修改位置和实际验证结果，范围与结论一致，没有夸大未验证事项。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供真实上层应用或端到端交互验证；现有证据主要证明 ledger 层行为，但该局部修复的单元测试覆盖较完整。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

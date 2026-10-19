@@ -1,0 +1,272 @@
+diff --git a/README.md b/README.md
+index 468b871..cbe9eff 100644
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,5 @@ Invitations 列表中的 Move earlier / Move later 只调整本页显示顺序
+ - `readOverview()`：GET `/api/overview`，返回 `{pending}`。
+ 
+ `npm run check` 使用 Chromium 和 HTTP 替身验证页面消费者的正常操作；不调用真实邮件服务。
++
++实现设计与验证记录见 [团队邀请页设计](docs/team-invitations-design.md)。
+diff --git a/docs/team-invitations-design.md b/docs/team-invitations-design.md
+new file mode 100644
+index 0000000..fccd630
+--- /dev/null
++++ b/docs/team-invitations-design.md
+@@ -0,0 +1,61 @@
++# 团队邀请页：发送与列表操作设计
++
++## 目标与已知契约
++
++完成邀请发送、统计刷新和仅本页生效的列表排序。页面保留公开的 Email 输入框、`Send invitation`、`Team note`、名为 `Invitations` 的列表、行 `data-invite-id`、`Refresh overview` 以及 `data-testid="overview"`。
++
++`sendInvitation(email)` 成功即表示服务接受了发送，返回邀请和回执；`readOverview()` 独立返回 `{ pending }`。因此统计读取失败不能回溯为邀请发送失败。列表排序不调用服务。用户可在发送期间继续编辑 Team note 和操作列表，完成回调只更新其仍拥有的数据，且不主动夺取后来获得的焦点。
++
++## 实施顺序（3 步）
++
++1. **建立页面状态与渲染边界**（`src/app.mjs`）：保留草稿、邀请列表、统计和可读反馈；将每次重绘前的焦点目标记录为邀请行与按钮名，重绘后仅当该按钮仍是活动元素时恢复它。验收：键盘连续激活移动按钮仍操作同一邀请。
++2. **实现发送与统计的独立结果处理**（`src/app.mjs`）：提交期间禁用重复发送；发送成功立即追加邀请并发布成功反馈，随后单独读取统计。读取失败保留邀请和成功反馈，并显示可重试的统计错误。发送失败保留 email 草稿并发布发送错误。验收：一次提交只有一个 POST；发送成功后统计失败仍可见新行与确认。
++3. **覆盖真实浏览器消费者流程**（`tests/team-invitations-extra.spec.mjs`）：覆盖发送成功后的统计失败、异步完成期间的 Team note 连续输入，以及键盘连续排序。验收：`npm run check` 通过。
++
++## 代码契约与所有权
++
++| 位置 | 契约与职责 |
++| --- | --- |
++| `src/app.mjs` 的 `state` | 唯一页面状态所有者：`rows`、`overview`、Email/Note 草稿、发送状态、反馈和统计错误。`rows` 是显示排序的权威来源。 |
++| `draw()` | 根据 `state` 重建可见 DOM，并在结构变动时恢复同一列表按钮的逻辑焦点；不发起请求。 |
++| 提交处理器 | 调用 `sendInvitation(email)` 一次。成功后先提交邀请行/反馈，再调用 `refreshOverview()`；失败只发布发送错误。 |
++| `refreshOverview()` | 调用 `readOverview()` 并只拥有统计数据及其错误反馈；不修改邀请发送结果。 |
++| 列表移动处理器 | 只交换 `state.rows` 中相邻项；保留触发按钮的逻辑焦点；不依赖 transport。 |
++
++重绘采用一个小型状态对象而不是额外框架：此项目没有既有组件层或状态库，且同一页面是这些状态的唯一消费者。发送采用“重复激活忽略”策略，避免同一次用户操作产生多次服务副作用；统计读取与发送使用不同错误边界。由于输入可在请求期间改变，提交时捕获 email 快照；成功时只在 email 仍等于已提交值时清空，避免清除后续编辑。
++
++## 技术架构
++
++```text
++用户
++  | submit / click / input
++  v
++src/app.mjs: DOM handlers
++  |-- update --> state (drafts, rows, overview, feedback)
++  |-- render --> draw() --> DOM / aria-live status and alert
++  |-- POST invite --> src/transport.mjs: sendInvitation() --> /api/invitations
++  |-- GET overview -> src/transport.mjs: readOverview() ----> /api/overview
++```
++
++## 数据流（发送后统计失败的代表路径）
++
++```text
++Email draft --submit snapshot--> sendInvitation(email)
++  --accepted invitation + receipt--> state.rows append + success status
++  --then--> readOverview()
++              | success: state.overview <- { pending } -> overview text
++              ` failure: state.overviewError <- explanatory alert -> Refresh overview retry
++
++Team note input --> state.note --> textarea value (independent of both requests)
++Move later/earlier --> swap state.rows --> ordered list; logical button focus restored
++```
++
++## 验证与后续变化
++
++运行 `npm run check`，包括已有消费者入口和新增的浏览器回归场景。实现后回查文档中的所有调用和箭头。
++
++若以后需要撤销、重新发送或服务器端排序，将把行操作从当前的本地 `rows` 交换扩展为按邀请 ID 的命令；现有 `rows` 所有权与 `sendInvitation`/`readOverview` 边界无需改变。
++
++## 执行记录
++
++待实现与验证后更新。
+diff --git a/src/app.mjs b/src/app.mjs
+index d744be2..e09222b 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,43 +1,155 @@
+ import { invitations, overview as initialOverview } from './data.mjs';
+ import { sendInvitation, readOverview } from './transport.mjs';
++
+ const app = document.querySelector('#app');
+-let rows = [...invitations], overview = initialOverview, email = '', note = '', message = '', error = '', sending = false;
+-function element(tag, text) { const node = document.createElement(tag); if (text) node.textContent = text; return node; }
+-function draw() {
++const state = {
++  rows: [...invitations],
++  overview: initialOverview,
++  email: '',
++  note: '',
++  message: '',
++  sendError: '',
++  overviewError: '',
++  sending: false,
++  refreshingOverview: false,
++};
++
++function element(tag, text) {
++  const node = document.createElement(tag);
++  if (text) node.textContent = text;
++  return node;
++}
++
++function restoreListFocus(target) {
++  if (!target) return;
++  const row = app.querySelector(`[data-invite-id="${target.inviteId}"]`);
++  row?.querySelector(`[data-action="${target.action}"]`)?.focus();
++}
++
++function moveInvitation(inviteId, delta, action) {
++  const position = state.rows.findIndex(row => row.id === inviteId);
++  const nextPosition = position + delta;
++  if (nextPosition < 0 || nextPosition >= state.rows.length) return;
++
++  [state.rows[position], state.rows[nextPosition]] = [state.rows[nextPosition], state.rows[position]];
++  draw({ inviteId, action });
++}
++
++async function refreshOverview({ render = true } = {}) {
++  state.refreshingOverview = true;
++  try {
++    state.overview = await readOverview();
++    state.overviewError = '';
++  } catch {
++    state.overviewError = 'Overview unavailable. Try refreshing again.';
++  } finally {
++    state.refreshingOverview = false;
++    if (render) draw();
++  }
++}
++
++async function submitInvitation(event) {
++  event.preventDefault();
++  if (state.sending) return;
++
++  const submittedEmail = state.email;
++  state.sending = true;
++  state.sendError = '';
++  state.message = '';
++  // Keep the current DOM in place while the request is pending so a user can
++  // continue working in the note and list without replacing their active control.
++  event.currentTarget.querySelector('button[type="submit"]').disabled = true;
++
++  try {
++    const result = await sendInvitation(submittedEmail);
++    state.rows.push(result.invitation);
++    state.message = `Invitation accepted for ${result.invitation.email}.`;
++    if (state.email === submittedEmail) state.email = '';
++    await refreshOverview({ render: false });
++  } catch {
++    state.sendError = 'Invitation failed. Check the email and try again.';
++    state.message = '';
++    state.sending = false;
++    draw();
++    return;
++  }
++
++  state.sending = false;
++  draw();
++}
++
++function draw(focusTarget) {
+   app.replaceChildren(element('h1', 'Team invitations'));
+-  const form = element('form'), label = element('label', 'Email'), input = element('input');
+-  input.type = 'email'; input.required = true; input.value = email; input.name = 'email'; label.append(input);
+-  input.oninput = () => { email = input.value; };
+-  const submit = element('button', 'Send invitation'); submit.type = 'submit'; submit.disabled = sending; form.append(label, submit);
+-  const status = element('p', message); status.setAttribute('role', 'status'); app.append(form, status);
+-  if (error) { const alert = element('p', error); alert.setAttribute('role', 'alert'); app.append(alert); }
+-  const section = element('section'); section.className = 'overview'; section.append(element('h2', 'Overview'));
+-  const total = element('p', 'Pending: ' + overview.pending); total.dataset.testid = 'overview';
+-  const refresh = element('button', 'Refresh overview'); refresh.onclick = async () => {
+-    try { overview = await readOverview(); error = ''; draw(); } catch { error = 'Overview unavailable'; draw(); }
+-  }; section.append(total, refresh); app.append(section);
+-  const list = element('ol'); list.setAttribute('aria-label', 'Invitations');
+-  for (const row of rows) {
+-    const item = element('li'); item.dataset.inviteId = row.id; item.append(element('span', row.email));
+-    for (const [name, delta] of [['Move earlier', -1], ['Move later', 1]]) {
+-      const button = element('button', name); button.onclick = () => {
+-        const at = rows.indexOf(row), next = at + delta;
+-        if (next < 0 || next >= rows.length) return;
+-        [rows[at], rows[next]] = [rows[next], rows[at]]; draw();
+-      }; item.append(button);
+-    }
+-    list.append(item);
++
++  const form = element('form');
++  const emailLabel = element('label', 'Email');
++  const input = element('input');
++  input.type = 'email';
++  input.required = true;
++  input.value = state.email;
++  input.name = 'email';
++  input.oninput = () => { state.email = input.value; };
++  emailLabel.append(input);
++
++  const submit = element('button', 'Send invitation');
++  submit.type = 'submit';
++  submit.disabled = state.sending;
++  form.append(emailLabel, submit);
++  form.onsubmit = submitInvitation;
++  app.append(form);
++
++  const status = element('p', state.message);
++  status.setAttribute('role', 'status');
++  app.append(status);
++  if (state.sendError) {
++    const alert = element('p', state.sendError);
++    alert.setAttribute('role', 'alert');
++    app.append(alert);
+   }
+-  app.append(list);
+-  const noteLabel = element('label', 'Team note'), textarea = element('textarea'); textarea.value = note;
+-  textarea.oninput = () => { note = textarea.value; }; noteLabel.append(textarea); app.append(noteLabel);
+-  form.onsubmit = async event => {
+-    event.preventDefault(); const submitted = email; sending = true; error = ''; draw();
+-    try {
+-      const result = await sendInvitation(submitted); rows.push(result.invitation);
+-      overview = await readOverview(); message = 'Invitation sent to ' + result.invitation.email; email = '';
+-    } catch { error = 'Invitation failed'; message = ''; }
+-    sending = false; draw(); app.querySelector('input').focus();
++
++  const section = element('section');
++  section.className = 'overview';
++  section.append(element('h2', 'Overview'));
++  const total = element('p', `Pending: ${state.overview.pending}`);
++  total.dataset.testid = 'overview';
++  const refresh = element('button', 'Refresh overview');
++  refresh.disabled = state.refreshingOverview;
++  refresh.onclick = () => {
++    refresh.disabled = true;
++    refreshOverview();
+   };
++  section.append(total, refresh);
++  if (state.overviewError) {
++    const overviewAlert = element('p', state.overviewError);
++    overviewAlert.setAttribute('role', 'alert');
++    section.append(overviewAlert);
++  }
++  app.append(section);
++
++  const list = element('ol');
++  list.setAttribute('aria-label', 'Invitations');
++  state.rows.forEach((row, index) => {
++    const item = element('li');
++    item.dataset.inviteId = row.id;
++    item.append(element('span', row.email));
++    [['Move earlier', -1, 'earlier'], ['Move later', 1, 'later']].forEach(([name, delta, action]) => {
++      const button = element('button', name);
++      button.dataset.action = action;
++      button.disabled = index + delta < 0 || index + delta >= state.rows.length;
++      button.onclick = () => moveInvitation(row.id, delta, action);
++      item.append(button);
++    });
++    list.append(item);
++  });
++  app.append(list);
++
++  const noteLabel = element('label', 'Team note');
++  const textarea = element('textarea');
++  textarea.value = state.note;
++  textarea.oninput = () => { state.note = textarea.value; };
++  noteLabel.append(textarea);
++  app.append(noteLabel);
++  restoreListFocus(focusTarget);
+ }
++
+ draw();

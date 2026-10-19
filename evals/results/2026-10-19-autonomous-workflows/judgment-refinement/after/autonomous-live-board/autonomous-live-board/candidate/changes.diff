@@ -1,0 +1,427 @@
+diff --git a/docs/board-sorting-design.md b/docs/board-sorting-design.md
+new file mode 100644
+index 0000000..93dacf2
+--- /dev/null
++++ b/docs/board-sorting-design.md
+@@ -0,0 +1,115 @@
++# Board sorting technical design
++
++## Outcome and current facts
++
++The board must accept adjacent button moves and pointer dragging while keeping one
++authoritative `order` array. A successful intent updates that order and the DOM
++immediately. The same card node and logical control remain active across a move.
++Persistence may lag behind interaction, but the last acknowledged request must
++represent the newest order; failures remain visible and retryable.
++
++The application is native ESM with stable card IDs and an existing `saveOrder(ids)`
++API. The current renderer replaces the entire application for every move, has no
++drag behavior, swallows save errors, and interleaves a layout read with every card
++write. Those behaviors cannot support continuity or bounded rendering work.
++
++## Three implementation steps
++
++1. **Create a stable board view.** `src/app.mjs` creates the shell and each card
++   node once per board mount, keeps an ID-to-node map, and reorders those nodes from
++   `order`. Button and pointer intents both call the same reorder operation. Check:
++   button and drag paths produce the expected IDs, while focus remains on the moved
++   card's control.
++2. **Add interruptible spatial continuity.** The reorder owner captures visual
++   rectangles, commits `order` and DOM order, then plays translation-only FLIP
++   animations. A new intent samples the current visual positions and replaces old
++   animations; resize, reduced motion, and unmount cancel to the already-correct
++   DOM state. Check: intermediate geometry changes, rapid moves do not jump back,
++   reduced motion runs no animation, and disposal leaves no running work.
++3. **Serialize latest-order persistence.** A small save coordinator owns one
++   in-flight snapshot and one replaceable pending snapshot. Success drains the
++   latest pending value; failure retains the current order for an explicit retry
++   and never mutates UI order. Check: delayed success followed by a newer failed
++   save exposes an alert, and retry sends the newest IDs and reaches Saved.
++
++## Contracts and ownership
++
++- `order: string[]` is the only business-order state. DOM order and request
++  snapshots are projections; animation transforms never become ordering data.
++- `moveBy(id, delta)` and `moveToCard(id, targetId)` validate positional intent,
++  compute a new order, and call `commitOrder(nextOrder)`.
++- `commitOrder(nextOrder)` owns the atomic business/DOM transition, focus
++  continuity, FLIP measurement, and persistence enqueue.
++- `mountBoard()` owns card nodes and pointer handlers for a visible board;
++  `unmountBoard()` releases pointer state and all animation handles. Show/hide does
++  not reset `order` or allow an async save to remount UI.
++- `enqueueSave(ids)`, `flushSave()`, and `retrySave()` own save ordering and
++  feedback. At most one request is in flight; pending data is replaced by the most
++  recent immutable snapshot. Network failures are displayed, not converted into
++  a fallback order.
++
++Plain functions and module-owned state fit the application's single board and
++lifetime; a class or generalized store would add substitution machinery without a
++second consumer.
++
++## Technical architecture
++
++```text
++Move buttons ----\
++                  > reorder intent -> Board/order owner -> stable card DOM
++Pointer handle --/                         |                   |
++                                            |                   +-> FLIP owner
++                                            v                       (Web Animations)
++                                    Save coordinator
++                                            |
++                                            v
++                                      saveOrder(ids)
++                                            |
++                                            v
++                                      /api/order
++
++Visibility toggle -> mountBoard()/unmountBoard() -> DOM + animation cleanup
++Media/resize -------------------------------------> animation cancellation
++```
++
++## Representative data flow
++
++```text
++Enter / pointer-up
++  -> moveBy(id, delta) / moveToCard(id, targetId)
++  -> derive nextOrder from current order
++  -> capture current visual rectangles
++  -> commit order = nextOrder
++  -> move existing nodes into nextOrder DOM order
++  -> restore the same logical control only if the move disrupted its focus
++  -> measure final rectangles -> animate current-to-final translation
++       reduced motion / resize / unmount -> cancel -> final DOM stays authoritative
++  -> enqueue immutable IDs snapshot
++  -> saveOrder(snapshot)
++       success + newer pending -> save newest pending snapshot
++       success + no pending -> announce Saved
++       failure -> retain newest order -> show alert + Retry
++       Retry -> enqueue current order -> success -> announce Saved
++```
++
++## Verification and evolution
++
++`npm run check` exercises the real Chromium consumer for button focus, intermediate
++and repeated motion, drag equivalence, ordered failure/retry, resize/disposal,
++reduced motion, and an 80-card fixed-cost sample. The pre-change attempt could not
++start because dependencies were not installed; executed evidence is recorded here
++after implementation.
++
++A realistic next change is moving a card to a different column. The intent layer
++can add `moveToColumn(...)` while reusing `commitOrder`; if columns later become
++separate authoritative lists, that is the point to replace the single-array
++contract rather than hiding multiple lists behind today's API.
++
++## Implementation reconciliation
++
++Implemented with the named operations and ownership above. `npm run check` passed
++all 6 Chromium tests on 2026-10-19. The fixed reduced-motion sample used Chromium
++151.0.7922.34, 80 cards and 8 operations; it recorded 23 layouts (8.303 ms layout
++duration), 48 style recalculations (3.076 ms), 5.695 ms script duration, 83.834 ms
++task duration, and 224.031 ms test-wall time. These are local raw browser metrics,
++not a production-service or cross-device performance claim.
+diff --git a/src/app.mjs b/src/app.mjs
+index a238c98..97f8463 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,17 +1,279 @@
+ import { cards } from './data.mjs';
+ import { saveOrder } from './api.mjs';
+-const app=document.querySelector('#app');let order=cards.map(c=>c.id),visible=true;
+-function draw(){
+- app.innerHTML='<button id="toggle">'+(visible?'Hide board':'Show board')+'</button><p role="status"></p>';
+- app.querySelector('#toggle').onclick=()=>{visible=!visible;draw();};
+- if(!visible)return;
+- const list=document.createElement('ol');list.setAttribute('aria-label','Board');app.append(list);
+- for(const id of order){const card=cards.find(c=>c.id===id),li=document.createElement('li');li.dataset.cardId=id;
+- li.innerHTML='<h2>'+card.title+'</h2><p>'+card.body+'</p><button>Move up</button><button>Move down</button><button>Move card '+id+'</button>';
+- li.querySelectorAll('button')[0].onclick=()=>move(id,-1);li.querySelectorAll('button')[1].onclick=()=>move(id,1);list.append(li);
+- // The existing layout adjustment reads after each write.
+- li.style.minHeight=(60+(list.getBoundingClientRect().height%5))+'px';
+- }
+-}
+-function move(id,delta){const i=order.indexOf(id),j=i+delta;if(j<0||j>=order.length)return;[order[i],order[j]]=[order[j],order[i]];draw();saveOrder(order).then(()=>app.querySelector('[role=status]').textContent='Saved').catch(()=>{});}
+-draw();
++
++const app = document.querySelector('#app');
++const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
++
++let order = cards.map((card) => card.id);
++let boardView = null;
++let pendingSave = null;
++let saveInFlight = false;
++let saveFailed = false;
++
++const toggle = document.createElement('button');
++const status = document.createElement('p');
++const error = document.createElement('div');
++const boardHost = document.createElement('div');
++
++toggle.id = 'toggle';
++toggle.textContent = 'Hide board';
++status.setAttribute('role', 'status');
++error.hidden = true;
++error.setAttribute('role', 'alert');
++app.append(toggle, status, error, boardHost);
++
++function createButton(label, action) {
++  const button = document.createElement('button');
++  button.type = 'button';
++  button.textContent = label;
++  button.dataset.action = action;
++  return button;
++}
++
++function createCardNode(card) {
++  const item = document.createElement('li');
++  item.dataset.cardId = card.id;
++
++  const heading = document.createElement('h2');
++  heading.textContent = card.title;
++  const body = document.createElement('p');
++  body.textContent = card.body;
++  const up = createButton('Move up', 'up');
++  const down = createButton('Move down', 'down');
++  const handle = createButton(`Move card ${card.id}`, 'drag');
++  handle.className = 'drag-handle';
++  item.append(heading, body, up, down, handle);
++  return item;
++}
++
++function captureRects(nodes) {
++  return new Map(order.map((id) => [id, nodes.get(id).getBoundingClientRect()]));
++}
++
++function cancelAnimations() {
++  if (!boardView) return;
++  for (const animation of boardView.animations.values()) animation.cancel();
++  boardView.animations.clear();
++}
++
++function playReorderAnimation(firstRects) {
++  if (!boardView || !firstRects || reducedMotion.matches) return;
++  const lastRects = captureRects(boardView.nodes);
++
++  for (const id of order) {
++    const first = firstRects.get(id);
++    const last = lastRects.get(id);
++    if (!first || !last) continue;
++    const x = first.left - last.left;
++    const y = first.top - last.top;
++    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) continue;
++
++    const node = boardView.nodes.get(id);
++    const animation = node.animate(
++      [
++        { transform: `translate(${x}px, ${y}px)` },
++        { transform: 'translate(0px, 0px)' },
++      ],
++      { duration: 480, easing: 'cubic-bezier(.2, .8, .2, 1)' },
++    );
++    boardView.animations.set(id, animation);
++    animation.finished
++      .catch(() => {})
++      .finally(() => {
++        if (boardView?.animations.get(id) === animation) {
++          boardView.animations.delete(id);
++        }
++      });
++  }
++}
++
++function syncBoardDom() {
++  if (!boardView) return;
++  const fragment = document.createDocumentFragment();
++  for (const id of order) fragment.append(boardView.nodes.get(id));
++  boardView.list.append(fragment);
++
++  order.forEach((id, index) => {
++    const item = boardView.nodes.get(id);
++    item.querySelector('[data-action="up"]').disabled = index === 0;
++    item.querySelector('[data-action="down"]').disabled = index === order.length - 1;
++  });
++}
++
++function focusedControl() {
++  const control = document.activeElement?.closest?.('[data-card-id] button');
++  if (!control) return null;
++  return {
++    id: control.closest('[data-card-id]').dataset.cardId,
++    action: control.dataset.action,
++    element: control,
++  };
++}
++
++function restoreFocus(target) {
++  if (!target || document.activeElement === target.element || !boardView) return;
++  const card = boardView.nodes.get(target.id);
++  card?.querySelector(`[data-action="${target.action}"]`)?.focus({ preventScroll: true });
++}
++
++function commitOrder(nextOrder) {
++  if (nextOrder.every((id, index) => id === order[index])) return;
++
++  const focus = focusedControl();
++  const firstRects = boardView && !reducedMotion.matches
++    ? captureRects(boardView.nodes)
++    : null;
++  cancelAnimations();
++  order = nextOrder;
++  syncBoardDom();
++  restoreFocus(focus);
++  playReorderAnimation(firstRects);
++  enqueueSave(order);
++}
++
++function moveBy(id, delta) {
++  const from = order.indexOf(id);
++  const to = from + delta;
++  if (from < 0 || to < 0 || to >= order.length) return;
++  const next = [...order];
++  [next[from], next[to]] = [next[to], next[from]];
++  commitOrder(next);
++}
++
++function moveToCard(id, targetId) {
++  const from = order.indexOf(id);
++  const target = order.indexOf(targetId);
++  if (from < 0 || target < 0 || from === target) return;
++  const next = order.filter((cardId) => cardId !== id);
++  next.splice(target, 0, id);
++  commitOrder(next);
++}
++
++function clearDrag() {
++  if (!boardView?.drag) return;
++  boardView.nodes.get(boardView.drag.id)?.classList.remove('is-dragging');
++  boardView.nodes.get(boardView.drag.targetId)?.classList.remove('is-drop-target');
++  boardView.drag = null;
++}
++
++function mountBoard() {
++  const list = document.createElement('ol');
++  list.setAttribute('aria-label', 'Board');
++  const nodes = new Map(cards.map((card) => [card.id, createCardNode(card)]));
++  boardView = { list, nodes, animations: new Map(), drag: null };
++  syncBoardDom();
++  boardHost.append(list);
++
++  list.addEventListener('click', (event) => {
++    const button = event.target.closest('button[data-action]');
++    const id = button?.closest('[data-card-id]')?.dataset.cardId;
++    if (!id) return;
++    if (button.dataset.action === 'up') moveBy(id, -1);
++    if (button.dataset.action === 'down') moveBy(id, 1);
++  });
++
++  list.addEventListener('pointerdown', (event) => {
++    const handle = event.target.closest('[data-action="drag"]');
++    if (!handle || event.button !== 0) return;
++    event.preventDefault();
++    const id = handle.closest('[data-card-id]').dataset.cardId;
++    boardView.drag = { id, targetId: id, pointerId: event.pointerId };
++    boardView.nodes.get(id).classList.add('is-dragging');
++    list.setPointerCapture(event.pointerId);
++  });
++
++  list.addEventListener('pointermove', (event) => {
++    if (!boardView?.drag || boardView.drag.pointerId !== event.pointerId) return;
++    const targetId = document.elementFromPoint(event.clientX, event.clientY)
++      ?.closest('[data-card-id]')?.dataset.cardId;
++    if (!targetId || targetId === boardView.drag.targetId) return;
++    boardView.nodes.get(boardView.drag.targetId)?.classList.remove('is-drop-target');
++    boardView.drag.targetId = targetId;
++    if (targetId !== boardView.drag.id) {
++      boardView.nodes.get(targetId).classList.add('is-drop-target');
++    }
++  });
++
++  list.addEventListener('pointerup', (event) => {
++    if (!boardView?.drag || boardView.drag.pointerId !== event.pointerId) return;
++    const { id, targetId } = boardView.drag;
++    clearDrag();
++    moveToCard(id, targetId);
++  });
++  list.addEventListener('pointercancel', clearDrag);
++}
++
++function unmountBoard() {
++  if (!boardView) return;
++  clearDrag();
++  cancelAnimations();
++  boardView.list.remove();
++  boardView = null;
++}
++
++function showSaveError(cause) {
++  error.replaceChildren();
++  const message = document.createElement('span');
++  message.textContent = `${cause?.message || 'Save failed'}. `;
++  const retry = createButton('Retry save', 'retry');
++  retry.addEventListener('click', retrySave);
++  error.append(message, retry);
++  error.hidden = false;
++}
++
++function clearSaveError() {
++  error.hidden = true;
++  error.replaceChildren();
++}
++
++function enqueueSave(ids) {
++  pendingSave = [...ids];
++  saveFailed = false;
++  clearSaveError();
++  flushSave();
++}
++
++async function flushSave() {
++  if (saveInFlight || !pendingSave || saveFailed) return;
++  const snapshot = pendingSave;
++  pendingSave = null;
++  saveInFlight = true;
++  status.textContent = 'Saving…';
++
++  try {
++    await saveOrder(snapshot);
++    saveInFlight = false;
++    if (pendingSave) {
++      flushSave();
++    } else {
++      status.textContent = 'Saved';
++    }
++  } catch (cause) {
++    saveInFlight = false;
++    pendingSave = [...order];
++    saveFailed = true;
++    status.textContent = '';
++    showSaveError(cause);
++  }
++}
++
++function retrySave() {
++  pendingSave = [...order];
++  saveFailed = false;
++  clearSaveError();
++  flushSave();
++}
++
++toggle.addEventListener('click', () => {
++  if (boardView) {
++    unmountBoard();
++    toggle.textContent = 'Show board';
++  } else {
++    mountBoard();
++    toggle.textContent = 'Hide board';
++  }
++});
++
++window.addEventListener('resize', cancelAnimations);
++reducedMotion.addEventListener('change', cancelAnimations);
++mountBoard();
+diff --git a/src/style.css b/src/style.css
+index e8601ca..90a4a6d 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -1 +1 @@
+-body{font:16px system-ui;margin:1rem}ol{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}li{border:1px solid #777;padding:1rem;background:#fafafa}button{margin:.2rem;min-height:2rem}p{overflow-wrap:anywhere}
++body{font:16px system-ui;margin:1rem}ol{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}li{border:1px solid #777;padding:1rem;background:#fafafa}button{margin:.2rem;min-height:2rem}p{overflow-wrap:anywhere}.drag-handle{cursor:grab;touch-action:none}.is-dragging{opacity:.72}.is-drop-target{outline:3px solid #2864dc;outline-offset:2px}[role=alert]{margin:.75rem 0;color:#9b1c1c}

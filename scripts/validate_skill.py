@@ -56,6 +56,9 @@ REQUIRED_FILES = (
     "scripts/score_behavior_evals.py",
     "scripts/test_score_behavior_evals.py",
     "scripts/test_validate_skill.py",
+    "scripts/eval_evidence.py",
+    "skills/frontend-architect-update/SKILL.md",
+    "skills/frontend-architect-update/scripts/manage_installation.py",
 )
 
 ALLOWED_SKILL_KEYS = {
@@ -101,7 +104,7 @@ REQUIRED_CASE_KEYS = {
     "must_observe",
     "fail_if",
 }
-OPTIONAL_CASE_KEYS = {"fixture", "protected_paths", "validation_commands", "task_type"}
+OPTIONAL_CASE_KEYS = {"fixture", "protected_paths", "validation_commands", "task_type", "acceptance_profiles", "acceptance_criteria", "acceptance_checks"}
 
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 UNFINISHED_MARKER = re.compile(r"\b(?:TODO|PLACEHOLDER)\b|\[TODO:", re.IGNORECASE)
@@ -173,11 +176,16 @@ def validate_release_metadata(errors: list[str]) -> None:
             add_error(errors, "The latest CHANGELOG.md release date is invalid")
 
     readme = readme_path.read_text(encoding="utf-8")
-    expected_ref = f"--ref v{version}"
-    if expected_ref not in readme:
-        add_error(errors, f"README.md install command must contain {expected_ref!r}")
-    if "--repo hgw25/frontend-architect-skill" not in readme:
-        add_error(errors, "README.md install command must use the canonical GitHub repository")
+    expected_ref = f"v{version}"
+    if f"[{expected_ref}](https://github.com/hgw25/frontend-architect-skill/releases/tag/{expected_ref})" not in readme:
+        add_error(errors, "README.md release link must match VERSION and the canonical repository")
+    if "skills/frontend-architect-update/SKILL.md" not in readme:
+        add_error(errors, "README.md must route installation to the authoritative companion")
+    if re.search(r"--path\s+\.(?:\s|$)", readme):
+        add_error(errors, "README.md must not provide a second raw root-install workflow")
+    companion_version = ROOT / "skills/frontend-architect-update/VERSION"
+    if not companion_version.is_file() or companion_version.read_text().strip() != version:
+        add_error(errors, "Companion VERSION must match the source release")
     if "heguangwei/frontend-architect-skill" in readme or "OWNER/frontend-architect-skill" in readme:
         add_error(errors, "README.md contains a stale GitHub repository owner")
 
@@ -367,6 +375,15 @@ def validate_evals(errors: list[str]) -> None:
         add_error(errors, "evals/cases.yaml must contain at least one case")
         return
 
+    profiles = document.get("acceptance_profiles", {})
+    if not isinstance(profiles, dict):
+        add_error(errors, "acceptance_profiles must be a mapping")
+        profiles = {}
+    for name, criteria in profiles.items():
+        if not isinstance(name, str):
+            add_error(errors, "Acceptance profile names must be strings")
+        validate_string_list(str(name), "criteria", criteria, errors)
+
     seen_ids: set[str] = set()
     framework_fixtures: set[str] = set()
     has_browser_fixture = False
@@ -416,6 +433,34 @@ def validate_evals(errors: list[str]) -> None:
 
         validate_string_list(case_id, "must_observe", case.get("must_observe"), errors)
         validate_string_list(case_id, "fail_if", case.get("fail_if"), errors)
+
+        for key in ("acceptance_profiles", "acceptance_criteria"):
+            if key in case:
+                validate_string_list(case_id, key, case[key], errors)
+        if isinstance(case.get("acceptance_profiles"), list):
+            for profile in case["acceptance_profiles"]:
+                if not isinstance(profile, str) or profile not in profiles:
+                    add_error(errors, f"Unknown acceptance profile in {case_id!r}: {profile!r}")
+
+        checks = case.get("acceptance_checks", [])
+        if not isinstance(checks, list):
+            add_error(errors, f"Acceptance checks in {case_id!r} must be a list")
+            checks = []
+        for check in checks:
+            if (not isinstance(check, dict) or set(check) != {"name", "command", "files"}
+                    or not isinstance(check["name"], str) or not check["name"].strip()
+                    or not isinstance(check["command"], str) or not check["command"].strip()
+                    or not isinstance(check["files"], dict)):
+                add_error(errors, f"Invalid acceptance check in {case_id!r}")
+                continue
+            for target, source in check["files"].items():
+                if (not isinstance(target, str) or Path(target).is_absolute() or ".." in Path(target).parts
+                        or not isinstance(source, str) or Path(source).is_absolute() or ".." in Path(source).parts
+                        or not (ROOT/source).resolve().is_relative_to(ROOT)
+                        or not (ROOT/source).is_file()):
+                    add_error(errors, f"Invalid acceptance support file in {case_id!r}")
+        if checks and not case.get("fixture"):
+            add_error(errors, f"Acceptance checks require a fixture in {case_id!r}")
 
         fixture = case.get("fixture")
         task_type = case.get("task_type", "implementation")
@@ -496,7 +541,8 @@ def validate_evals(errors: list[str]) -> None:
 
 
 def validate_python_syntax(errors: list[str]) -> None:
-    for script_path in (ROOT / "scripts").glob("*.py"):
+    for script_path in [*(ROOT / "scripts").glob("*.py"),
+                        *(ROOT / "skills/frontend-architect-update/scripts").glob("*.py")]:
         try:
             compile(
                 script_path.read_text(encoding="utf-8"),

@@ -1,0 +1,60 @@
+diff --git a/README.md b/README.md
+index 04a9827..a0e0c25 100644
+--- a/README.md
++++ b/README.md
+@@ -5,10 +5,14 @@ This is an existing frontend form submission capability. Its public async API is
+ 
+ Fields have unique string names, optional boolean disabled/required and an optional
+ sync or async `validate(value, values)` returning a string error or undefined.
+-Disabled fields are neither validated nor submitted. Unknown values are omitted.
++They may also define a sync or async `enabledWhen(values)` condition. A condition
++is evaluated once per submission; a falsey result makes that field inactive.
++Disabled and inactive fields are neither validated nor submitted, and `disabled`
++fields do not evaluate their condition. Unknown values are omitted.
+ Required emptiness is undefined, null or the empty string; zero, false, whitespace
+ and empty arrays are valid. Required errors are `Required` and skip that field's
+ custom validator. Custom errors retain their text. Await validation before sending
+ once; return `{ errors }` without sending on validation failure. Propagate validator
+-and transport rejections. Preserve own keys such as `__proto__` and do not mutate
+-fields or values. The existing implementation satisfies these original contracts.
++condition and transport rejections. Conditions, validators and the payload use the
++same top-level values snapshot captured when submission starts. Preserve own keys
++such as `__proto__` and do not mutate fields or values.
+diff --git a/src/process-form.js b/src/process-form.js
+index 5b23b0d..5adef5e 100644
+--- a/src/process-form.js
++++ b/src/process-form.js
+@@ -1,18 +1,29 @@
+ /** Existing form submission entry point. */
+ export async function processForm(fields, values, send) {
+-  const eligible = fields.filter(field => !field.disabled);
++  // Capture the submitted values before any asynchronous condition or validator
++  // yields control back to the caller.
++  const snapshot = Object.fromEntries(
++    Reflect.ownKeys(values).map(key => [key, values[key]]),
++  );
++  const eligible = [];
++  for (const field of fields) {
++    if (field.disabled) continue;
++    if (field.enabledWhen && !await field.enabledWhen(snapshot)) continue;
++    eligible.push(field);
++  }
++
+   const errors = {};
+   for (const field of eligible) {
+-    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
++    const value = Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined;
+     let error;
+     if (field.required && (value === undefined || value === null || value === '')) {
+       error = 'Required';
+     } else if (field.validate) {
+-      error = await field.validate(value, values);
++      error = await field.validate(value, snapshot);
+     }
+     if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });
+   }
+   if (Object.keys(errors).length) return { errors };
+   return send(Object.fromEntries(eligible.map(field => [field.name,
+-    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));
++    Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined])));
+ }

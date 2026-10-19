@@ -7,6 +7,8 @@
 | --- | --- | --- |
 | field-eligibility | [readOnly 字段](field-eligibility/request.md) | `field-eligibility/stage-two.test.js` |
 | search-request-lifecycle | [reset 生命周期](search-request-lifecycle/request.md) | `search-request-lifecycle/stage-two.test.js` |
+| live-export | [异步编码](export-operation/request.md) | `export-operation/stage-two.test.mjs`（同时提供只读 `codec.mjs`） |
+| live-filters | [商品库存](live-filters/request.md) | `live-filters/stock.spec.mjs`（数据模块增加 `availableProductIds`） |
 
 操作顺序：
 
@@ -22,6 +24,10 @@
 
 当前 run_behavior_evals.py 自动执行第一轮；第二轮由评测者按上述步骤协调并独立记录，
 不冒充脚本已支持自动多轮。无依赖逻辑测试不能证明实际框架渲染、浏览器或设备行为。
+
+异步编码也可在全新接手上下文执行：仅携带冻结的首轮仓库、同条件技能及新增需求和
+适配器，不携带首轮聊天或评审结论。分别记录两阶段输入；不同首轮代码形成的次轮输入
+不再是字节相同的横向对照，检查的是各自结构的演进能力。
 
 ## 无原对话的接手检查
 

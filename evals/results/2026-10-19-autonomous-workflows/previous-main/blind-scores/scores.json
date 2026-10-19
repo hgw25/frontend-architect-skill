@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "autonomous-feature-development",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "实现前后均明确了条件字段契约，并保留了禁用、必填、校验、传输、异常传播和自有属性等既有行为。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "改动集中于一次快照、一次活动字段筛选及复用原有校验与 payload 流程，复杂度与需求相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "继续由现有 processForm 入口负责提交生命周期，没有引入无依据的抽象、状态或依赖；条件解析作为清晰阶段接入既有流程。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "最终实现与文档陈述一致；生成阶段的初次失败发生在修改前，修改后检查通过，主机复验亦为 13/13 通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "证据覆盖非激活字段跳过校验与提交、逐次重新计算且每次一次、disabled 优先、统一快照、异常身份、异步校验及原型式字段名等关键边界。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "提供了相关测试的源码证据、修改后的 npm run check 通过结果、git diff --check 结果，并由主机再次完成依赖安装和 13/13 测试复验。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付说明简洁列出行为、修改位置、验证结果和 Mermaid 未工具验证的限制，没有夸大未完成的验证。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供 Mermaid 渲染器验证；响应已明确披露，且不影响条件字段运行时实现的验证。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "autonomous-architecture-design",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "准确提取多文件、两文件并发、逐项进度、暂停/继续/取消/重试、服务端确认、页面期生命周期及复用 appApi 等关键契约，并明确排除刷新恢复和后台上传。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "采用页面级管理器、纯模型和薄传输适配器，复杂度与并发及竞态需求相称；未引入额外请求框架、全局 store 或状态机依赖，并明确控制未来扩展边界。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "UI、React 生命周期、上传编排、纯状态模型和 appApi 适配层职责及依赖方向清晰，公开入口与 File、AbortController 等私有资源也有明确隔离。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "用有生命周期的对象管理异步资源和队列、用 reducer/selectors 表达纯状态转换、用外部存储机制接入 React，符合各部分问题性质。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "大部分权威状态、分片计算、迟到结果和 complete 对账边界设计良好，但存在重要竞态缺口：create 不可取消时，creating 阶段暂停或取消会使代次失效并忽略随后返回的 uploadId，可能留下本可 abort 的孤儿会话；此外允许在 completing 阶段暂停，却未规定恢复时先用 status 对账完成结果，现有通用 resume 路径会走 inspect。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "作为计划型任务给出了较强的分层验证方案、受控 Promise 测试和浏览器验收点，且 Markdown diff 检查有成功记录；但验证清单没有覆盖不可取消 create 后暂停/取消的迟到成功，也没有明确覆盖 completing 阶段暂停后的 status 对账，未能捕获设计中的关键竞态缺口。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "文档结构完整且可执行，清楚呈现事实、决策、不变量、公开契约、恢复矩阵、实施增量、限制和后续变化，交付说明也如实报告未执行的验证。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "宿主明确没有可执行 fixture，因此无法验证运行时行为、TypeScript 类型检查、React 集成或竞态测试结果。",
+          "未提供真实 appApi 六个分片方法及项目现有 UI、错误和测试约定，传输适配器与仓库契约的实际匹配仍待实施时核实。",
+          "Mermaid 图未经过渲染器验证；生成期仅有文本差异检查证据。",
+          "`git diff --no-index --check /dev/null docs/uploads-architecture.md` 的退出码 1 在存在文件差异时可以是正常结果，且无错误输出，不能单独视为格式失败。"
+        ],
+        "normalized_score": 13.71,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

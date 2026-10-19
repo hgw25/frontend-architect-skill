@@ -1,0 +1,734 @@
+diff --git a/README.md b/README.md
+index acb7b7b..a54e9b9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,7 @@
+ # Account product quote
+ 
++Technical design: [docs/product-quote-design.md](docs/product-quote-design.md)
++
+ This application serves /products/sku1 and accepts purchases at POST /api/buy.
+ The server platform already supplies session lookup, buyer permission, product
+ quotes, purchase execution, a clock and safe description formatting. Browser
+diff --git a/docs/product-quote-design.md b/docs/product-quote-design.md
+new file mode 100644
+index 0000000..8896de9
+--- /dev/null
++++ b/docs/product-quote-design.md
+@@ -0,0 +1,130 @@
++# Product quote and purchase flow
++
++## Outcome and existing contracts
++
++The authenticated user can open `/products/sku1`, see a locale-formatted quote,
++and, when their server-side role permits it, purchase the product. The page keeps
++its readable content and native form behavior without JavaScript; `src/app.mjs`
++only adds pending and result feedback.
++
++The platform service is authoritative for sessions, buyer permission, quote data,
++purchase execution, time, and the allowed `p`/`strong`/`em` description markup.
++Browser query and form values are never authorization inputs. Only the product
++fields needed for display cross into HTML; service tokens and internal cost remain
++server-only. Supported price locales are `en-US` and `fr-FR`, with `en-US` as the
++fallback. Upstream failures remain visible generic failures.
++
++Acceptance requires identity-scoped, expiring quote reuse; invalidation of only
++the purchasing user's quote; a disabled control for viewers plus authoritative
++server rejection; safe rich description output; native and enhanced successful
++purchase feedback; and no exposure of private data or errors.
++
++## Three dependency-ordered implementation steps
++
++1. **Own quote reads and presentation in the server application.**
++   `createApp(services)` owns a cache keyed by tenant, user, and SKU. A GET reuses
++   a quote only before `validUntil`, formats its price with `Intl.NumberFormat`,
++   and renders escaped text plus `services.descriptionHtml(description)`. Complete
++   when two users cannot share a quote, expiry refetches, locale output is correct,
++   unsafe markup cannot execute, and quote failures return a generic 502 response.
++2. **Own authorization and mutation at the purchase route.**
++   `POST /api/buy` derives the fixed product and permission from the route and
++   session, calls `services.purchase`, and invalidates the matching cache entry
++   only after confirmation. JSON consumers receive a result payload; native forms
++   redirect back with a non-authoritative presentation flag for success feedback.
++   Complete when viewers receive 403 regardless of submitted fields and a buyer's
++   next quote changes without invalidating another user's quote.
++3. **Add the resilient interface and enhancement.**
++   Server-rendered semantic HTML owns content, native form, disabled state, and
++   status region. `src/style.css` owns the responsive visual system. `src/app.mjs`
++   guards repeated activation while pending, sends the form, and publishes generic
++   accessible success/failure feedback while restoring the button after failure.
++   Complete in a real browser with scripts enabled and disabled.
++
++## Supporting contracts and ownership
++
++- `createApp(services) -> async (req, res)`: public HTTP boundary and route owner.
++  It authenticates protected product/API routes, serves only the two explicit
++  browser assets, translates expected authorization/upstream outcomes to HTTP,
++  and never returns exception details.
++- `getCachedQuote(sku, session) -> Promise<quote>` (private closure): quote cache
++  owner. Identity is `[tenantId, userId, sku]`; freshness is `services.now() <
++  quote.validUntil`. It publishes a value only after a successful service result,
++  so rejected reads are not cached.
++- `renderProductPage({quote, session, locale, message}) -> string` (private pure
++  renderer): outputs the complete semantic document. Text/attribute data uses
++  `services.escapeHtml`; description HTML enters only through the platform's
++  allowlist formatter; price formatting receives an explicit locale.
++- `handlePurchase(req, res, session)`: ordered command owner. Permission precedes
++  the effect; cache invalidation follows confirmed purchase. While the command is
++  pending, enhanced UI blocks only duplicate local submissions. The service
++  remains authoritative across tabs or retries.
++- The browser enhancement owns only ephemeral `pending` and announced feedback.
++  It neither determines permission nor stores quote/business state.
++
++The server remains a small imperative HTTP shell around pure formatting/rendering
++operations because the repository has one product route and no framework or
++shared component system. This preserves visible execution order without adding a
++speculative abstraction layer.
++
++## Technical architecture
++
++```text
++[Browser: semantic HTML + native form]
++       | GET /products/sku1, POST /api/buy
++       v
++[server/app.mjs: routing, response policy, page renderer]
++       |-- readSession(req) --------------------------> [platform session]
++       |-- canBuy(session) ---------------------------> [platform policy]
++       |-- getCachedQuote(sku, session) -- cache -----> [platform getQuote/now]
++       |-- handlePurchase(session) -------------------> [platform purchase]
++       |-- descriptionHtml(value) --------------------> [platform safe formatter]
++       |
++       +-- GET /src/app.mjs, /src/style.css ----------> [public browser assets]
++
++[src/app.mjs] -- enhances only form pending/result --> [status region]
++```
++
++Dependencies point from the HTTP application to the injected platform contract;
++browser code has no import or route to server/platform.mjs.
++
++## Representative data flow
++
++```text
++GET product
++  cookie -> readSession -> unauthorized: 401
++                       \-> session + fixed sku -> identity cache key
++                              -> fresh hit -> quote
++                              -> miss/expired -> getQuote
++                                  -> rejection -> generic 502
++                                  -> quote -> cache until validUntil
++  quote -> select public fields -> locale price + escaped text + safe description
++        -> HTML -> visible product and buyer/viewer control
++
++POST purchase
++  cookie -> readSession -> missing: 401
++                       \-> canBuy -> false: 403
++                                  \-> purchase(fixed sku, session)
++                                      -> rejection -> generic purchase failure
++                                      -> confirmed result -> delete same identity key
++                                          -> JSON success -> enhanced status
++                                          -> 303 GET -> fresh quote + native status
++```
++
++## Verification, recovery, and evolution
++
++The existing Node contract tests cover cache identity/expiry, server permission,
++mutation invalidation, public-data selection, safe description handling, and safe
++upstream failure. Existing Playwright checks cover French formatting, script-free
++content and purchase, disabled viewer behavior, XSS non-execution, and enhanced
++feedback. Manual code cross-read must additionally confirm only explicit public
++assets are served and the pending guard is released on every current completion.
++
++No migration or release action is needed. On a purchase service rejection the
++quote cache remains valid because no authoritative effect was confirmed. A likely
++follow-up is adding another product route: the fixed route-to-SKU mapping and the
++cache key already isolate SKU, so it requires extending route selection without
++changing authorization, rendering, or cache ownership; it does not justify a
++general catalog/router layer today.
++
++Implementation status: planned; executed evidence will be recorded after checks.
+diff --git a/server/app.mjs b/server/app.mjs
+index 342e71d..5b4cdc3 100644
+--- a/server/app.mjs
++++ b/server/app.mjs
+@@ -1,14 +1,220 @@
+-import * as platform from './platform.mjs';
+ import {readFile} from 'node:fs/promises';
+-let cached;
+-export function createApp(services=platform){return async(req,res)=>{
+- const u=new URL(req.url,'http://localhost');
+- if(u.pathname==='/src/app.mjs'){res.setHeader('content-type','text/javascript');res.end(await readFile(new URL('../src/app.mjs',import.meta.url)));return;}
+- const session=services.readSession(req);
+- if(!session){res.writeHead(401).end('Login required');return;}
+- if(req.method==='POST'){
+-  await services.purchase('sku1',session);res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true}));return;
+- }
+- cached ||= await services.getQuote('sku1',session);
+- res.setHeader('content-type','text/html');res.end('<!doctype html><html><main><h1>'+cached.name+'</h1><p data-testid="price">'+cached.price+'</p><section aria-label="Description">'+cached.description+'</section><form method="post" action="/api/buy"><input type="hidden" name="sku" value="sku1"><button>Buy</button></form><p role="status"></p><script>window.initial='+JSON.stringify(cached)+'</script><script type="module" src="/src/app.mjs"></script></main></html>');
+-};}
++import * as platform from './platform.mjs';
++
++const PRODUCT_SKU = 'sku1';
++const PRODUCT_PATH = `/products/${PRODUCT_SKU}`;
++const PUBLIC_ASSETS = new Map([
++  ['/src/app.mjs', {
++    contentType: 'text/javascript; charset=utf-8',
++    source: new URL('../src/app.mjs', import.meta.url),
++  }],
++  ['/src/style.css', {
++    contentType: 'text/css; charset=utf-8',
++    source: new URL('../src/style.css', import.meta.url),
++  }],
++]);
++
++function send(res, status, contentType, body, extraHeaders = {}) {
++  res.writeHead(status, {
++    'content-type': contentType,
++    'x-content-type-options': 'nosniff',
++    ...extraHeaders,
++  });
++  res.end(body);
++}
++
++function sendText(res, status, message) {
++  send(res, status, 'text/plain; charset=utf-8', message);
++}
++
++function localeFrom(url) {
++  return url.searchParams.get('lang') === 'fr-FR' ? 'fr-FR' : 'en-US';
++}
++
++function priceLabel(quote, locale) {
++  return new Intl.NumberFormat(locale, {
++    style: 'currency',
++    currency: quote.currency,
++    minimumFractionDigits: 2,
++  }).format(quote.price);
++}
++
++function pageShell({language, title, content}) {
++  return `<!doctype html>
++<html lang="${language}">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <meta name="theme-color" content="#17231d">
++    <title>${title}</title>
++    <link rel="stylesheet" href="/src/style.css">
++  </head>
++  <body>
++    ${content}
++  </body>
++</html>`;
++}
++
++function renderProductPage(services, {quote, session, locale}) {
++  const name = services.escapeHtml(quote.name);
++  const sku = services.escapeHtml(quote.sku);
++  const canBuy = services.canBuy(session);
++  const unavailableNote = canBuy
++    ? ''
++    : '<p class="permission-note">Your account can view this quote, but cannot make purchases.</p>';
++  const disabled = canBuy ? '' : ' disabled aria-describedby="purchase-permission"';
++  const permissionId = canBuy ? '' : ' id="purchase-permission"';
++
++  return pageShell({
++    language: locale,
++    title: `${name} — Current quote`,
++    content: `<main class="product-page">
++      <a class="brand" href="${PRODUCT_PATH}" aria-label="Forge Supply home">
++        <span class="brand-mark" aria-hidden="true">F</span>
++        <span>Forge Supply</span>
++      </a>
++      <article class="product-card">
++        <div class="product-visual" aria-hidden="true">
++          <div class="mug">
++            <span class="mug-shine"></span>
++            <span class="mug-handle"></span>
++          </div>
++          <span class="material-label">18/8 STEEL</span>
++        </div>
++        <div class="product-details">
++          <p class="eyebrow">Current account quote</p>
++          <h1>${name}</h1>
++          <p class="sku">Item ${sku}</p>
++          <section class="description" aria-label="Description">
++            ${services.descriptionHtml(quote.description)}
++          </section>
++          <div class="quote-panel">
++            <div>
++              <span class="quote-label">Your price</span>
++              <p class="price" data-testid="price">${priceLabel(quote, locale)}</p>
++            </div>
++            <span class="availability"><span aria-hidden="true"></span> In stock</span>
++          </div>
++          <form class="purchase-form" method="post" action="/api/buy" data-purchase-form>
++            <input type="hidden" name="sku" value="${sku}">
++            <button class="buy-button" type="submit"${disabled}>
++              <span>Buy</span>
++              <span aria-hidden="true">→</span>
++            </button>
++          </form>
++          <div${permissionId}>${unavailableNote}</div>
++          <p class="purchase-status" role="status" aria-live="polite"></p>
++          <p class="assurance">Secure account purchase · Quote refreshes after checkout</p>
++        </div>
++      </article>
++    </main>
++    <script type="module" src="/src/app.mjs"></script>`,
++  });
++}
++
++function renderPurchaseResult(services, locale) {
++  const title = services.escapeHtml('Purchase accepted');
++  return pageShell({
++    language: locale,
++    title,
++    content: `<main class="result-page">
++      <section class="result-card" aria-labelledby="result-title">
++        <span class="success-mark" aria-hidden="true">✓</span>
++        <p class="eyebrow">Order confirmed</p>
++        <h1 id="result-title">${title}</h1>
++        <p role="status">Purchase accepted. Your account quote has been refreshed.</p>
++        <a class="buy-button result-link" href="${PRODUCT_PATH}?lang=${locale}">View updated quote <span aria-hidden="true">→</span></a>
++      </section>
++    </main>`,
++  });
++}
++
++function wantsJson(req) {
++  return String(req.headers.accept || '').includes('application/json');
++}
++
++export function createApp(services = platform) {
++  const quoteCache = new Map();
++  const cacheKey = (sku, session) => JSON.stringify([session.tenantId, session.userId, sku]);
++
++  async function getCachedQuote(sku, session) {
++    const key = cacheKey(sku, session);
++    const cached = quoteCache.get(key);
++    if (cached && services.now() < cached.validUntil) return cached;
++
++    quoteCache.delete(key);
++    const quote = await services.getQuote(sku, session);
++    quoteCache.set(key, quote);
++    return quote;
++  }
++
++  async function serveAsset(req, res, pathname) {
++    const asset = PUBLIC_ASSETS.get(pathname);
++    if (!asset || req.method !== 'GET') return false;
++    send(res, 200, asset.contentType, await readFile(asset.source), {
++      'cache-control': 'no-cache',
++    });
++    return true;
++  }
++
++  async function handlePurchase(req, res, session, locale) {
++    if (!services.canBuy(session)) {
++      if (wantsJson(req)) {
++        send(res, 403, 'application/json; charset=utf-8', JSON.stringify({ok: false, message: 'Purchase not permitted'}));
++      } else {
++        sendText(res, 403, 'Purchase not permitted');
++      }
++      return;
++    }
++
++    try {
++      await services.purchase(PRODUCT_SKU, session);
++      quoteCache.delete(cacheKey(PRODUCT_SKU, session));
++    } catch {
++      if (wantsJson(req)) {
++        send(res, 502, 'application/json; charset=utf-8', JSON.stringify({ok: false, message: 'Purchase failed'}));
++      } else {
++        sendText(res, 502, 'Purchase failed. Please try again.');
++      }
++      return;
++    }
++
++    if (wantsJson(req)) {
++      send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ok: true, message: 'Purchase accepted'}));
++      return;
++    }
++
++    send(res, 200, 'text/html; charset=utf-8', renderPurchaseResult(services, locale));
++  }
++
++  return async function app(req, res) {
++    const url = new URL(req.url, 'http://localhost');
++    if (await serveAsset(req, res, url.pathname)) return;
++
++    const isProductRequest = url.pathname === PRODUCT_PATH && req.method === 'GET';
++    const isPurchaseRequest = url.pathname === '/api/buy' && req.method === 'POST';
++    if (!isProductRequest && !isPurchaseRequest) {
++      sendText(res, 404, 'Not found');
++      return;
++    }
++
++    const session = services.readSession(req);
++    if (!session) {
++      sendText(res, 401, 'Login required');
++      return;
++    }
++
++    const locale = localeFrom(url);
++    if (isPurchaseRequest) {
++      await handlePurchase(req, res, session, locale);
++      return;
++    }
++
++    try {
++      const quote = await getCachedQuote(PRODUCT_SKU, session);
++      send(res, 200, 'text/html; charset=utf-8', renderProductPage(services, {quote, session, locale}));
++    } catch {
++      sendText(res, 502, 'Quote service unavailable. Please try again.');
++    }
++  };
++}
+diff --git a/src/app.mjs b/src/app.mjs
+index fc2c7f9..3b9f5f5 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,2 +1,32 @@
+-const form=document.querySelector('form');
+-form?.addEventListener('submit',async event=>{event.preventDefault();const response=await fetch(form.action,{method:'POST',body:new URLSearchParams(new FormData(form)),headers:{accept:'application/json'}});document.querySelector('[role=status]').textContent=response.ok?'Purchase accepted':'Purchase failed';});
++const form = document.querySelector('[data-purchase-form]');
++const status = document.querySelector('[role="status"]');
++const button = form?.querySelector('button[type="submit"]');
++
++if (form && status && button && !button.disabled) {
++  let pending = false;
++
++  form.addEventListener('submit', async event => {
++    event.preventDefault();
++    if (pending) return;
++
++    pending = true;
++    button.disabled = true;
++    form.setAttribute('aria-busy', 'true');
++    status.textContent = 'Submitting purchase…';
++
++    try {
++      const response = await fetch(form.action, {
++        method: 'POST',
++        body: new URLSearchParams(new FormData(form)),
++        headers: {accept: 'application/json'},
++      });
++      status.textContent = response.ok ? 'Purchase accepted' : 'Purchase failed. Please try again.';
++    } catch {
++      status.textContent = 'Purchase failed. Check your connection and try again.';
++    } finally {
++      pending = false;
++      button.disabled = false;
++      form.removeAttribute('aria-busy');
++    }
++  });
++}
+diff --git a/src/style.css b/src/style.css
+new file mode 100644
+index 0000000..81fb3cf
+--- /dev/null
++++ b/src/style.css
+@@ -0,0 +1,303 @@
++@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap');
++
++:root {
++  color-scheme: light;
++  --ink: #17231d;
++  --muted: #657168;
++  --paper: #f3f0e8;
++  --card: #fffdf8;
++  --line: #d9d7ce;
++  --accent: #daff6a;
++  --accent-strong: #bde548;
++  --forest: #1f352a;
++  font-family: 'DM Sans', system-ui, sans-serif;
++  color: var(--ink);
++  background: var(--paper);
++}
++
++* { box-sizing: border-box; }
++
++body {
++  min-width: 320px;
++  min-height: 100vh;
++  margin: 0;
++  background:
++    radial-gradient(circle at 8% 3%, rgba(218, 255, 106, .38), transparent 25rem),
++    linear-gradient(135deg, #f8f6f0 0%, var(--paper) 62%, #e8e9df 100%);
++}
++
++button, a { font: inherit; }
++
++.product-page {
++  width: min(1160px, calc(100% - 40px));
++  margin-inline: auto;
++  padding-block: 34px 52px;
++}
++
++.brand {
++  display: inline-flex;
++  align-items: center;
++  gap: 11px;
++  margin-block-end: 30px;
++  color: var(--ink);
++  font-family: Manrope, sans-serif;
++  font-weight: 700;
++  letter-spacing: -.02em;
++  text-decoration: none;
++}
++
++.brand-mark {
++  display: grid;
++  width: 34px;
++  aspect-ratio: 1;
++  place-items: center;
++  border-radius: 10px 3px 10px 3px;
++  color: var(--accent);
++  background: var(--forest);
++}
++
++.product-card {
++  display: grid;
++  grid-template-columns: minmax(0, 1.04fr) minmax(340px, .96fr);
++  min-height: 610px;
++  overflow: hidden;
++  border: 1px solid rgba(23, 35, 29, .12);
++  border-radius: 28px;
++  background: var(--card);
++  box-shadow: 0 24px 70px rgba(36, 45, 39, .10);
++}
++
++.product-visual {
++  position: relative;
++  display: grid;
++  min-height: 520px;
++  place-items: center;
++  overflow: hidden;
++  background:
++    linear-gradient(125deg, rgba(255,255,255,.9), rgba(255,255,255,0) 45%),
++    repeating-linear-gradient(90deg, transparent 0 52px, rgba(31,53,42,.035) 53px 54px),
++    #dce2dc;
++}
++
++.product-visual::after {
++  position: absolute;
++  inset: auto 10% 13%;
++  height: 12%;
++  border-radius: 50%;
++  background: rgba(23, 35, 29, .15);
++  filter: blur(18px);
++  content: '';
++}
++
++.mug {
++  position: relative;
++  z-index: 1;
++  width: clamp(190px, 26vw, 285px);
++  height: clamp(250px, 35vw, 365px);
++  border-radius: 24px 24px 56px 56px;
++  background:
++    linear-gradient(90deg, #8b9591 0%, #e7ebe8 18%, #aeb7b2 47%, #f8faf8 68%, #7b8580 100%);
++  box-shadow: inset -16px 0 32px rgba(26, 37, 32, .16), 0 25px 32px rgba(35, 47, 40, .22);
++}
++
++.mug::before {
++  position: absolute;
++  inset: -8px 0 auto;
++  height: 34px;
++  border: 8px solid #727d78;
++  border-radius: 50%;
++  background: #24332b;
++  content: '';
++}
++
++.mug-handle {
++  position: absolute;
++  z-index: -1;
++  top: 82px;
++  right: -95px;
++  width: 125px;
++  height: 180px;
++  border: 28px solid #929c97;
++  border-left-width: 18px;
++  border-radius: 50%;
++}
++
++.mug-shine {
++  position: absolute;
++  inset: 45px auto 42px 20%;
++  width: 13%;
++  border-radius: 50%;
++  background: linear-gradient(rgba(255,255,255,.72), rgba(255,255,255,.08));
++  filter: blur(2px);
++}
++
++.material-label {
++  position: absolute;
++  inset: auto auto 28px 30px;
++  z-index: 2;
++  padding: 8px 12px;
++  border: 1px solid rgba(23, 35, 29, .25);
++  border-radius: 999px;
++  font-size: .7rem;
++  font-weight: 700;
++  letter-spacing: .14em;
++}
++
++.product-details {
++  display: flex;
++  flex-direction: column;
++  justify-content: center;
++  padding: clamp(38px, 6vw, 76px);
++}
++
++.eyebrow {
++  margin: 0 0 12px;
++  color: #526157;
++  font-size: .75rem;
++  font-weight: 700;
++  letter-spacing: .14em;
++  text-transform: uppercase;
++}
++
++h1 {
++  margin: 0;
++  font-family: Manrope, sans-serif;
++  font-size: clamp(2.6rem, 5vw, 4.7rem);
++  line-height: .98;
++  letter-spacing: -.065em;
++}
++
++.sku {
++  margin: 14px 0 26px;
++  color: var(--muted);
++  font-size: .84rem;
++}
++
++.description {
++  max-width: 48ch;
++  color: #4c5850;
++  font-size: 1rem;
++  line-height: 1.65;
++}
++
++.description p { margin-block: 0 12px; }
++
++.quote-panel {
++  display: flex;
++  align-items: flex-end;
++  justify-content: space-between;
++  gap: 20px;
++  margin-block: 28px 20px;
++  padding-block-start: 24px;
++  border-top: 1px solid var(--line);
++}
++
++.quote-label {
++  display: block;
++  margin-block-end: 3px;
++  color: var(--muted);
++  font-size: .82rem;
++}
++
++.price {
++  margin: 0;
++  font-family: Manrope, sans-serif;
++  font-size: clamp(2rem, 3.5vw, 3rem);
++  font-weight: 700;
++  letter-spacing: -.055em;
++}
++
++.availability {
++  display: inline-flex;
++  align-items: center;
++  gap: 7px;
++  padding-block-end: 8px;
++  color: #46614f;
++  font-size: .78rem;
++  font-weight: 600;
++}
++
++.availability span {
++  width: 8px;
++  height: 8px;
++  border-radius: 50%;
++  background: #4f9f68;
++  box-shadow: 0 0 0 4px rgba(79,159,104,.12);
++}
++
++.buy-button {
++  display: flex;
++  width: 100%;
++  min-height: 56px;
++  align-items: center;
++  justify-content: space-between;
++  gap: 20px;
++  padding: 15px 20px;
++  border: 0;
++  border-radius: 12px;
++  color: #101b15;
++  background: var(--accent);
++  font-weight: 700;
++  text-decoration: none;
++  cursor: pointer;
++  transition: background-color 160ms ease, transform 160ms ease;
++}
++
++.buy-button:hover:not(:disabled) { background: var(--accent-strong); transform: translateY(-1px); }
++.buy-button:focus-visible { outline: 3px solid var(--forest); outline-offset: 3px; }
++.buy-button:disabled { color: #747a76; background: #e4e5df; cursor: not-allowed; }
++
++.permission-note, .purchase-status, .assurance {
++  margin: 12px 0 0;
++  color: var(--muted);
++  font-size: .78rem;
++  line-height: 1.45;
++}
++
++.purchase-status:not(:empty) {
++  padding: 10px 12px;
++  border-left: 3px solid var(--forest);
++  color: var(--ink);
++  background: #f0f2e8;
++}
++
++.assurance { text-align: center; }
++
++.result-page {
++  display: grid;
++  min-height: 100vh;
++  padding: 24px;
++  place-items: center;
++}
++
++.result-card {
++  width: min(520px, 100%);
++  padding: clamp(36px, 7vw, 64px);
++  border: 1px solid var(--line);
++  border-radius: 28px;
++  background: var(--card);
++  box-shadow: 0 24px 70px rgba(36,45,39,.10);
++}
++
++.result-card h1 { font-size: clamp(2.4rem, 7vw, 4.2rem); }
++.result-card p[role='status'] { margin-block: 20px 28px; color: var(--muted); line-height: 1.6; }
++.success-mark { display: grid; width: 54px; height: 54px; margin-block-end: 26px; place-items: center; border-radius: 50%; background: var(--accent); font-size: 1.5rem; font-weight: 700; }
++
++@media (max-width: 760px) {
++  .product-page { width: min(100% - 24px, 560px); padding-block: 20px 32px; }
++  .brand { margin-block-end: 18px; }
++  .product-card { grid-template-columns: 1fr; border-radius: 20px; }
++  .product-visual { min-height: 390px; }
++  .product-details { padding: 34px 26px 38px; }
++  .mug { width: 180px; height: 240px; }
++  .mug-handle { top: 62px; right: -70px; width: 95px; height: 135px; border-width: 22px; }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
++}
++
++@media (forced-colors: active) {
++  .buy-button { border: 1px solid ButtonText; }
++  .product-card { border: 1px solid CanvasText; }
++}

@@ -1,0 +1,33 @@
+Complete the following frontend task in the provided workspace.
+Preserve the requested stack and scope. Inspect existing files before deciding.
+Before solving the task, read .frontend-architect/SKILL.md completely.
+Treat that local copy as the only task-specific Skill for this evaluation.
+Read routed references only from .frontend-architect/references; do not read an installed or global frontend-architect Skill or reference.
+For auditable guidance reads, use standalone cat commands with explicit file paths (no globs, variables, pipes or chained commands). Read SKILL.md in full; references may also use sed -n with a numeric print range and explicit paths. List files separately from reading them.
+To locate reference section boundaries, standalone rg -n '^#{1,6} ' with explicit reference paths is supported. Heading reads count as guidance access, not a full section read.
+Do not read any eval definitions, rubric, expected observations, or prior results.
+Keep all files in .frontend-architect unchanged. If the task discusses Skill maintenance, describe proposed guidance changes in the answer rather than editing the instructions being evaluated.
+Return a concrete, decision-oriented answer; do not invent repository facts.
+
+USER REQUEST:
+设计这个文件上传模块的架构。
+
+PROVIDED ARTIFACT:
+项目事实：浏览器 React + TypeScript 应用，当前上传模块只有下面的单文件上传入口。
+已有 appApi 负责认证、取消信号传递和标准错误，不需要另建请求或认证框架。
+
+src/uploads/upload.ts
+import { appApi } from '../app/api';
+export async function uploadFile(file: File, signal: AbortSignal) {
+  return appApi.upload(file, { signal });
+}
+
+docs/uploads.md（已接受的新产品契约）
+用户可添加多个文件，每次最多两个文件处于上传状态；界面展示每个文件的进度，
+支持暂停、继续、取消和失败重试，已由服务端确认的片不重复传输。只需页面存活期内
+恢复，不要求刷新后保留 File 或后台上传。页面关闭时释放本地资源。
+后端已提供稳定的分片 API：create(fileName, size) 返回 uploadId 和 partSize；
+putPart(uploadId, index, bytes, signal) 确认该片；inspect(uploadId) 返回 confirmedIndices；
+complete(uploadId) 返回 fileId；status(uploadId) 返回 uploading/completed 及完成后的 fileId；
+abort(uploadId) 终结服务端会话。完整成功只能在服务端确认后报告；complete 的响应丢失时
+可以用 status 对账。这些调用通过现有 appApi 接入，不在前端自己拼认证头。

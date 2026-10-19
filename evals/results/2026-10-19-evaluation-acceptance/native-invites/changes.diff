@@ -1,0 +1,582 @@
+diff --git a/README.md b/README.md
+index 468b871..556dcda 100644
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,5 @@ Invitations 列表中的 Move earlier / Move later 只调整本页显示顺序
+ - `readOverview()`：GET `/api/overview`，返回 `{pending}`。
+ 
+ `npm run check` 使用 Chromium 和 HTTP 替身验证页面消费者的正常操作；不调用真实邮件服务。
++
++实现边界、代码契约与验收记录见 [技术设计](docs/team-invitations.md)。
+diff --git a/docs/team-invitations.md b/docs/team-invitations.md
+new file mode 100644
+index 0000000..9575d11
+--- /dev/null
++++ b/docs/team-invitations.md
+@@ -0,0 +1,103 @@
++# Team invitations 技术设计与验收
++
++## 需求与现状
++
++交付范围以 [README](../README.md) 为准。沿用原生 ESM、现有 HTTP transport 和公开
++可访问入口。服务的 `sendInvitation(email)` 成功返回即代表发送已接受；统计读取是随后
++独立的读取，不能撤销已确认的邀请或回执。列表排序只影响当前页。
++
++原实现 `draw()` 会替换整页节点，发送与统计读取共用一个错误处理。初始 Chromium 检查
++3/3 通过，但没有覆盖部分失败和交互连续性。本次不更换技术栈，也不增加依赖。
++
++## 实施顺序（共 3 步）
++
++1. **持久页面结构与本地列表（已完成）**。以 `index.html` 的原生表单、列表、统计和 note 控件为
++   稳定结构；`src/invitation-list.mjs` 拥有邀请节点及显示顺序。移动原有行节点，只在本次
++   同步移动实际丢失焦点时恢复到原按钮。列表追加、排序与统计更新不重建输入控件。
++   验收：排序无 HTTP 请求，连续 Enter/Space 在同一邀请的同一按钮继续移动，note 的
++   非末尾选区在发送及刷新后仍能继续输入。
++2. **发送命令与独立确认（已完成）**。`src/invitation-form.mjs` 拥有提交中的互斥、编辑版本、发送
++   错误和最后一次成功回执。只在发送请求期间阻止重复提交；收到响应立即公布服务返回的
++   邮箱和回执编号，追加邀请并触发统计读取。只有编辑版本未变才清空 Email；不自动抢焦点。
++   验收：单次提交只发一个 POST、发送失败可修改重试、等待期间 Email 的 A→B→A 编辑也
++   被保留，发送成功后统计延迟或失败仍可见确认并可再次发送。
++3. **独立统计读取与完整回归（已完成）**。`src/overview.mjs` 拥有最后一次成功统计、读取状态和错误，
++   手动和发送后的刷新共用 `refresh()`。请求可重叠，只有最后发起的读取发布成功、错误
++   和结束状态；旧读取不得覆盖较新统计。统计错误只提示重读，保留最后成功的 total。
++   验收：发送成功+统计失败的最终页面、手动恢复、重叠请求倒序返回以及原有正常操作。
++
++## 代码契约与所有权（已按最终声明及调用核对）
++
++下表的 `Invitation` 表示 `{id:string,email:string,state:string}`，`SendResult` 表示现有
++transport 返回的 `{invitation:Invitation,receipt:{id:string,acceptedAt:number}}`；这些是
++原生 ESM 契约的文档表达，不新增运行时类型体系。
++
++| 位置及操作 | 输入 / 输出 | 所有权与调用 |
++| --- | --- | --- |
++| `src/transport.mjs`: `sendInvitation(email)`（复用） | `string → Promise<{invitation:{id,email,state},receipt:{id,acceptedAt}}>` | 处理 HTTP 状态；表单调用，不添加盲重试 |
++| `src/transport.mjs`: `readOverview()`（复用） | `() → Promise<{pending:number}>` | 统计模块调用 |
++| `src/invitation-list.mjs`: `mountInvitationList(list, invitations)`（新增） | `HTMLOListElement, Invitation[] → {addInvitation(invitation):void}` | 列表拥有稳定行节点；DOM 顺序就是本页顺序，无额外排序数组 |
++| `src/invitation-form.mjs`: `mountInvitationForm(form, onAccepted)`（新增） | `HTMLFormElement, (SendResult)→void → void` | DOM 拥有输入草稿；闭包只持有提交互斥和编辑版本。确认先于外部回调发布 |
++| `src/overview.mjs`: `mountOverview(section, initialOverview)`（新增） | `HTMLElement, {pending:number} → {refresh():Promise<void>}` | 统计闭包拥有读取代次；读取错误由此处反馈，不传播为发送错误 |
++| `src/app.mjs`（修改） | 装配已加载数据、三个模块 | 传入 `mountInvitationForm` 的内联 `result => {...}` 同步调用 `list.addInvitation(result.invitation)`，再调用 `void overview.refresh()`；Team note 由稳定原生 textarea 保管 |
++
++小型闭包模块按表单、列表、统计的独立生命周期和错误恢复分开。无需共享 store、类或通用
++请求框架。Email 的编辑版本不同于文本相等，避免 A→B→A 后误清空新草稿。接口只处理
++现有服务契约，不重复校验已确认数据；服务文本使用 `textContent`，保留浏览器 Email 校验。
++三个 mount 由页面装配时各调用一次，事件绑定随页面元素存活；本项目没有重复挂载或客户端
++路由生命周期。`refresh()` 的成功、失败及进度发布都受同一个读取代次约束。
++
++## 技术架构
++
++```text
++浏览器 index.html：稳定原生控件（Email / Team note / 列表 / 统计 / live regions）
++       ↑ 分区域绑定和更新，控件不重建
++src/app.mjs ← src/data.mjs（已加载 invitations / overview）
++       ├─ mountInvitationList(list, invitations) → addInvitation(invitation)
++       │    └─ 行的 Move earlier/later → DOM 相邻移动 + 必要的同按钮焦点恢复
++       ├─ mountInvitationForm(form, onAccepted)
++       │    └─ sendInvitation(email) ──→ src/transport.mjs ──POST──→ 平台服务
++       └─ mountOverview(section, initialOverview) → refresh()
++            └─ readOverview() ────────→ src/transport.mjs ──GET───→ 平台服务
++onAccepted(result) 调用 app.mjs 的内联回调：邀请列表追加 + 统计刷新；表单保留确认
++```
++
++## 数据流
++
++```text
++Email 输入 → 编辑版本 +1（原生 input 继续拥有草稿/选区）
++Submit → 表单捕获 email、版本 → pending 互斥 → sendInvitation(email)
++   ├─ POST 失败 → 表单 role=alert + 保留草稿 + 解锁 → 可修改后重新提交
++   └─ POST 成功 → 解锁 + role=status 公布返回 email / receipt.id
++                  ├─ 版本未变 → 清空已提交草稿；已变 → 保留用户后续编辑
++                  └─ onAccepted(result) → addInvitation(result.invitation)
++                                       → overview.refresh()
++Refresh overview ──────────────────────→ overview.refresh()
++读取开始 → 新代次 + 清除旧统计错误 + 公布读取中 → readOverview()
++   ├─ 旧代次返回（成功/失败）→ 不发布
++   ├─ 当前读取成功 → 更新 Pending + 清除读取中状态
++   └─ 当前读取失败 → 保留最后 total + 统计 role=alert → 可手动重读
++两条统计结果路径均保留发送确认、邀请列表和输入焦点/草稿
++```
++
++## 验证与后续变化
++
++使用项目的 `npm run check`，由 Chromium 和 HTTP 替身在公开消费者入口验证。不调用真实
++邮件服务。新增可控制响应次序的测试，避免靠固定延时模拟竞争。ASCII 图使用明确标签及
++分支，已对照最终代码核对调用方向、数据返回和失败分支，直接随 Markdown 阅读。
++
++2026-10-19 执行结果：
++
++| 实施步骤 | 决定性消费者证据（`tests/invites.spec.mjs`） | 结果 |
++| --- | --- | --- |
++| 1 | 排序无 API 请求；两个方向各以指针、Enter、Space 连续移动并在边界保持焦点；发送和统计完成后 textarea 非末尾选区继续输入 | 通过 |
++| 2 | 正常发送与回执；重复 Enter 只发一次；发送拒绝后修改重试；不同 Email 和 A→B→A 草稿；POST 已接受而统计延迟/失败时仍显示邮箱、回执与新增邀请，发送按钮可用 | 通过 |
++| 3 | 正常统计刷新、失败保留上次 total、手动恢复只重读；旧读取成功/失败不覆盖发送后新统计，旧完成不清除新读取进度 | 通过 |
++
++`npm run check`：**13/13 通过**。新增 ESM 和测试的 `node --check`、`git diff --check`
++均通过。逐项核对了上表函数的最终声明、参数、返回能力与 `app.mjs` 的实际调用，并检查
++了命令确认/统计错误边界、草稿所有权、DOM 安全写入和同步焦点恢复。未调用真实邮件服务，
++未宣称服务端跨客户端幂等性；本页只阻止同一待处理提交的重复激活。
++
++现实后续变化：增加邀请的“撤回”操作时，其行节点和局部状态可由列表模块拥有，撤回命令
++确认后再复用统计 `refresh()`；不需修改 Team note 或表单草稿所有权。本次不预建撤回框架。
+diff --git a/index.html b/index.html
+index 9fa4198..b20ddbe 100644
+--- a/index.html
++++ b/index.html
+@@ -1,2 +1,31 @@
+ <!doctype html>
+-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Team invitations</title><link rel="stylesheet" href="/src/style.css"></head><body><main id="app"></main><script type="module" src="/src/app.mjs"></script></body></html>
++<html lang="en">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width,initial-scale=1">
++  <title>Team invitations</title>
++  <link rel="stylesheet" href="/src/style.css">
++</head>
++<body>
++  <main id="app">
++    <h1>Team invitations</h1>
++    <form id="invitation-form">
++      <label>Email <input type="email" name="email" required></label>
++      <button type="submit">Send invitation</button>
++      <p role="status" data-send-progress></p>
++      <p role="status" data-send-confirmation></p>
++      <p role="alert" data-send-error></p>
++    </form>
++    <section class="overview" aria-labelledby="overview-heading">
++      <h2 id="overview-heading">Overview</h2>
++      <p data-testid="overview"></p>
++      <button type="button">Refresh overview</button>
++      <p role="status" data-overview-progress></p>
++      <p role="alert" data-overview-error></p>
++    </section>
++    <ol aria-label="Invitations"></ol>
++    <label>Team note <textarea></textarea></label>
++  </main>
++  <script type="module" src="/src/app.mjs"></script>
++</body>
++</html>
+diff --git a/src/app.mjs b/src/app.mjs
+index d744be2..c469ce6 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,43 +1,12 @@
+ import { invitations, overview as initialOverview } from './data.mjs';
+-import { sendInvitation, readOverview } from './transport.mjs';
+-const app = document.querySelector('#app');
+-let rows = [...invitations], overview = initialOverview, email = '', note = '', message = '', error = '', sending = false;
+-function element(tag, text) { const node = document.createElement(tag); if (text) node.textContent = text; return node; }
+-function draw() {
+-  app.replaceChildren(element('h1', 'Team invitations'));
+-  const form = element('form'), label = element('label', 'Email'), input = element('input');
+-  input.type = 'email'; input.required = true; input.value = email; input.name = 'email'; label.append(input);
+-  input.oninput = () => { email = input.value; };
+-  const submit = element('button', 'Send invitation'); submit.type = 'submit'; submit.disabled = sending; form.append(label, submit);
+-  const status = element('p', message); status.setAttribute('role', 'status'); app.append(form, status);
+-  if (error) { const alert = element('p', error); alert.setAttribute('role', 'alert'); app.append(alert); }
+-  const section = element('section'); section.className = 'overview'; section.append(element('h2', 'Overview'));
+-  const total = element('p', 'Pending: ' + overview.pending); total.dataset.testid = 'overview';
+-  const refresh = element('button', 'Refresh overview'); refresh.onclick = async () => {
+-    try { overview = await readOverview(); error = ''; draw(); } catch { error = 'Overview unavailable'; draw(); }
+-  }; section.append(total, refresh); app.append(section);
+-  const list = element('ol'); list.setAttribute('aria-label', 'Invitations');
+-  for (const row of rows) {
+-    const item = element('li'); item.dataset.inviteId = row.id; item.append(element('span', row.email));
+-    for (const [name, delta] of [['Move earlier', -1], ['Move later', 1]]) {
+-      const button = element('button', name); button.onclick = () => {
+-        const at = rows.indexOf(row), next = at + delta;
+-        if (next < 0 || next >= rows.length) return;
+-        [rows[at], rows[next]] = [rows[next], rows[at]]; draw();
+-      }; item.append(button);
+-    }
+-    list.append(item);
+-  }
+-  app.append(list);
+-  const noteLabel = element('label', 'Team note'), textarea = element('textarea'); textarea.value = note;
+-  textarea.oninput = () => { note = textarea.value; }; noteLabel.append(textarea); app.append(noteLabel);
+-  form.onsubmit = async event => {
+-    event.preventDefault(); const submitted = email; sending = true; error = ''; draw();
+-    try {
+-      const result = await sendInvitation(submitted); rows.push(result.invitation);
+-      overview = await readOverview(); message = 'Invitation sent to ' + result.invitation.email; email = '';
+-    } catch { error = 'Invitation failed'; message = ''; }
+-    sending = false; draw(); app.querySelector('input').focus();
+-  };
+-}
+-draw();
++import { mountInvitationList } from './invitation-list.mjs';
++import { mountInvitationForm } from './invitation-form.mjs';
++import { mountOverview } from './overview.mjs';
++
++const list = mountInvitationList(document.querySelector('[aria-label="Invitations"]'), invitations);
++const overview = mountOverview(document.querySelector('.overview'), initialOverview);
++
++mountInvitationForm(document.querySelector('#invitation-form'), result => {
++  list.addInvitation(result.invitation);
++  void overview.refresh();
++});
+diff --git a/src/invitation-form.mjs b/src/invitation-form.mjs
+new file mode 100644
+index 0000000..d17c056
+--- /dev/null
++++ b/src/invitation-form.mjs
+@@ -0,0 +1,45 @@
++import { sendInvitation } from './transport.mjs';
++
++export function mountInvitationForm(form, onAccepted) {
++  const email = form.elements.namedItem('email');
++  const submit = form.querySelector('[type="submit"]');
++  const progress = form.querySelector('[data-send-progress]');
++  const confirmation = form.querySelector('[data-send-confirmation]');
++  const error = form.querySelector('[data-send-error]');
++  let sending = false;
++  let editVersion = 0;
++
++  email.addEventListener('input', () => { editVersion += 1; });
++
++  form.addEventListener('submit', async event => {
++    event.preventDefault();
++    if (sending) return;
++
++    const submittedEmail = email.value;
++    const submittedVersion = editVersion;
++    sending = true;
++    submit.disabled = true;
++    error.textContent = '';
++    progress.textContent = 'Sending invitation…';
++
++    let result;
++    try {
++      result = await sendInvitation(submittedEmail);
++    } catch {
++      error.textContent = 'Invitation could not be sent. Edit the email or try again.';
++      return;
++    } finally {
++      sending = false;
++      submit.disabled = false;
++      progress.textContent = '';
++    }
++
++    confirmation.textContent = `Invitation sent to ${result.invitation.email}. Sending number: ${result.receipt.id}.`;
++    // Text equality alone misses edits such as A → B → A while the request waits.
++    if (editVersion === submittedVersion) {
++      email.value = '';
++      editVersion += 1;
++    }
++    onAccepted(result);
++  });
++}
+diff --git a/src/invitation-list.mjs b/src/invitation-list.mjs
+new file mode 100644
+index 0000000..ad97bb3
+--- /dev/null
++++ b/src/invitation-list.mjs
+@@ -0,0 +1,33 @@
++export function mountInvitationList(list, invitations) {
++  function addInvitation(invitation) {
++    const item = document.createElement('li');
++    item.dataset.inviteId = invitation.id;
++    const email = document.createElement('span');
++    email.textContent = invitation.email;
++    item.append(email);
++
++    for (const [name, delta] of [['Move earlier', -1], ['Move later', 1]]) {
++      const button = document.createElement('button');
++      button.type = 'button';
++      button.textContent = name;
++      button.addEventListener('click', () => {
++        const neighbor = delta < 0 ? item.previousElementSibling : item.nextElementSibling;
++        if (!neighbor) return;
++
++        const focused = document.activeElement;
++        const restoreFocus = item.contains(focused);
++        list.insertBefore(item, delta < 0 ? neighbor : neighbor.nextElementSibling);
++        // Moving an existing node can blur it; continue the same keyboard action.
++        if (restoreFocus && document.activeElement !== focused) {
++          focused.focus({ preventScroll: true });
++        }
++      });
++      item.append(button);
++    }
++
++    list.append(item);
++  }
++
++  invitations.forEach(addInvitation);
++  return { addInvitation };
++}
+diff --git a/src/overview.mjs b/src/overview.mjs
+new file mode 100644
+index 0000000..d4ac01e
+--- /dev/null
++++ b/src/overview.mjs
+@@ -0,0 +1,32 @@
++import { readOverview } from './transport.mjs';
++
++export function mountOverview(section, initialOverview) {
++  const total = section.querySelector('[data-testid="overview"]');
++  const progress = section.querySelector('[data-overview-progress]');
++  const error = section.querySelector('[data-overview-error]');
++  let requestVersion = 0;
++  total.textContent = `Pending: ${initialOverview.pending}`;
++
++  async function refresh() {
++    const version = ++requestVersion;
++    progress.textContent = 'Refreshing overview…';
++    error.textContent = '';
++
++    let overview;
++    try {
++      overview = await readOverview();
++    } catch {
++      if (version !== requestVersion) return;
++      progress.textContent = '';
++      error.textContent = 'Overview unavailable. Showing the last known total. Use Refresh overview to try again.';
++      return;
++    }
++
++    if (version !== requestVersion) return;
++    total.textContent = `Pending: ${overview.pending}`;
++    progress.textContent = '';
++  }
++
++  section.querySelector('button').addEventListener('click', refresh);
++  return { refresh };
++}
+diff --git a/tests/invites.spec.mjs b/tests/invites.spec.mjs
+index 7d2274e..037cb75 100644
+--- a/tests/invites.spec.mjs
++++ b/tests/invites.spec.mjs
+@@ -1,5 +1,22 @@
+ import { test, expect } from '@playwright/test';
+ const rows = page => page.getByRole('list', { name: 'Invitations' }).locator('[data-invite-id]');
++const confirmation = page => page.getByRole('status').filter({ hasText: /Invitation sent/ });
++const order = page => rows(page).evaluateAll(nodes => nodes.map(node => node.dataset.inviteId));
++function deferred() {
++  let resolve;
++  const promise = new Promise(done => { resolve = done; });
++  return { promise, resolve };
++}
++function accepted(email, id = 'new-1') {
++  return { invitation: { id, email, state: 'pending' }, receipt: { id: `receipt-${id}`, acceptedAt: 1730000000000 } };
++}
++async function deliver(page, route, response) {
++  const finished = page.waitForEvent('requestfinished', { predicate: request => request === route.request() });
++  await route.fulfill(response);
++  await finished;
++  // Observe the settled consumer after fetch completion and the next render opportunity.
++  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
++}
+ test.beforeEach(async ({ page }) => {
+   await page.route('**/api/overview', route => route.fulfill({ json: { pending: 5 } }));
+   await page.route('**/api/invitations', route => {
+@@ -13,12 +30,14 @@ test('a sent invitation is shown with accessible confirmation and refreshed over
+   await expect(page.getByRole('status').filter({ hasText: /sent|accepted/i }).first()).toContainText(/sent|accepted/i);
+   await expect(page.getByRole('status').filter({ hasText: /sent|accepted/i }).first()).toContainText('ada@example.test');
+   await expect(rows(page)).toHaveCount(5); await expect(page.getByTestId('overview')).toContainText('5');
++  await expect(confirmation(page)).toContainText('receipt-1');
++  await expect(page.getByRole('textbox', { name: 'Email', exact: true })).toHaveValue('');
+ });
+ test('list buttons change display order without calling the service', async ({ page }) => {
+-  let sends = 0; page.on('request', request => { if (request.url().endsWith('/api/invitations')) sends++; });
++  const serviceRequests = []; page.on('request', request => { if (request.url().includes('/api/')) serviceRequests.push(request.url()); });
+   await page.goto('/'); await page.locator('[data-invite-id="mia"]').getByRole('button', { name: 'Move later', exact: true }).click();
+   expect(await rows(page).evaluateAll(nodes => nodes.map(node => node.dataset.inviteId))).toEqual(['tom', 'mia', 'zoe', 'lee']);
+-  expect(sends).toBe(0);
++  expect(serviceRequests).toEqual([]);
+ });
+ test('overview can be refreshed while an independent note stays intact', async ({ page }) => {
+   await page.goto('/'); await page.getByRole('textbox', { name: 'Team note', exact: true }).fill('Ask about timezone');
+@@ -26,3 +45,194 @@ test('overview can be refreshed while an independent note stays intact', async (
+   await expect(page.getByTestId('overview')).toContainText('5');
+   await expect(page.getByRole('textbox', { name: 'Team note', exact: true })).toHaveValue('Ask about timezone');
+ });
++
++test('accepted send and receipt survive delayed and failed overview, with read-only recovery', async ({ page }) => {
++  const reads = [];
++  let sends = 0;
++  await page.route('**/api/overview', route => { reads.push(route); });
++  await page.route('**/api/invitations', route => {
++    sends += 1;
++    return route.fulfill({ json: accepted('ada@example.test') });
++  });
++  await page.goto('/');
++  await page.getByRole('textbox', { name: 'Email', exact: true }).fill('Ada@example.test');
++  await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
++  await expect.poll(() => reads.length).toBe(1);
++  await expect(confirmation(page)).toContainText('ada@example.test');
++  await expect(confirmation(page)).toContainText('receipt-new-1');
++  await expect(rows(page)).toHaveCount(5);
++  await expect(page.getByTestId('overview')).toHaveText('Pending: 4');
++  await expect(page.getByRole('button', { name: 'Send invitation', exact: true })).toBeEnabled();
++
++  await deliver(page, reads[0], { status: 503, body: 'Unavailable' });
++  await expect(page.getByRole('alert').filter({ hasText: /Overview unavailable/ })).toBeVisible();
++  await expect(page.getByRole('alert').filter({ hasText: /Invitation could not be sent/ })).toHaveCount(0);
++  await expect(confirmation(page)).toContainText('receipt-new-1');
++  await expect(rows(page)).toHaveCount(5);
++  await expect(page.getByTestId('overview')).toHaveText('Pending: 4');
++
++  await page.getByRole('button', { name: 'Refresh overview', exact: true }).click();
++  await expect.poll(() => reads.length).toBe(2);
++  await deliver(page, reads[1], { json: { pending: 5 } });
++  await expect(page.getByTestId('overview')).toHaveText('Pending: 5');
++  await expect(page.getByRole('alert').filter({ hasText: /Overview unavailable/ })).toHaveCount(0);
++  await expect(confirmation(page)).toContainText('receipt-new-1');
++  expect(sends).toBe(1);
++});
++
++test('a rejected send preserves its draft and error through overview refresh, then permits an edited retry', async ({ page }) => {
++  const submitted = [];
++  await page.route('**/api/invitations', route => {
++    const { email } = route.request().postDataJSON();
++    submitted.push(email);
++    return submitted.length === 1
++      ? route.fulfill({ status: 503, body: 'Unavailable' })
++      : route.fulfill({ json: accepted(email) });
++  });
++  await page.goto('/');
++  const email = page.getByRole('textbox', { name: 'Email', exact: true });
++  const send = page.getByRole('button', { name: 'Send invitation', exact: true });
++  await email.fill('first@example.test');
++  await send.click();
++  const failure = page.getByRole('alert').filter({ hasText: /Invitation could not be sent/ });
++  await expect(failure).toBeVisible();
++  await expect(email).toHaveValue('first@example.test');
++  await expect(send).toBeEnabled();
++  await expect(rows(page)).toHaveCount(4);
++  await page.getByRole('button', { name: 'Refresh overview', exact: true }).click();
++  await expect(page.getByTestId('overview')).toHaveText('Pending: 5');
++  await expect(failure).toBeVisible();
++
++  await email.fill('second@example.test');
++  await send.click();
++  await expect(confirmation(page)).toContainText('second@example.test');
++  await expect(failure).toHaveCount(0);
++  await expect(rows(page)).toHaveCount(5);
++  expect(submitted).toEqual(['first@example.test', 'second@example.test']);
++});
++
++test('one pending submission sends once while list actions and selected note editing remain usable', async ({ page }) => {
++  const request = deferred();
++  const release = deferred();
++  let sends = 0;
++  await page.route('**/api/invitations', async route => {
++    sends += 1;
++    request.resolve(route.request().postDataJSON());
++    await release.promise;
++    await route.fulfill({ json: accepted('ada@example.test') });
++  });
++  await page.goto('/');
++  const email = page.getByRole('textbox', { name: 'Email', exact: true });
++  const note = page.getByRole('textbox', { name: 'Team note', exact: true });
++  const send = page.getByRole('button', { name: 'Send invitation', exact: true });
++  await email.fill('ada@example.test');
++  await email.press('Enter');
++  expect(await request.promise).toEqual({ email: 'ada@example.test' });
++  await expect(send).toBeDisabled();
++  await expect(email).toBeFocused();
++  await page.keyboard.press('Enter');
++  await page.keyboard.press('Enter');
++  await page.locator('[data-invite-id="mia"]').getByRole('button', { name: 'Move later', exact: true }).click();
++  expect(await order(page)).toEqual(['tom', 'mia', 'zoe', 'lee']);
++
++  await note.fill('Plan launch today');
++  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowLeft');
++  for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowLeft');
++  await expect(note).toBeFocused();
++  expect(await note.evaluate(node => [node.selectionStart, node.selectionEnd])).toEqual([5, 11]);
++  release.resolve();
++  await expect(confirmation(page)).toContainText('receipt-new-1');
++  await expect(page.getByTestId('overview')).toHaveText('Pending: 5');
++  await expect(note).toBeFocused();
++  expect(await note.evaluate(node => [node.selectionStart, node.selectionEnd])).toEqual([5, 11]);
++  await page.keyboard.type('review');
++  await expect(note).toHaveValue('Plan review today');
++  expect(await order(page)).toEqual(['tom', 'mia', 'zoe', 'lee', 'new-1']);
++  expect(sends).toBe(1);
++});
++
++for (const returnsToSubmitted of [false, true]) {
++  test(`pending send preserves ${returnsToSubmitted ? 'A → B → A' : 'a different'} Email edit without taking focus`, async ({ page }) => {
++    const request = deferred();
++    const release = deferred();
++    await page.route('**/api/invitations', async route => {
++      request.resolve();
++      await release.promise;
++      await route.fulfill({ json: accepted('ada@example.test') });
++    });
++    await page.goto('/');
++    const email = page.getByRole('textbox', { name: 'Email', exact: true });
++    await email.fill('ada@example.test');
++    await email.press('Enter');
++    await request.promise;
++    await email.fill('next@example.test');
++    if (returnsToSubmitted) await email.fill('ada@example.test');
++    release.resolve();
++    await expect(confirmation(page)).toContainText('ada@example.test');
++    await expect(page.getByTestId('overview')).toHaveText('Pending: 5');
++    await expect(email).toHaveValue(returnsToSubmitted ? 'ada@example.test' : 'next@example.test');
++    await expect(email).toBeFocused();
++  });
++}
++
++for (const [id, name, orders] of [
++  ['mia', 'Move later', [['tom', 'mia', 'zoe', 'lee'], ['tom', 'zoe', 'mia', 'lee'], ['tom', 'zoe', 'lee', 'mia']]],
++  ['lee', 'Move earlier', [['mia', 'tom', 'lee', 'zoe'], ['mia', 'lee', 'tom', 'zoe'], ['lee', 'mia', 'tom', 'zoe']]],
++]) {
++  test(`${name} keeps pointer and consecutive keyboard activation on ${id}`, async ({ page }) => {
++    const requests = [];
++    page.on('request', request => { if (request.url().includes('/api/')) requests.push(request.url()); });
++    await page.goto('/');
++    const button = page.locator(`[data-invite-id="${id}"]`).getByRole('button', { name, exact: true });
++    await button.click();
++    expect(await order(page)).toEqual(orders[0]);
++    await expect(button).toBeFocused();
++    await page.keyboard.press('Enter');
++    expect(await order(page)).toEqual(orders[1]);
++    await expect(button).toBeFocused();
++    await page.keyboard.press('Space');
++    expect(await order(page)).toEqual(orders[2]);
++    await expect(button).toBeFocused();
++    await page.keyboard.press('Enter');
++    expect(await order(page)).toEqual(orders[2]);
++    await expect(button).toBeFocused();
++    expect(requests).toEqual([]);
++  });
++}
++
++for (const oldReadFails of [false, true]) {
++  test(`older overview ${oldReadFails ? 'failure' : 'success'} cannot replace the newer post-send overview`, async ({ page }) => {
++    const reads = [];
++    await page.route('**/api/overview', route => { reads.push(route); });
++    await page.goto('/');
++    await page.getByRole('button', { name: 'Refresh overview', exact: true }).click();
++    await expect.poll(() => reads.length).toBe(1);
++    await page.getByRole('textbox', { name: 'Email', exact: true }).fill('ada@example.test');
++    await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
++    await expect.poll(() => reads.length).toBe(2);
++    await deliver(page, reads[1], { json: { pending: 6 } });
++    await expect(page.getByTestId('overview')).toHaveText('Pending: 6');
++    await deliver(page, reads[0], oldReadFails ? { status: 503, body: 'Unavailable' } : { json: { pending: 99 } });
++    await expect(page.getByTestId('overview')).toHaveText('Pending: 6');
++    await expect(page.getByRole('alert').filter({ hasText: /Overview unavailable/ })).toHaveCount(0);
++    await expect(confirmation(page)).toContainText('receipt-1');
++  });
++}
++
++test('an old overview completion cannot clear a newer loading state or publish its value', async ({ page }) => {
++  const reads = [];
++  await page.route('**/api/overview', route => { reads.push(route); });
++  await page.goto('/');
++  const refresh = page.getByRole('button', { name: 'Refresh overview', exact: true });
++  await refresh.click();
++  await expect.poll(() => reads.length).toBe(1);
++  await refresh.click();
++  await expect.poll(() => reads.length).toBe(2);
++  await deliver(page, reads[0], { json: { pending: 99 } });
++  await expect(page.getByTestId('overview')).toHaveText('Pending: 4');
++  await expect(page.getByRole('status').filter({ hasText: 'Refreshing overview…' })).toBeVisible();
++  await deliver(page, reads[1], { status: 503, body: 'Unavailable' });
++  await expect(page.getByTestId('overview')).toHaveText('Pending: 4');
++  await expect(page.getByRole('status').filter({ hasText: 'Refreshing overview…' })).toHaveCount(0);
++  await expect(page.getByRole('alert').filter({ hasText: /Overview unavailable/ })).toBeVisible();
++});

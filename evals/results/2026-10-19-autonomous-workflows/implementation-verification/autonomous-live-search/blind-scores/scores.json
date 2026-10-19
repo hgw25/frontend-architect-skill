@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "autonomous-live-search",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "实现准确覆盖提交、重试、竞态和离开页面四类目标，并保持既有 createSearch 公共接口；改动范围集中于单一模块，符合该小型任务的现状与规模。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用现有闭包状态和 Promise 契约，仅增加请求序号、disposed 标志及一个内部 request 边界；没有引入依赖或无依据的通用抽象，复杂度与竞态及生命周期需求相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "submit 负责固定草稿，retry 负责复用已提交查询，request 集中管理异步状态和 DTO 转换，dispose 管理生命周期；公开调用者无需理解请求序号等私有机制。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "以闭包承载搜索实例的身份、可变状态和生命周期，以小函数处理错误转换、当前请求判定及 DTO 映射，范式分配符合状态与转换各自性质。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "提交、重试、成功、失败、竞态、快照隔离和销毁后的命令行为形成一致且完整的实现；宿主环境中全部 8 项测试通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "请求序号正确处理乱序成功与失败，包括相同查询的重复请求；dispose 使在途结果失效并冻结后续修改，空提交和无历史重试也有明确行为。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "生成阶段记录了 npm run check 与 git diff --check 成功；随后宿主重新安装依赖并运行真实 node:test 测试，8/8 通过，覆盖 DTO、快照、竞态、重试、空操作和销毁边界。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付说明结果优先，简洁列明行为语义、竞态策略、生命周期边界和实际验证结果，没有夸大未验证的发布或兼容性结论。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供完整测试源码，只能依据宿主输出中的测试名称、数量和通过结果判断覆盖范围。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "autonomous-live-search",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别固定公共契约、无依赖约束、不可取消的 fetchUsers 边界，以及提交、重试、竞态、快照和 dispose 的完整验收行为。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用闭包与注入的 fetchUsers，以请求序号解决发布竞态；未引入依赖或通用请求框架，并说明了相对维护成本与后续扩展位置。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "createSearch 集中拥有状态和生命周期，私有 run 统一请求转换与发布规则，公开方法职责清晰，传输 DTO 未泄漏给消费者。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "根据单实例状态、身份和生命周期选择闭包封装，并明确排除当前不需要的继承、订阅和通用管理器，选择与问题性质匹配。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实现覆盖空提交、独立草稿与已提交查询、重试、保留结果、错误转换、最新请求发布、快照隔离和终止生命周期；代码与调用语义一致，最终检查全部通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "正确处理乱序成功与失败、相同查询的重复请求、非 Error 拒绝、无历史重试、空查询、dispose 后操作以及待完成请求的迟到发布。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "生成阶段在修改后两次运行 npm run check，8/8 通过，并运行 git diff --check；后续宿主环境 npm ci 与同一测试套件也成功，验证直接覆盖所述竞态和生命周期风险。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付说明结果优先，清楚列出行为、实现位置、验证结果及未修改范围；设计记录进一步交代约束、取舍和所有权。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "autonomous-live-board",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 1,
+            "reason": "识别了连续排序、DOM 身份、焦点、保存竞态、失败重试、清理和减弱动画等关键约束，但没有明确说明现状调查、规模依据或项目规则与兼容范围。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用现有 saveOrder，并采用原生 DOM、Pointer Events 和 Web Animations API；改动集中且未增加依赖，复杂度与排序、动画及串行持久化需求相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "卡片创建、顺序提交、FLIP 动画、拖拽生命周期和保存队列均有清晰的小型函数边界；状态所有权集中，调用者无需介入内部步骤，符合该小型应用的尺度。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实现覆盖按钮与拖拽排序、元素身份和焦点保持、动画中断、保存串行化、错误重试及清理；之后宿主环境的 6 项 Playwright 测试全部通过。"
+          },
+          {
+            "key": "rendering_performance",
+            "score": 2,
+            "reason": "删除逐卡写入后立即测量的布局抖动，改为批量读取前后位置并执行 FLIP；宿主在真实 Chromium、80 张卡片和固定交互下记录了布局、样式、脚本及总耗时，相关测试通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "处理了边界移动、连续操作期间的动画重定向、保存请求顺序与失败、新意图优先、pointercancel、隐藏卸载、缩放以及减弱动画偏好；对应竞态与清理测试通过。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "提供键盘可用的上下移动按钮和指针拖拽，保持按钮焦点，使用状态与警报语义反馈保存结果，提供重试，并支持 reduced-motion；相关真实浏览器行为测试通过。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "回复准确报告了生成沙箱中网络监听和 Chromium 权限导致的浏览器验证阻塞，没有虚报通过；同时有语法与 diff 检查结果，后续宿主真实 Chromium 验证 6/6 通过并记录性能数据。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 1,
+            "reason": "结果、修改范围、已验证项和环境限制表达清楚，但几乎没有交代方案取舍、性能阈值或剩余风险。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "生成阶段记录仅为命令输出尾部而非完整命令审计。",
+          "未提供需求调查、目标规模选择或浏览器支持矩阵的证据。",
+          "宿主性能测试给出了真实浏览器成本数据，但未声明明确的验收阈值或跨设备结论。"
+        ],
+        "normalized_score": 14.22,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "autonomous-live-board",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了 80 张稳定 ID 卡片、原生 ESM、既有 saveOrder 契约、按钮与拖拽入口、连续操作、保存失败及生命周期等约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用原生 DOM、Web Animations 和既有保存接口，没有增加依赖；针对原实现的节点重建、交错布局读写和无序保存分别作了相称改造。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "order 是唯一业务顺序来源，交互决策、DOM 投影、动画状态和保存队列的职责及副作用较清楚，符合该小型应用的尺度。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "拖拽、顺序更新、保存合并、失败重试和清理路径基本完整，但真实浏览器验收发现 DOM 重排后按钮焦点丢失，违反实现明确声称的焦点稳定契约。"
+          },
+          {
+            "key": "rendering_performance",
+            "score": 1,
+            "reason": "实现消除了逐卡写后读，并批量测量、复用节点、处理动画中断；宿主记录了浏览器成本数据，但非减少动态效果下的连续动画路径因首个测试提前失败而未完成验证，也没有顺畅度阈值。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖了保存竞态、最新快照、失败阻塞与重试、拖拽取消、隐藏、尺寸变化和减少动态效果；相关宿主用例除焦点所在综合用例外均通过。"
+          },
+          {
+            "key": "user_experience",
+            "score": 1,
+            "reason": "提供按钮、拖拽、可见保存错误、重试和减少动态效果支持，但键盘触发重排后焦点实际丢失，是连续键盘操作的直接体验缺陷。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "如实记录了语法检查、diff 检查及沙箱内浏览器阻塞，且设计了真实 Chromium 验收；后续宿主执行结果为 5/6 通过，决定性的焦点与连续交互用例仍失败。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 1,
+            "reason": "改动、验证结果和环境限制表达清楚，但“实现已就绪”以及焦点稳定的肯定陈述与后续真实浏览器失败不一致， readiness 结论过强。"
+          }
+        ],
+        "global_failures": [
+          "决定性浏览器验收仍失败，却在总结中宣称“实现已就绪”；宿主验证确认键盘重排后焦点保持失败。"
+        ],
+        "evidence_limits": [
+          "首个浏览器用例在焦点断言处终止，因此非 reduced-motion 动画的中间位移、完成位移及后续连续操作断言没有执行。",
+          "成本测试仅记录 reduced-motion 路径的单次实验室指标，且没有验收阈值，不能证明真实用户环境中的持续顺畅度。",
+          "生成阶段自检只提供命令输出尾部而非完整审计记录。"
+        ],
+        "normalized_score": 11.56,
+        "case_failures": [
+          {
+            "rule": "只写方案或受保护浏览器检查失败、被弱化",
+            "reason": "虽已实现而非只写方案，但后续受保护浏览器验收明确失败：核心测试在移动后焦点保持断言处失败。"
+          },
+          {
+            "rule": "动画成为第二份业务顺序，或连续操作被阻塞，或用模拟 DOM 证明几何和交互正确",
+            "reason": "真实 Chromium 测试表明按 Enter 排序后按钮失焦，导致依赖当前焦点的连续键盘操作无法顺畅继续。"
+          },
+          {
+            "rule": "未保留可比实际测量却宣称性能改善，或无依据强制 GPU/库/虚拟列表",
+            "reason": "响应宣称“消除了……性能问题”，但仅保留改动后的成本记录，没有可比较的改动前实际浏览器测量。"
+          }
+        ],
+        "verdict": "fail",
+        "validation_failures": [
+          "npm run check"
+        ]
+      }
+    ]
+  }
+}

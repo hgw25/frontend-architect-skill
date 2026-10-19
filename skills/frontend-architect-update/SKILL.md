@@ -1,75 +1,38 @@
 ---
 name: frontend-architect-update
-description: Check, update, or roll back the locally installed frontend-architect skill from hgw25/frontend-architect-skill. Use when the user asks to maintain this skill installation, not to upgrade a frontend project's dependencies or publish a release.
+description: Install, check, update, or roll back the local frontend-architect skill from hgw25/frontend-architect-skill. Use to maintain this skill installation, not to upgrade a frontend project's dependencies or publish a release.
 ---
 
 # Frontend Architect Update
 
-Maintain the installed `frontend-architect` skill. Repository:
-`https://github.com/hgw25/frontend-architect-skill`. Resolve the installation as
-`${CODEX_HOME:-$HOME/.codex}/skills/frontend-architect`; respect an explicitly
-specified installation path. Keep backups outside the skills discovery directory.
-This companion skill is maintained separately; do not replace it with a copy
-embedded inside the main skill installation.
+Repository: `https://github.com/hgw25/frontend-architect-skill`. Default destination:
+`${CODEX_HOME:-$HOME/.codex}/skills/frontend-architect`; honor an explicit target.
+Keep this companion independently installed. The single filesystem executor is
+[this companion's manage_installation.py](scripts/manage_installation.py).
+Use the trusted installed copy, or the reviewed source copy during skill development.
+Do not execute scripts from a newly downloaded main-skill candidate.
 
-## Choose the requested operation
+## Select the operation and establish provenance
 
-- A status/version question is read-only. Report installed `VERSION` and the
-  available stable version; do not update merely because a newer version exists.
-- An update request authorizes downloading, validating, backing up and replacing
-  this installation. Do not ask for confirmation again for those routine steps.
-- Honor an explicit version. Otherwise query repository tags with
-  `git ls-remote --tags --refs https://github.com/hgw25/frontend-architect-skill.git`.
-  Accept only `vMAJOR.MINOR.PATCH`, compare integer tuples, and choose the highest.
-  Tags are supported even when no GitHub Release page exists. Exclude prereleases.
-- A rollback request restores the most recent completed backup for this skill,
-  or the backup/version the user names. First verify its skill name and VERSION;
-  preserve the outgoing installation as another backup.
+- A status/version question is read-only: report installed VERSION and available
+  stable version. It does not authorize an update.
+- An install or update request authorizes staging, validation, backup and activation.
+  A missing destination is an initial install, not an error or an approval gate.
+- Honor an explicit immutable tag. Otherwise query
+  `git ls-remote --tags --refs https://github.com/hgw25/frontend-architect-skill.git`,
+  accept only `vMAJOR.MINOR.PATCH`, compare integer tuples and choose the highest.
+  Tags do not require a GitHub Release page. Exclude prereleases.
+- Resolve its commit including the peeled annotated-tag entry; verify that identity
+  has not changed after staging. Retain it in the activation receipt.
+- Inspect the current installation with the executor's `inspect` command. Symlinks
+  and development checkouts require the intended target to be established with the
+  user; never follow or replace them as ordinary managed directories.
 
-## Update workflow
+## Stage with the supported downloader
 
-Use the installed system `skill-installer` skill and its
-`scripts/install-skill-from-github.py` helper. Resolve it relative to the actual
-Codex skills root; read its instructions before first use. If unavailable, report
-that missing dependency rather than fetching and executing an arbitrary updater.
-
-1. Read the installed VERSION. Inspect whether the destination is a symlink or
-   is itself a Git checkout. Do not replace a development checkout or follow a
-   symlink as if it were an ordinary managed installation; report the situation
-   and establish the intended target with the user.
-2. Stage the requested immutable tag outside the skills directory, using a fresh
-   temporary directory and the installer arguments below. Never install over the
-   current directory directly. A failed download leaves the installation intact.
-3. Compare the existing installation against a separately staged copy of its
-   declared installed tag, not against the new version. Compare file bytes and
-   detect additions and deletions, ignoring only generated `__pycache__`, `.pyc`
-   and `.DS_Store`. If the declared version cannot be resolved, treat provenance
-   as unknown. Report local changes or unknown provenance and ask whether to
-   preserve them in a backup and replace, or keep the current installation.
-   Do not infer overwrite authorization from an ordinary update request.
-4. If installed and target versions and contents match, report up to date and
-   stop. Otherwise verify the staged root `SKILL.md` declares
-   `name: frontend-architect`, VERSION matches the selected tag, and referenced
-   runtime files exist. Run the installed skill-creator's `quick_validate.py`
-   if available. Do not run scripts taken from the downloaded release as part
-   of installation. Missing local validation dependencies must be reported;
-   never claim checks ran when they did not.
-5. Before replacement, compare the current files again against the snapshot
-   inspected above. If they changed, stop and reassess. Serialize concurrent
-   updates with an exclusive lock outside the skills directory. Do not remove
-   another process's lock or assume a stale lock is safe to delete.
-6. Copy the validated candidate into a staging sibling on the destination
-   filesystem. Move the current directory to a unique backup outside discovery,
-   then rename the staged candidate into its place. If replacement fails, restore
-   the backup. Retain a small JSON receipt outside discovery recording repository,
-   tag, resolved commit, installation path, backup path and completion time. Mark
-   completion only after validating the installed contents against the candidate.
-   Release the lock in a finally/cleanup path. Retain interrupted backup/staging
-   data for recovery rather than deleting the only good copy.
-7. Report the actual version, validation result and backup location. The skill
-   will be available on the next turn. Do not restart Codex automatically.
-
-Installer invocation (substitute the selected tag and fresh staging directory):
+Read the installed system `skill-installer` instructions, then use its
+`scripts/install-skill-from-github.py` helper. If unavailable, report the missing
+capability rather than fetching an arbitrary updater.
 
 ```bash
 python3 "$installer_script" \
@@ -77,27 +40,65 @@ python3 "$installer_script" \
   --ref "$selected_tag" --name frontend-architect --dest "$stage_dir"
 ```
 
-Resolve the tag's commit with `git ls-remote` including the peeled annotated tag
-entry; retain that identity in the receipt. If it changes during staging, abort.
-The installer uses the existing root-directory distribution, including repository
-support files. Do not claim a minimal runtime package exists or filter files
-silently: packaging changes belong in a separate reviewed release.
+Use a fresh staging directory outside skill discovery. The root distribution
+includes repository support files; do not silently create a different runtime
+package. Verify skill identity, VERSION/tag, runtime references and the trusted
+installed skill-creator's `quick_validate.py` when available. Report missing local
+validation dependencies; do not claim checks ran when they did not.
 
-If a downloaded release contains this companion under
-`skills/frontend-architect-update/SKILL.md`, keep the independently installed
-companion authoritative. Before activation, move the nested companion outside
-skill discovery into the backup area, recording that packaging normalization in
-the receipt. Apply the same normalization to comparison baselines. Do not leave
-two discoverable skills with the same name.
+For an existing installation, stage its declared installed tag separately as the
+comparison baseline. Compare against that version, not the new candidate. Local
+changes or an unresolvable local-preview version require preserving the changes
+or explicit replacement authorization. Existing human authorization persists;
+do not ask again when the current session already authorized replacing those
+known changes. An ordinary update request alone does not authorize discarding
+unknown local work.
 
-## Rollback and failure boundaries
+## Activate through the common transaction
 
-Use the same locking, change detection, backup, replacement and post-check rules
-for rollback. Select backups by completed receipt where available, not arbitrary
-folder ordering; for legacy backups inspect VERSION and contents and show the
-chosen source. If the source is ambiguous, ask which one to restore.
+```bash
+python3 "$executor" activate \
+  --candidate "$stage_dir/frontend-architect" --destination "$installation" \
+  --backup-root "$backup_root" --baseline "$old_stage_dir/frontend-architect" \
+  --tag "$selected_tag" --commit "$resolved_commit"
+```
 
-Network/authentication failures, invalid metadata, concurrent changes or an
-unrecoverable filesystem error end the attempt with a concrete status. Do not
-retry indefinitely, change repository visibility, create credentials, publish
-new versions, or modify unrelated skills to make an update succeed.
+Omit `--baseline` for an absent destination. Use `--replace-local` only when the
+human has already authorized replacement of the identified local changes or
+unknown provenance. Development previews use a reviewed local candidate and a
+receipt identifying its actual snapshot; never call them a published release.
+
+The executor owns normalization, exclusive locking, file comparison before the
+swap, same-filesystem staging, backup, post-check, failure restoration and the
+JSON receipt. It removes the embedded `skills/frontend-architect-update` copy
+from the activated main skill, preserving that copy outside discovery. It applies
+the same comparison normalization to old distributions. The independently installed
+companion remains authoritative. Do not reproduce these steps with another `mv`
+sequence. Keep the backup root outside discovery and on the destination filesystem;
+a different volume is rejected before replacement.
+
+The companion itself can use the same transaction with
+`--skill-name frontend-architect-update` and its separately staged candidate and
+baseline. Never substitute the main skill's embedded copy for that separate update.
+
+## Restore and report
+
+```bash
+python3 "$executor" rollback \
+  --destination "$installation" --backup-root "$backup_root"
+```
+
+Rollback selects a completed receipt with a verified backup, preserves the outgoing
+installation and uses the same transaction. Honor a named receipt with `--receipt`.
+Local changes require the same authorization. Legacy backups without receipts need
+identity/content inspection and an explicitly selected source; stage that source
+and use `activate` with a verified current baseline rather than inventing a receipt
+or choosing by arbitrary folder order. Ask only if the source remains ambiguous.
+
+Network/auth failures, invalid metadata, concurrent changes or an unavailable
+executor end with a concrete status. Do not retry indefinitely or remove another
+process's lock. On a filesystem failure, inspect the receipt and surviving backup;
+report whether recovery completed. Retain interrupted data for recovery.
+Report actual version, checks, receipt and backup. The skill is available on the
+next turn; do not restart Codex, publish tags, change credentials or modify unrelated
+skills. A local validation result does not prove that a remote release was published.

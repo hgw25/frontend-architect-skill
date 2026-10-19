@@ -19,6 +19,8 @@ from typing import Any
 
 import yaml
 
+from eval_evidence import project_snapshot, save_snapshot
+
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES_PATH = ROOT / "evals/cases.yaml"
@@ -42,6 +44,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results-dir", required=True, type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument("--append", action="store_true")
+    parser.add_argument("--sandbox", choices=("workspace-write", "danger-full-access"), default="workspace-write")
+    parser.add_argument("--skill-root", type=Path, default=ROOT)
     parser.add_argument("--host-feedback", action="store_true",
                         help="Allow one repair from actual failed host checks; retain both attempts")
     return parser.parse_args()
@@ -101,7 +105,8 @@ def run_command(
         }
 
 
-def initialize_workspace(case: dict[str, Any], mode: str) -> Path:
+def initialize_workspace(case: dict[str, Any], mode: str, skill_root: Path | None = None) -> Path:
+    skill_root = skill_root or ROOT
     workspace = Path(tempfile.mkdtemp(prefix=f"frontend-architect-{case['id']}-{mode}-"))
     fixture = case.get("fixture")
     if fixture:
@@ -124,9 +129,9 @@ def initialize_workspace(case: dict[str, Any], mode: str) -> Path:
     if mode == "candidate":
         skill_dir = workspace / ".frontend-architect"
         skill_dir.mkdir()
-        shutil.copy2(ROOT / "SKILL.md", skill_dir / "SKILL.md")
-        shutil.copytree(ROOT / "references", skill_dir / "references")
-        shutil.copy2(ROOT / "CONTRIBUTING.md", skill_dir / "CONTRIBUTING.md")
+        shutil.copy2(skill_root / "SKILL.md", skill_dir / "SKILL.md")
+        shutil.copytree(skill_root / "references", skill_dir / "references")
+        shutil.copy2(skill_root / "CONTRIBUTING.md", skill_dir / "CONTRIBUTING.md")
     return workspace
 
 
@@ -192,6 +197,11 @@ def review_context(workspace: Path) -> str:
     return "\n".join(parts)
 
 
+def acceptance_source(case: dict[str, Any], source: str, root: Path) -> bytes:
+    frozen = case.get("_acceptance_inputs", {})
+    return frozen[source] if source in frozen else (root / source).read_bytes()
+
+
 def capture_contract(case: dict[str, Any], root: Path) -> dict[str, Any]:
     """Freeze the task and executable acceptance contract, separately from grading rules."""
     fixture = case.get("fixture")
@@ -201,6 +211,10 @@ def capture_contract(case: dict[str, Any], root: Path) -> dict[str, Any]:
         "task_type": case.get("task_type", "implementation"), "fixture": fixture,
         "protected_paths": case.get("protected_paths", []),
         "validation_commands": case.get("validation_commands", []),
+        **({"acceptance_checks": [
+            {**check, "file_hashes": {target: hashlib.sha256(acceptance_source(case, source, root)).hexdigest()
+                                      for target, source in check.get("files", {}).items()}}
+            for check in case["acceptance_checks"]]} if case.get("acceptance_checks") else {}),
         "fixture_files": {
             str(path.relative_to(root / fixture)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted((root / fixture).rglob("*")) if path.is_file()
@@ -214,7 +228,8 @@ def expected_validation_commands(case: dict[str, Any]) -> list[str]:
         commands.append("verify review fixture unchanged")
     if case.get("fixture") and case.get("protected_paths"):
         commands.append("verify protected evaluation harness")
-    return commands + case.get("validation_commands", [])
+    return commands + case.get("validation_commands", []) + [
+        f"acceptance: {check['name']}: {check['command']}" for check in case.get("acceptance_checks", [])]
 
 
 def routing_capture_valid(routing: dict[str, Any]) -> bool:
@@ -526,7 +541,7 @@ def codex_command(args: argparse.Namespace, workspace: Path, output_path: Path) 
         "--ignore-user-config",
         "--skip-git-repo-check",
         "--sandbox",
-        "workspace-write",
+        getattr(args, "sandbox", "workspace-write"),
         "--cd",
         str(workspace),
         "--model",
@@ -587,6 +602,32 @@ def validate_protected_paths(case: dict[str, Any], workspace: Path) -> dict[str,
     }
 
 
+def run_acceptance_checks(case: dict[str, Any], workspace: Path, timeout: int) -> list[dict[str, Any]]:
+    """Run maintainer-owned consumers after delivery, outside the generator workspace."""
+    if not case.get("acceptance_checks"):
+        return []
+    results = []
+    with tempfile.TemporaryDirectory(prefix="frontend-architect-acceptance-") as temporary:
+        isolated = Path(temporary) / "project"
+        shutil.copytree(workspace, isolated, symlinks=True,
+                        ignore=shutil.ignore_patterns(".git", ".frontend-architect", "node_modules",
+                                                     "test-results", "playwright-report"))
+        if (workspace / "node_modules").exists():
+            (isolated / "node_modules").symlink_to((workspace / "node_modules").resolve(), target_is_directory=True)
+        for check in case["acceptance_checks"]:
+            for target, source in check.get("files", {}).items():
+                destination = isolated / target
+                if destination.exists():
+                    raise ValueError(f"Acceptance support must not replace delivered files: {target}")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(acceptance_source(case, source, ROOT))
+            result = run_command(check["command"], cwd=isolated, timeout=timeout, shell=True)
+            results.append({"command": f"acceptance: {check['name']}: {check['command']}", **result})
+            if result["exit_code"] != 0:
+                break
+    return results
+
+
 def validate_fixture(case: dict[str, Any], workspace: Path, timeout: int, baseline: str = FIXTURE_BASE_REF) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     if case.get("task_type") == "review":
@@ -605,7 +646,8 @@ def validate_fixture(case: dict[str, Any], workspace: Path, timeout: int, baseli
         result = run_command(command, cwd=workspace, timeout=timeout, shell=True)
         results.append({"command": command, **result})
         if result["exit_code"] != 0:
-            break
+            return results
+    results.extend(run_acceptance_checks(case, workspace, timeout))
     return results
 
 
@@ -622,11 +664,12 @@ def capture_attempt(args, case, workspace, baseline, directory, prompt):
     (directory / "events.jsonl").write_text(generation.pop("stdout"), encoding="utf-8")
     (directory / "generation.stderr.log").write_text(generation.pop("stderr"), encoding="utf-8")
     validations = validate_fixture(case, workspace, args.timeout_seconds, baseline)
+    final_snapshot = save_snapshot(directory / "project-final.json", project_snapshot(workspace))
     for index, validation in enumerate(validations, 1):
         (directory / f"validation-{index}.log").write_text(
             validation.pop("stdout") + validation.pop("stderr"), encoding="utf-8")
     (directory / "changes.diff").write_text(capture_diff(workspace, baseline), encoding="utf-8")
-    return {"generation": generation, "validations": validations}
+    return {"generation": generation, "validations": validations, "project_final_sha256": final_snapshot}
 
 
 def capture_delivery(args, case, mode, workspace, baseline, case_dir, prompt):
@@ -663,7 +706,8 @@ def capture_delivery(args, case, mode, workspace, baseline, case_dir, prompt):
     return {"generation": {"exit_code": next((a["generation"]["exit_code"] for a in attempts
                                                if a["generation"]["exit_code"] != 0), 0),
                            "duration_seconds": round(sum(a["generation"]["duration_seconds"] for a in attempts), 3)},
-            "validations": attempts[-1]["validations"], "attempts": attempts,
+            "validations": attempts[-1]["validations"],
+            "project_final_sha256": attempts[-1].get("project_final_sha256"), "attempts": attempts,
             "attempt_artifacts": artifacts}, events
 
 
@@ -674,12 +718,19 @@ def main() -> int:
     results_dir = args.results_dir.resolve()
     results_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = results_dir / "manifest.json"
+    skill_root = getattr(args, "skill_root", ROOT).resolve()
+    guidance = {str(path.relative_to(skill_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in [skill_root/"SKILL.md", skill_root/"CONTRIBUTING.md", *sorted((skill_root/"references").glob("*.md"))]
+                if path.is_file()}
+    sandbox = getattr(args, "sandbox", "workspace-write")
     if manifest_path.exists() and not args.append:
         raise SystemExit("Capture manifest already exists; use a new directory or append new cases")
     if args.append and manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("model") != args.model or manifest.get("reasoning_effort") != args.reasoning_effort:
             raise SystemExit("Cannot append results produced with a different model configuration")
+        if manifest.get("guidance_sha256") != guidance or manifest.get("sandbox", "workspace-write") != sandbox:
+            raise SystemExit("Cannot append results with different guidance or execution permissions")
         replacement_keys = {(case["id"], mode) for case in cases for mode in modes}
         if replacement_keys.intersection((record["id"], record["mode"]) for record in manifest["cases"]):
             raise SystemExit("Capture already exists; use a new results directory to preserve attempts")
@@ -693,6 +744,7 @@ def main() -> int:
         manifest = {
             "schema_version": 1,
             "read_audit_implementation": READ_AUDIT_IMPLEMENTATION,
+            "guidance_sha256": guidance, "sandbox": sandbox,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "model": args.model,
             "reasoning_effort": args.reasoning_effort,
@@ -705,14 +757,25 @@ def main() -> int:
     write_manifest(manifest_path, manifest)
 
     for case in cases:
+        case["_acceptance_inputs"] = {
+            source: (ROOT / source).read_bytes()
+            for check in case.get("acceptance_checks", []) for source in check.get("files", {}).values()
+        }
         for mode in modes:
             print(f"[{case['id']}] {mode}", flush=True)
             case_dir = results_dir / case["id"] / mode
             case_dir.mkdir(parents=True, exist_ok=True)
-            workspace = initialize_workspace(case, mode)
+            workspace = initialize_workspace(case, mode, skill_root)
             baseline = subprocess.run(["git", "rev-parse", FIXTURE_BASE_REF], cwd=workspace,
                                       capture_output=True, text=True, check=True).stdout.strip()
+            input_artifacts = {}
+            for source, content in case["_acceptance_inputs"].items():
+                preserved = case_dir / "acceptance-inputs" / source
+                preserved.parent.mkdir(parents=True, exist_ok=True)
+                preserved.write_bytes(content)
+                input_artifacts[str(preserved.relative_to(case_dir))] = hashlib.sha256(content).hexdigest()
             contract = capture_contract(case, ROOT)
+            original_snapshot = save_snapshot(case_dir / "project-input.json", project_snapshot(workspace))
             if case.get("task_type") == "review":
                 (case_dir / "review-context.md").write_text(review_context(workspace), encoding="utf-8")
             prompt = build_prompt(case, mode)
@@ -727,6 +790,8 @@ def main() -> int:
                     "workspace": str(workspace),
                     "fixture_base_commit": baseline,
                     "capture_contract": contract,
+                    "project_input_sha256": original_snapshot,
+                    "input_artifacts": input_artifacts,
                     "events_sha256": hashlib.sha256(events_text.encode("utf-8")).hexdigest(),
                     **delivery,
                     "reference_routing": analyze_reference_reads(events_text, workspace),

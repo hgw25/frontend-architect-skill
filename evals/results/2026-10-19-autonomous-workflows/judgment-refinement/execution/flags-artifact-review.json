@@ -1,0 +1,125 @@
+{
+  "review_kind": "Supplemental artifact reconciliation; not blind scoring or protocol adjudication.",
+  "artifact_root": "verified-repeat/autonomous-live-flags/autonomous-live-flags/candidate/artifacts",
+  "mutations": "Only this review JSON was written; generated artifacts, skill, scripts and scores were not modified.",
+  "protocol_status": {
+    "unchanged": "invalid",
+    "reason": "Original read audit is unknown for the recorded pwd + rg --files | sed + find enumeration command. This limitation is not a code defect and this review does not replace protocol validity."
+  },
+  "checked_contracts": [
+    {
+      "symbol": "FeatureFlagsOptions",
+      "definition": "packages/plugin/src/index.ts:10",
+      "actual": "source: string | URL; expose: readonly string[]",
+      "document": "docs/feature-flags-plugin.md:44",
+      "consumer": "examples/consumer/vite.config.ts:11",
+      "result": "matches"
+    },
+    {
+      "symbol": "featureFlags(options: FeatureFlagsOptions): Plugin",
+      "definition": "packages/plugin/src/index.ts:26",
+      "document": "docs/feature-flags-plugin.md:44",
+      "consumer": "examples/consumer/vite.config.ts:11",
+      "result": "matches"
+    },
+    {
+      "symbol": "normalizeOptions(options: FeatureFlagsOptions): NormalizedOptions",
+      "definition": "packages/plugin/src/index.ts:67",
+      "document": "docs/feature-flags-plugin.md:50",
+      "result": "returns sourcePath and exposedKeys as described; duplicate entries are rejected, so returned list is duplicate-free"
+    },
+    {
+      "symbol": "readFlagsModule({ sourcePath, exposedKeys }: NormalizedOptions): Promise<string>",
+      "definition": "packages/plugin/src/index.ts:119",
+      "document": "docs/feature-flags-plugin.md:51",
+      "caller": "packages/plugin/src/index.ts:36",
+      "result": "read -> parseFlagsJson -> own exposed-key selection -> generated ESM; original source object is not returned"
+    },
+    {
+      "symbol": "normalizeSourcePath / normalizeExposedKeys / parseFlagsJson / errorMessage",
+      "definitions": [
+        "packages/plugin/src/index.ts:78",
+        "packages/plugin/src/index.ts:98",
+        "packages/plugin/src/index.ts:141",
+        "packages/plugin/src/index.ts:156"
+      ],
+      "result": "located supporting helpers; validation/read/parse/missing-key diagnostics match documented responsibilities"
+    },
+    {
+      "symbol": "resolveId / load / configureServer / handleHotUpdate",
+      "definitions": [
+        "packages/plugin/src/index.ts:32",
+        "packages/plugin/src/index.ts:36",
+        "packages/plugin/src/index.ts:44",
+        "packages/plugin/src/index.ts:48"
+      ],
+      "result": "resolved virtual ID, module loading, source watcher registration, matching source invalidation and returning the affected virtual module match the prose"
+    },
+    {
+      "symbol": "FeatureFlagValue and flags",
+      "definition": "packages/plugin/src/virtual.d.ts:1",
+      "actual": "recursive JSON-value union; Readonly<Record<string, FeatureFlagValue>>",
+      "consumers": [
+        "examples/consumer/tsconfig.json",
+        "examples/consumer/src/flags.ts",
+        "examples/consumer/src/main.ts"
+      ],
+      "result": "virtual declaration exposed by package ./virtual and selected in workspace consumer types; actual import and displayed values match"
+    },
+    {
+      "symbol": "package public exports",
+      "definition": "packages/plugin/package.json",
+      "result": "ESM runtime and declaration exports, copied virtual declaration and empty runtime stub match package build/copy script"
+    }
+  ],
+  "diagram_review": {
+    "files": "docs/feature-flags-plugin.md:61 and :80",
+    "result": "Architecture and JSON read/parse/select/serialize flow agree with final code for the ordinary documented path.",
+    "conceptual_label": "watchFile(sourcePath) in the ASCII architecture diagram denotes watching; actual implementation is server.watcher.add(normalized.sourcePath). It is not presented as a separate documented implementation helper and was not counted as a nonexistent callable.",
+    "boundary": "Vite owns HMR transport and browser behavior; plugin invalidates and returns the virtual module. The diagram is conceptual, not an exact hook call stack."
+  },
+  "confirmed_inconsistencies": [],
+  "observed_final_reconciliation": {
+    "events_file": "verified-repeat/autonomous-live-flags/autonomous-live-flags/candidate/events.jsonl",
+    "evidence": [
+      {
+        "event_line": 47,
+        "action": "technical design created before final source write at line 49"
+      },
+      {
+        "event_line": 56,
+        "action": "generator npm run check completed with exit 0"
+      },
+      {
+        "event_line": 58,
+        "action": "git diff --check plus source/declaration/README diff and status after implementation; untracked design is not included by git diff"
+      },
+      {
+        "event_line": 59,
+        "action": "generator explicitly announced final contract reread and verification-status update"
+      },
+      {
+        "event_line": 61,
+        "action": "design document updated after implementation/checks"
+      },
+      {
+        "event_line": 63,
+        "action": "final rg located featureFlags, virtual module, readFlagsModule and handleHotUpdate across plugin source, consumer, README and design; exit 0"
+      }
+    ],
+    "limit": "This demonstrates an actual final source/document/caller search, not merely an announced intention. It does not establish an exhaustive parameter-by-parameter or every-arrow semantic audit."
+  },
+  "existing_runtime_evidence": {
+    "protected_harness_check": 0,
+    "generator_npm_run_check": 0,
+    "host_npm_run_check": 0,
+    "new_runtime_checks_in_this_review": false
+  },
+  "specifically_unverified": [
+    "Browser HMR replacement/visible update: scripts/check-dev.mjs exercises real Vite watcher and SSR module reloading, not a browser client.",
+    "Read failure, malformed JSON, invalid root and invalid options branches: code was read, but the recorded check:diagnostics only executes the missing exposed-key case.",
+    "Explicit compile-failure tests for malformed options and recursive JSON-value consumers: normal workspace typecheck passed; no negative type-test execution was found.",
+    "Full Vite build and TypeScript consumption from the separately installed packed artifact: scripts/check-package.mjs verifies package file presence, runtime import and resolveId/load hook shapes only.",
+    "Other Vite 8 versions, operating systems, symlink/case-sensitive path variants and browser error recovery were not exercised by this capture."
+  ]
+}

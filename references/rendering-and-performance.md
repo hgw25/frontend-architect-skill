@@ -68,6 +68,16 @@ Before changing code for performance, record:
 - the target, tolerance, owner, and release decision;
 - correctness, accessibility, memory, energy, and maintainability constraints.
 
+Capture the unchanged implementation before the first performance edit, using
+the project's existing profiler or benchmark when suitable. If that opportunity
+was missed, reconstruct the original revision/dirty-tree input in an isolated
+copy and run the same scenario there. Two post-edit samples are repeatability
+evidence, not a before/after baseline. Bind samples to the actual code snapshot
+and keep data, actions, runtime, build and relevant preferences comparable.
+An original functional defect may require a still-valid representative path;
+explain that limit rather than silently measuring different journeys. If a
+comparable baseline cannot be obtained, bound the claim to what was measured.
+
 A display's nominal frame interval is approximately `1000 / refreshRate` ms,
 but that is not a universal amount of application CPU time. Scheduling,
 buffering, framework work, system load, and variable refresh rates affect the
@@ -160,6 +170,12 @@ After the change, repeat the same scenario and compare correctness and
 tradeoffs. A lower component render count, smaller payload, or faster pure
 function is only intermediate evidence unless it improves or protects the
 relevant user outcome.
+
+Repeat after a correctness repair that changes measured work. A faster version
+that loses interaction state is not the accepted comparison. State which stage
+the metric establishes: reduced-motion layout counts can support a layout-work
+claim, but do not establish animated frame delivery or input latency. Do not
+substitute a passing functional suite for the performance measurement.
 
 ## Verify on the real runtime
 

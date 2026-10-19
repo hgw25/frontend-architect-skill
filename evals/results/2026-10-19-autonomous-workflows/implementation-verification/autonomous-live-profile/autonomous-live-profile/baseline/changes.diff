@@ -1,0 +1,130 @@
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..acb6d75 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,15 +1,51 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
++type SaveStatus = 'pending' | 'succeeded' | 'failed'
++
+ export function ProfileForm({ profile }: { profile: Profile }) {
+   const [displayName, setDisplayName] = useState(profile.displayName)
+   const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [saveError, setSaveError] = useState(false)
++  const nextSaveId = useRef(0)
++  const latestSaveId = useRef(0)
++  const latestSaveStatus = useRef<SaveStatus | undefined>(undefined)
++  const confirmed = useRef({ saveId: 0, profile })
++
++  function latestSaveFailed() {
++    return latestSaveStatus.current === 'failed'
++  }
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++
++    const saveId = ++nextSaveId.current
++    const submittedName = displayName
++    latestSaveId.current = saveId
++    latestSaveStatus.current = 'pending'
++    setSaveError(false)
++    setVisibleName(submittedName)
++
++    try {
++      const savedProfile = await updateProfile(submittedName)
++      if (saveId > confirmed.current.saveId) {
++        confirmed.current = { saveId, profile: savedProfile }
++      }
++
++      if (saveId === latestSaveId.current) {
++        latestSaveStatus.current = 'succeeded'
++        setVisibleName(savedProfile.displayName)
++      } else if (latestSaveFailed()) {
++        setVisibleName(confirmed.current.profile.displayName)
++      }
++    } catch {
++      if (saveId === latestSaveId.current) {
++        latestSaveStatus.current = 'failed'
++        setVisibleName(confirmed.current.profile.displayName)
++        setSaveError(true)
++      }
++    }
+   }
+ 
+   return (
+@@ -23,6 +59,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
+         />
+       </label>
+       <button>Save</button>
++      {saveError && <p role="alert">Save failed. Please retry.</p>}
+     </form>
+   )
+ }
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..edad608 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -4,6 +4,19 @@ export type Profile = {
+   version: number
+ }
+ 
++function isProfile(value: unknown): value is Profile {
++  if (typeof value !== 'object' || value === null) {
++    return false
++  }
++
++  const profile = value as Record<string, unknown>
++  return (
++    typeof profile.id === 'string' &&
++    typeof profile.displayName === 'string' &&
++    typeof profile.version === 'number'
++  )
++}
++
+ export async function updateProfile(displayName: string): Promise<Profile> {
+   const response = await fetch('/api/profile', {
+     method: 'PATCH',
+@@ -11,5 +24,14 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error(`Profile update failed with status ${response.status}`)
++  }
++
++  const profile: unknown = await response.json()
++  if (!isProfile(profile)) {
++    throw new Error('Profile update returned an invalid response')
++  }
++
++  return profile
+ }
+diff --git a/src/testSetup.ts b/src/testSetup.ts
+new file mode 100644
+index 0000000..384ea29
+--- /dev/null
++++ b/src/testSetup.ts
+@@ -0,0 +1,4 @@
++import { cleanup } from '@testing-library/react'
++import { afterEach } from 'vitest'
++
++afterEach(cleanup)
+diff --git a/vitest.config.ts b/vitest.config.ts
+new file mode 100644
+index 0000000..f2645a0
+--- /dev/null
++++ b/vitest.config.ts
+@@ -0,0 +1,7 @@
++import { defineConfig } from 'vitest/config'
++
++export default defineConfig({
++  test: {
++    setupFiles: ['./src/testSetup.ts'],
++  },
++})

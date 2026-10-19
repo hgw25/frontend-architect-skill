@@ -1,0 +1,746 @@
+diff --git a/README.md b/README.md
+index cbfc76c..0b0f165 100644
+--- a/README.md
++++ b/README.md
+@@ -14,3 +14,5 @@ Board 列表及卡片 ID 是当前视图的公开标记；每张卡片保留 `da
+ 
+ `npm run check` 在真实 Chromium 中检查产品操作，并记录固定数据、视口和操作序列下
+ 的浏览器成本原始数据。保存服务由测试中的 HTTP 替身提供，不能把此结果称为线上服务验收。
++
++实现契约与数据流见 [看板排序技术设计](docs/board-reordering.md)。
+diff --git a/docs/board-reordering.md b/docs/board-reordering.md
+new file mode 100644
+index 0000000..149b4a1
+--- /dev/null
++++ b/docs/board-reordering.md
+@@ -0,0 +1,95 @@
++# Board reordering technical design
++
++## Outcome and contracts
++
++The board has one authoritative in-memory order: the array of stable card IDs. A
++successful button or pointer gesture updates that array and the DOM immediately.
++The existing `saveOrder(ids)` transport remains the server boundary; saves are
++serialized and coalesced so that an acknowledgement for an older snapshot cannot
++replace newer intent. A failed save leaves the visible order intact, exposes an
++alert, and retries the newest unsaved snapshot on request.
++
++Cards keep their DOM identity across moves. This preserves focus and makes the
++same reorder operation usable by buttons and the drag handle. FLIP animation is
++a presentation of the already-committed order, never a second ordering state.
++Rapid input starts from current on-screen geometry; hiding the board or resizing
++cancels owned animations. Reduced-motion users receive the same final order with
++no animation.
++
++## Dependency-ordered implementation
++
++There are three implementation steps:
++
++1. **Stable board view.** Build each card once, retain an ID-to-element map, and
++   move existing nodes for every order change. Complete when button reordering
++   preserves card identity, focus, and `data-card-id` order.
++2. **Continuous interaction.** Route button and pointer-drop intents through one
++   reorder operation. It measures all first rectangles in one read phase, commits
++   order and DOM in one write phase, measures last rectangles, then plays
++   transform-only FLIP animations. An incoming intent samples current visual
++   geometry before replacing animations. Complete when repeated moves remain
++   continuous, dragging produces the same order, and hide/resize/reduced-motion
++   paths settle without running animation work.
++3. **Ordered persistence.** Add a small save coordinator beside the board state.
++   It permits one request at a time, retains only the latest waiting snapshot,
++   and owns saving/success/error/retry feedback. Complete when delayed success,
++   later failure, and retry persist the newest order without changing the view.
++
++`src/app.mjs` owns board order, card/view identity, pointer gesture state,
++animation handles, and the save coordinator because this page is their only
++consumer and lifecycle owner. `src/api.mjs` remains a narrow HTTP adapter.
++
++## Technical architecture
++
++```text
++Native buttons / pointer events
++             |
++             v
++  Board controller (`src/app.mjs`)
++  - order + stable cardNodes
++  - reorderCard(id, destination)
++  - animation handles / cleanup
++             |                    \
++             | DOM node move       \ requestSave(order snapshot)
++             v                      v
++  Semantic `<ol>` view       Save coordinator (`src/app.mjs`)
++  + WAAPI FLIP motion               |
++                                    | saveOrder(ids)
++                                    v
++                              HTTP adapter (`src/api.mjs`)
++                                    |
++                                    v
++                              `/api/order`
++```
++
++## Data flow
++
++```text
++button click or pointer drop
++  -> derive destination from current `order`
++  -> measure current card rectangles
++  -> mutate the sole `order` array and move the existing `<li>`
++  -> measure final rectangles
++  -> if motion allowed: replace owned FLIP animations from current to final
++     else: show final layout immediately
++  -> enqueue a copied order snapshot
++  -> if idle: POST snapshot
++       success + newer snapshot -> POST newer snapshot
++       success + no newer snapshot -> announce Saved
++       failure -> retain newest unsaved snapshot + show alert/Retry
++       retry -> POST retained snapshot -> success announcement or alert again
++```
++
++## Verification and evolution
++
++The browser acceptance suite checks button focus and identity, interrupted
++movement, pointer parity, delayed/out-of-order save conditions, retry, lifecycle
++cleanup, and reduced motion. The fixed interaction cost test records real browser
++layout/style/script counters; batched geometry reads avoid the former
++write-then-layout-read loop.
++
++A realistic follow-up is adding “move to column/index.” It only needs to derive a
++destination index and call the same reorder operation; animation, DOM identity,
++and persistence policy remain unchanged. Multi-client conflict resolution would
++instead require a server version contract and belongs at the transport/save
++boundary, not in animation state.
+diff --git a/src/app.mjs b/src/app.mjs
+index a238c98..1a23873 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,17 +1,235 @@
+ import { cards } from './data.mjs';
+ import { saveOrder } from './api.mjs';
+-const app=document.querySelector('#app');let order=cards.map(c=>c.id),visible=true;
+-function draw(){
+- app.innerHTML='<button id="toggle">'+(visible?'Hide board':'Show board')+'</button><p role="status"></p>';
+- app.querySelector('#toggle').onclick=()=>{visible=!visible;draw();};
+- if(!visible)return;
+- const list=document.createElement('ol');list.setAttribute('aria-label','Board');app.append(list);
+- for(const id of order){const card=cards.find(c=>c.id===id),li=document.createElement('li');li.dataset.cardId=id;
+- li.innerHTML='<h2>'+card.title+'</h2><p>'+card.body+'</p><button>Move up</button><button>Move down</button><button>Move card '+id+'</button>';
+- li.querySelectorAll('button')[0].onclick=()=>move(id,-1);li.querySelectorAll('button')[1].onclick=()=>move(id,1);list.append(li);
+- // The existing layout adjustment reads after each write.
+- li.style.minHeight=(60+(list.getBoundingClientRect().height%5))+'px';
+- }
+-}
+-function move(id,delta){const i=order.indexOf(id),j=i+delta;if(j<0||j>=order.length)return;[order[i],order[j]]=[order[j],order[i]];draw();saveOrder(order).then(()=>app.querySelector('[role=status]').textContent='Saved').catch(()=>{});}
+-draw();
++
++const app = document.querySelector('#app');
++const order = cards.map((card) => card.id);
++const cardNodes = new Map();
++const animations = new Map();
++const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
++
++let boardVisible = true;
++let drag = null;
++let pendingSave = null;
++let failedSave = null;
++let saving = false;
++
++const toggleButton = document.createElement('button');
++toggleButton.id = 'toggle';
++
++const status = document.createElement('p');
++status.setAttribute('role', 'status');
++status.setAttribute('aria-live', 'polite');
++
++const saveError = document.createElement('div');
++saveError.setAttribute('role', 'alert');
++saveError.hidden = true;
++
++const errorMessage = document.createElement('span');
++errorMessage.textContent = 'Save failed. Your latest order is still available to retry. ';
++
++const retryButton = document.createElement('button');
++retryButton.type = 'button';
++retryButton.textContent = 'Retry save';
++
++saveError.append(errorMessage, retryButton);
++
++const list = document.createElement('ol');
++list.setAttribute('aria-label', 'Board');
++
++function createCard(card) {
++  const item = document.createElement('li');
++  item.dataset.cardId = card.id;
++
++  const title = document.createElement('h2');
++  title.textContent = card.title;
++
++  const body = document.createElement('p');
++  body.textContent = card.body;
++
++  const moveUp = document.createElement('button');
++  moveUp.type = 'button';
++  moveUp.textContent = 'Move up';
++  moveUp.addEventListener('click', () => moveBy(card.id, -1));
++
++  const moveDown = document.createElement('button');
++  moveDown.type = 'button';
++  moveDown.textContent = 'Move down';
++  moveDown.addEventListener('click', () => moveBy(card.id, 1));
++
++  const handle = document.createElement('button');
++  handle.type = 'button';
++  handle.className = 'move-handle';
++  handle.textContent = `Move card ${card.id}`;
++  handle.addEventListener('pointerdown', (event) => startDrag(event, card.id));
++  handle.addEventListener('pointerup', finishDrag);
++  handle.addEventListener('pointercancel', cancelDrag);
++
++  item.append(title, body, moveUp, moveDown, handle);
++  cardNodes.set(card.id, item);
++  return item;
++}
++
++function measureCards() {
++  return new Map(order.map((id) => [id, cardNodes.get(id).getBoundingClientRect()]));
++}
++
++function settleAnimations() {
++  for (const animation of animations.values()) animation.cancel();
++  animations.clear();
++}
++
++function animateFrom(firstRects) {
++  if (reduceMotion.matches || !boardVisible) return;
++
++  const lastRects = measureCards();
++  for (const id of order) {
++    const first = firstRects.get(id);
++    const last = lastRects.get(id);
++    const deltaX = first.x - last.x;
++    const deltaY = first.y - last.y;
++    if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) continue;
++
++    const node = cardNodes.get(id);
++    const animation = node.animate(
++      [
++        { transform: `translate(${deltaX}px, ${deltaY}px)` },
++        { transform: 'translate(0, 0)' },
++      ],
++      { duration: 420, easing: 'cubic-bezier(.2, .8, .2, 1)' },
++    );
++    animations.set(id, animation);
++    animation.addEventListener('finish', () => {
++      if (animations.get(id) === animation) animations.delete(id);
++    });
++    animation.addEventListener('cancel', () => {
++      if (animations.get(id) === animation) animations.delete(id);
++    });
++  }
++}
++
++function reorderCard(id, destinationIndex) {
++  const sourceIndex = order.indexOf(id);
++  if (sourceIndex < 0 || destinationIndex < 0 || destinationIndex >= order.length) return;
++  if (sourceIndex === destinationIndex) return;
++
++  // Read the current visual positions before replacing an interrupted transition.
++  const firstRects = measureCards();
++  settleAnimations();
++
++  order.splice(sourceIndex, 1);
++  order.splice(destinationIndex, 0, id);
++
++  const node = cardNodes.get(id);
++  const nextId = order[destinationIndex + 1];
++  const focusedControl = node.contains(document.activeElement) ? document.activeElement : null;
++  list.insertBefore(node, nextId ? cardNodes.get(nextId) : null);
++  focusedControl?.focus({ preventScroll: true });
++
++  animateFrom(firstRects);
++  requestSave([...order]);
++}
++
++function moveBy(id, delta) {
++  reorderCard(id, order.indexOf(id) + delta);
++}
++
++function startDrag(event, id) {
++  if (!event.isPrimary || event.button !== 0) return;
++  drag = { id, pointerId: event.pointerId, handle: event.currentTarget };
++  event.currentTarget.setPointerCapture(event.pointerId);
++  cardNodes.get(id).classList.add('is-dragging');
++}
++
++function finishDrag(event) {
++  if (!drag || drag.pointerId !== event.pointerId) return;
++
++  const { id } = drag;
++  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-card-id]');
++  cancelDrag(event);
++
++  if (!target || target.dataset.cardId === id) return;
++  reorderCard(id, order.indexOf(target.dataset.cardId));
++}
++
++function clearDrag() {
++  if (!drag) return;
++  const { id, handle, pointerId } = drag;
++  if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
++  cardNodes.get(id).classList.remove('is-dragging');
++  drag = null;
++}
++
++function cancelDrag(event) {
++  if (!drag || drag.pointerId !== event.pointerId) return;
++  clearDrag();
++}
++
++function showSaveError() {
++  status.textContent = '';
++  saveError.hidden = false;
++}
++
++function requestSave(snapshot) {
++  pendingSave = snapshot;
++  failedSave = null;
++  saveError.hidden = true;
++  if (!saving) void drainSaves();
++}
++
++async function drainSaves() {
++  if (saving) return;
++  saving = true;
++
++  while (pendingSave) {
++    const snapshot = pendingSave;
++    pendingSave = null;
++    status.textContent = 'Saving';
++
++    try {
++      await saveOrder(snapshot);
++    } catch {
++      failedSave = pendingSave ?? snapshot;
++      pendingSave = null;
++      saving = false;
++      showSaveError();
++      return;
++    }
++  }
++
++  saving = false;
++  status.textContent = 'Saved';
++}
++
++function retrySave() {
++  if (!failedSave || saving) return;
++  pendingSave = failedSave;
++  failedSave = null;
++  saveError.hidden = true;
++  void drainSaves();
++}
++
++function renderVisibility() {
++  toggleButton.textContent = boardVisible ? 'Hide board' : 'Show board';
++  if (boardVisible) {
++    app.append(list);
++  } else {
++    clearDrag();
++    settleAnimations();
++    list.remove();
++  }
++}
++
++toggleButton.addEventListener('click', () => {
++  boardVisible = !boardVisible;
++  renderVisibility();
++});
++retryButton.addEventListener('click', retrySave);
++window.addEventListener('resize', settleAnimations);
++window.addEventListener('scroll', settleAnimations, { passive: true });
++reduceMotion.addEventListener('change', (event) => {
++  if (event.matches) settleAnimations();
++});
++
++for (const card of cards) list.append(createCard(card));
++app.append(toggleButton, status, saveError);
++renderVisibility();
+diff --git a/src/style.css b/src/style.css
+index e8601ca..a3b49e9 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -1 +1,45 @@
+-body{font:16px system-ui;margin:1rem}ol{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}li{border:1px solid #777;padding:1rem;background:#fafafa}button{margin:.2rem;min-height:2rem}p{overflow-wrap:anywhere}
++body {
++  margin: 1rem;
++  font: 16px system-ui;
++}
++
++ol {
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: 1rem;
++  padding: 0;
++  list-style: none;
++}
++
++li {
++  padding: 1rem;
++  border: 1px solid #777;
++  background: #fafafa;
++}
++
++.is-dragging {
++  outline: 2px solid #2463eb;
++}
++
++.move-handle {
++  cursor: grab;
++  touch-action: none;
++}
++
++.is-dragging .move-handle {
++  cursor: grabbing;
++}
++
++button {
++  min-height: 2rem;
++  margin: 0.2rem;
++}
++
++p {
++  overflow-wrap: anywhere;
++}
++
++[role='alert'] {
++  margin: 0.5rem 0;
++  color: #a40000;
++}
+diff --git a/test-results/.last-run.json b/test-results/.last-run.json
+new file mode 100644
+index 0000000..cbcc1fb
+--- /dev/null
++++ b/test-results/.last-run.json
+@@ -0,0 +1,4 @@
++{
++  "status": "passed",
++  "failedTests": []
++}
+\ No newline at end of file
+diff --git a/test-results/results.json b/test-results/results.json
+new file mode 100644
+index 0000000..080c2b0
+--- /dev/null
++++ b/test-results/results.json
+@@ -0,0 +1,311 @@
++{
++  "config": {
++    "argv": [
++      "/Users/heguangwei/.nvm/versions/node/v22.22.2/bin/node",
++      "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-autonomous-live-board-candidate-a980tcfn/node_modules/.bin/playwright",
++      "test"
++    ],
++    "configFile": "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-autonomous-live-board-candidate-a980tcfn/playwright.config.mjs",
++    "rootDir": "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-autonomous-live-board-candidate-a980tcfn/tests",
++    "failOnFlakyTests": false,
++    "forbidOnly": false,
++    "fullyParallel": false,
++    "globalSetup": null,
++    "globalTeardown": null,
++    "globalTimeout": 0,
++    "grep": {},
++    "grepInvert": null,
++    "maxFailures": 0,
++    "metadata": {
++      "actualWorkers": 1
++    },
++    "preserveOutput": "always",
++    "projects": [
++      {
++        "outputDir": "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-autonomous-live-board-candidate-a980tcfn/test-results",
++        "repeatEach": 1,
++        "retries": 0,
++        "metadata": {
++          "actualWorkers": 1
++        },
++        "id": "",
++        "name": "",
++        "testDir": "/private/var/folders/_6/gpmy4q4166xbmb7153p4cqp80000gn/T/frontend-architect-autonomous-live-board-candidate-a980tcfn/tests",
++        "testIgnore": [],
++        "testMatch": [
++          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
++        ],
++        "timeout": 20000
++      }
++    ],
++    "quiet": false,
++    "reporter": [
++      [
++        "list",
++        null
++      ],
++      [
++        "json",
++        {
++          "outputFile": "test-results/results.json"
++        }
++      ]
++    ],
++    "reportSlowTests": {
++      "max": 5,
++      "threshold": 300000
++    },
++    "shard": null,
++    "tags": [],
++    "updateSnapshots": "missing",
++    "updateSourceMethod": "patch",
++    "version": "1.62.1",
++    "workers": 1,
++    "webServer": {
++      "command": "node scripts/serve.mjs 65473",
++      "port": 65473,
++      "reuseExistingServer": false
++    }
++  },
++  "suites": [
++    {
++      "title": "board.spec.mjs",
++      "file": "board.spec.mjs",
++      "column": 0,
++      "line": 0,
++      "specs": [
++        {
++          "title": "button reorder preserves identity, focus, intermediate movement and repeated interaction",
++          "ok": true,
++          "tags": [],
++          "tests": [
++            {
++              "timeout": 20000,
++              "annotations": [],
++              "expectedStatus": "passed",
++              "projectId": "",
++              "projectName": "",
++              "results": [
++                {
++                  "workerIndex": 0,
++                  "parallelIndex": 0,
++                  "status": "passed",
++                  "duration": 1280,
++                  "errors": [],
++                  "stdout": [],
++                  "stderr": [],
++                  "retry": 0,
++                  "startTime": "2026-10-19T04:43:19.954Z",
++                  "annotations": [],
++                  "attachments": []
++                }
++              ],
++              "status": "expected"
++            }
++          ],
++          "id": "e7b40a4b556645b12feb-75d185e0b05797391e1b",
++          "file": "board.spec.mjs",
++          "line": 6,
++          "column": 1
++        },
++        {
++          "title": "pointer drag and buttons produce the same business order",
++          "ok": true,
++          "tags": [],
++          "tests": [
++            {
++              "timeout": 20000,
++              "annotations": [],
++              "expectedStatus": "passed",
++              "projectId": "",
++              "projectName": "",
++              "results": [
++                {
++                  "workerIndex": 0,
++                  "parallelIndex": 0,
++                  "status": "passed",
++                  "duration": 185,
++                  "errors": [],
++                  "stdout": [],
++                  "stderr": [],
++                  "retry": 0,
++                  "startTime": "2026-10-19T04:43:21.315Z",
++                  "annotations": [],
++                  "attachments": []
++                }
++              ],
++              "status": "expected"
++            }
++          ],
++          "id": "e7b40a4b556645b12feb-dda48b5fa344ba628a17",
++          "file": "board.spec.mjs",
++          "line": 24,
++          "column": 1
++        },
++        {
++          "title": "new intent survives save ordering, rejection and retry",
++          "ok": true,
++          "tags": [],
++          "tests": [
++            {
++              "timeout": 20000,
++              "annotations": [],
++              "expectedStatus": "passed",
++              "projectId": "",
++              "projectName": "",
++              "results": [
++                {
++                  "workerIndex": 0,
++                  "parallelIndex": 0,
++                  "status": "passed",
++                  "duration": 1088,
++                  "errors": [],
++                  "stdout": [],
++                  "stderr": [],
++                  "retry": 0,
++                  "startTime": "2026-10-19T04:43:21.504Z",
++                  "annotations": [],
++                  "attachments": []
++                }
++              ],
++              "status": "expected"
++            }
++          ],
++          "id": "e7b40a4b556645b12feb-963c078c1f9e6d650286",
++          "file": "board.spec.mjs",
++          "line": 30,
++          "column": 1
++        },
++        {
++          "title": "scroll, resize and disposal retain a settled board with no ghost work",
++          "ok": true,
++          "tags": [],
++          "tests": [
++            {
++              "timeout": 20000,
++              "annotations": [],
++              "expectedStatus": "passed",
++              "projectId": "",
++              "projectName": "",
++              "results": [
++                {
++                  "workerIndex": 0,
++                  "parallelIndex": 0,
++                  "status": "passed",
++                  "duration": 1382,
++                  "errors": [],
++                  "stdout": [],
++                  "stderr": [],
++                  "retry": 0,
++                  "startTime": "2026-10-19T04:43:22.595Z",
++                  "annotations": [],
++                  "attachments": []
++                }
++              ],
++              "status": "expected"
++            }
++          ],
++          "id": "e7b40a4b556645b12feb-49552c7dc59afdf2cd3a",
++          "file": "board.spec.mjs",
++          "line": 43,
++          "column": 1
++        },
++        {
++          "title": "reduced motion gives the correct static result",
++          "ok": true,
++          "tags": [],
++          "tests": [
++            {
++              "timeout": 20000,
++              "annotations": [],
++              "expectedStatus": "passed",
++              "projectId": "",
++              "projectName": "",
++              "results": [
++                {
++                  "workerIndex": 0,
++                  "parallelIndex": 0,
++                  "status": "passed",
++                  "duration": 118,
++                  "errors": [],
++                  "stdout": [],
++                  "stderr": [],
++                  "retry": 0,
++                  "startTime": "2026-10-19T04:43:23.981Z",
++                  "annotations": [],
++                  "attachments": []
++                }
++              ],
++              "status": "expected"
++            }
++          ],
++          "id": "e7b40a4b556645b12feb-1b7bcf8aab3d62a9b357",
++          "file": "board.spec.mjs",
++          "line": 52,
++          "column": 1
++        }
++      ]
++    },
++    {
++      "title": "cost.spec.mjs",
++      "file": "cost.spec.mjs",
++      "column": 0,
++      "line": 0,
++      "specs": [
++        {
++          "title": "record actual browser work for the fixed board interaction",
++          "ok": true,
++          "tags": [],
++          "tests": [
++            {
++              "timeout": 20000,
++              "annotations": [],
++              "expectedStatus": "passed",
++              "projectId": "",
++              "projectName": "",
++              "results": [
++                {
++                  "workerIndex": 0,
++                  "parallelIndex": 0,
++                  "status": "passed",
++                  "duration": 226,
++                  "errors": [],
++                  "stdout": [
++                    {
++                      "text": "BROWSER_COST {\"browser\":\"151.0.7922.34\",\"cards\":80,\"viewport\":{\"width\":1100,\"height\":760},\"operations\":8,\"reducedMotion\":true,\"wallMilliseconds\":149.35699999999997,\"LayoutCount\":23,\"LayoutDuration\":0.001357,\"RecalcStyleCount\":56,\"RecalcStyleDuration\":0.000583,\"ScriptDuration\":0.002856,\"TaskDuration\":0.055005}\n"
++                    }
++                  ],
++                  "stderr": [],
++                  "retry": 0,
++                  "startTime": "2026-10-19T04:43:24.106Z",
++                  "annotations": [],
++                  "attachments": [
++                    {
++                      "name": "browser-cost.json",
++                      "contentType": "application/json",
++                      "body": "ewogICJicm93c2VyIjogIjE1MS4wLjc5MjIuMzQiLAogICJjYXJkcyI6IDgwLAogICJ2aWV3cG9ydCI6IHsKICAgICJ3aWR0aCI6IDExMDAsCiAgICAiaGVpZ2h0IjogNzYwCiAgfSwKICAib3BlcmF0aW9ucyI6IDgsCiAgInJlZHVjZWRNb3Rpb24iOiB0cnVlLAogICJ3YWxsTWlsbGlzZWNvbmRzIjogMTQ5LjM1Njk5OTk5OTk5OTk3LAogICJMYXlvdXRDb3VudCI6IDIzLAogICJMYXlvdXREdXJhdGlvbiI6IDAuMDAxMzU3LAogICJSZWNhbGNTdHlsZUNvdW50IjogNTYsCiAgIlJlY2FsY1N0eWxlRHVyYXRpb24iOiAwLjAwMDU4MywKICAiU2NyaXB0RHVyYXRpb24iOiAwLjAwMjg1NiwKICAiVGFza0R1cmF0aW9uIjogMC4wNTUwMDUKfQ=="
++                    }
++                  ]
++                }
++              ],
++              "status": "expected"
++            }
++          ],
++          "id": "dd22b8b735ea7b7c34cd-1a55a7d8544f6ad7f14a",
++          "file": "cost.spec.mjs",
++          "line": 2,
++          "column": 1
++        }
++      ]
++    }
++  ],
++  "errors": [],
++  "stats": {
++    "startTime": "2026-10-19T04:43:19.595Z",
++    "duration": 4767.076,
++    "expected": 6,
++    "skipped": 0,
++    "unexpected": 0,
++    "flaky": 0
++  }
++}
+\ No newline at end of file

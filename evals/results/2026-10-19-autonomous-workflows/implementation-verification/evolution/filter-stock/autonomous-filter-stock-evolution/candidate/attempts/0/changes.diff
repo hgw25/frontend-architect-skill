@@ -1,0 +1,274 @@
+diff --git a/README.md b/README.md
+index 155efbb..dd4ee40 100644
+--- a/README.md
++++ b/README.md
+@@ -6,9 +6,10 @@ This browser application uses native ES modules. `ui.mjs` contains the project's
+ labelled controls and buttons, and `query.mjs` provides the existing asynchronous
+ data access. Use the same public controls, data and URLs.
+ 
+-Products have keyword, category and publication status. Users edit a draft and
+-press Apply. Reset restores published/all categories/empty keyword. Orders have
+-keyword, date range and order status; a valid edit takes effect immediately.
++Products have keyword, category, publication status and stock availability. Users
++edit a draft and press Apply. Reset restores published/all categories/all stock/
++empty keyword. Orders have keyword, date range and order status; a valid edit takes
++effect immediately.
+ Reset restores all statuses and the 30 calendar days ending on the project date
+ from `data.mjs`. Product and order status values describe different concepts.
+ 
+diff --git a/docs/filtering-design.md b/docs/filtering-design.md
+index d0fda91..f526103 100644
+--- a/docs/filtering-design.md
++++ b/docs/filtering-design.md
+@@ -3,17 +3,17 @@
+ ## Outcome and contracts
+ 
+ The application has two URL-addressable pages. Products expose keyword, category,
+-and publication-status filters as an editable draft that is published only by
+-Apply. Orders expose keyword, date range, and order-status filters; every valid
+-edit is published immediately. Reset publishes each page's documented defaults.
++publication-status, and stock-availability filters as an editable draft that is
++published only by Apply. Orders expose keyword, date range, and order-status
++filters; every valid edit is published immediately. Reset publishes each page's documented defaults.
+ Unknown query parameters are preserved, and `popstate` rebuilds both controls and
+ results from the URL.
+ 
+-The URL stores only applied values (`p_q`, `p_category`, `p_status`, `o_q`,
+-`o_from`, `o_to`, `o_status`). Parsers accept only known enum values and valid ISO
+-calendar dates, falling back per field to page defaults. Serializers omit default
++The URL stores only applied values (`p_q`, `p_category`, `p_status`, `p_stock`,
++`o_q`, `o_from`, `o_to`, `o_status`). Parsers accept only known enum values and
++valid ISO calendar dates, falling back per field to page defaults. Serializers omit default
+ values so links remain concise. Product defaults are empty keyword, all categories,
+-and published status. Order defaults are empty keyword, all statuses, and the 30
++published status, and all stock. Order defaults are empty keyword, all statuses, and the 30
+ calendar days ending on `today` from `data.mjs`.
+ 
+ Order date edits remain in the controls while either value is incomplete or the
+@@ -36,8 +36,8 @@ flowchart TD
+   App --> Codec[filter-state.mjs parse and serialize]
+   Codec --> Browser
+   App --> Runner[latest-query.mjs query runner]
+-  Runner --> Query[query.mjs data access]
+-  Query --> Data[data.mjs fixtures]
++  Runner --> Query[query.mjs data access and stock composition]
++  Query --> Data[data.mjs products and available product IDs]
+   Runner --> View[status, alert, and Results list]
+ ```
+ 
+@@ -89,7 +89,8 @@ sequenceDiagram
+ 3. Compose the product page with native controls and form submission. Draft edits
+    have no external effect; Apply pushes the complete draft and queries; Reset
+    publishes product defaults. Acceptance: Enter follows native submit behavior,
+-   category/status rules stay product-specific, and back/forward restores drafts.
++   category/status/stock rules stay product-specific, stock membership composes
++   with the other product predicates, and back/forward restores drafts.
+ 4. Compose the order page with native controls and input/change publication.
+    Validate both dates as a single range before URL/query effects; Reset publishes
+    the documented range. Acceptance: invalid drafts remain editable with an alert
+@@ -98,18 +99,17 @@ sequenceDiagram
+    the container. Acceptance: native keyboard behavior remains intact and the page
+    has no horizontal overflow at 360 px with 200% text and long labels.
+ 6. Run the browser acceptance suite and inspect changed callers. A realistic next
+-   change—adding a new enum option—should require updating only its options/default
+-   and the relevant page codec/control, without changing request-ordering policy.
++   change—adding a stock state—should require updating the stock options/codec and
++   product query predicate, without changing URL history or request-ordering policy.
+ 
+ ## Verification record
+ 
+-- `node --test test/*.test.mjs`: 7 tests passed, covering defaults, URL codecs,
+-  calendar/range validation, and latest-result publication across reordered
+-  success and failure.
++- `node --test test/*.test.mjs`: 10 tests passed, covering defaults, URL codecs,
++  stock membership composed with existing product predicates, calendar/range
++  validation, and latest-result publication across reordered success and failure.
+ - `node --check` passed for all source modules.
+ - `git diff --check` passed.
+ - `npm run check` was attempted after `npm ci --ignore-scripts`; the evaluation
+   sandbox rejected the Playwright server's `127.0.0.1` listen call with `EPERM`,
+-  before any browser test ran. A direct Chromium launch was also rejected by the
+-  sandbox's macOS Mach-port policy, so browser layout and interaction acceptance
+-  remain to be run in an environment that permits the supplied harness.
++  before any browser test ran. Browser layout and interaction acceptance remain
++  to be run in an environment that permits the supplied harness.
+diff --git a/src/app.mjs b/src/app.mjs
+index d868bf4..fbcaa34 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -55,6 +55,11 @@ function setupProductsPage(root) {
+     ['draft', 'Draft'],
+     ['', 'All statuses'],
+   ]);
++  const stock = select([
++    ['', 'All'],
++    ['in', 'In stock'],
++    ['out', 'Out of stock'],
++  ]);
+   const results = createResultsView();
+   const runQuery = createLatestQueryRunner(queryProducts, results);
+ 
+@@ -62,6 +67,7 @@ function setupProductsPage(root) {
+     field('Product keyword', keyword),
+     field('Product category', category),
+     field('Product status', status),
++    field('Product stock', stock),
+     button('Apply', undefined, 'submit'),
+     button('Reset', () => {
+       setProductDraft(productDefaults);
+@@ -79,10 +85,16 @@ function setupProductsPage(root) {
+     keyword.value = filters.q;
+     category.value = filters.category;
+     status.value = filters.status;
++    stock.value = filters.stock;
+   }
+ 
+   function readProductDraft() {
+-    return { q: keyword.value, category: category.value, status: status.value };
++    return {
++      q: keyword.value,
++      category: category.value,
++      status: status.value,
++      stock: stock.value,
++    };
+   }
+ 
+   function applyProductDraft() {
+diff --git a/src/filter-state.mjs b/src/filter-state.mjs
+index 13edc17..dfcc80f 100644
+--- a/src/filter-state.mjs
++++ b/src/filter-state.mjs
+@@ -1,14 +1,20 @@
+ import { today } from './data.mjs';
+ 
+-export const PRODUCT_KEYS = ['p_q', 'p_category', 'p_status'];
++export const PRODUCT_KEYS = ['p_q', 'p_category', 'p_status', 'p_stock'];
+ export const ORDER_KEYS = ['o_q', 'o_from', 'o_to', 'o_status'];
+ export const ALL_FILTER_KEYS = [...PRODUCT_KEYS, ...ORDER_KEYS];
+ 
+ const PRODUCT_CATEGORIES = new Set(['wear', 'food', 'home']);
+ const PRODUCT_STATUSES = new Set(['', 'published', 'draft']);
++const PRODUCT_STOCK = new Set(['', 'in', 'out']);
+ const ORDER_STATUSES = new Set(['', 'new', 'paid']);
+ 
+-export const productDefaults = Object.freeze({ q: '', category: '', status: 'published' });
++export const productDefaults = Object.freeze({
++  q: '',
++  category: '',
++  status: 'published',
++  stock: '',
++});
+ export const orderDefaults = Object.freeze({
+   q: '',
+   from: addUtcDays(today, -29),
+@@ -19,10 +25,12 @@ export const orderDefaults = Object.freeze({
+ export function parseProductFilters(params) {
+   const category = params.get('p_category') ?? productDefaults.category;
+   const status = params.has('p_status') ? params.get('p_status') : productDefaults.status;
++  const stock = params.get('p_stock') ?? productDefaults.stock;
+   return {
+     q: params.get('p_q') ?? productDefaults.q,
+     category: PRODUCT_CATEGORIES.has(category) ? category : productDefaults.category,
+     status: PRODUCT_STATUSES.has(status) ? status : productDefaults.status,
++    stock: PRODUCT_STOCK.has(stock) ? stock : productDefaults.stock,
+   };
+ }
+ 
+@@ -31,6 +39,7 @@ export function serializeProductFilters(filters) {
+     ['p_q', filters.q || null],
+     ['p_category', filters.category || null],
+     ['p_status', filters.status === productDefaults.status ? null : filters.status],
++    ['p_stock', filters.stock || null],
+   ]);
+ }
+ 
+diff --git a/src/query.mjs b/src/query.mjs
+index 677edd8..80c2d04 100644
+--- a/src/query.mjs
++++ b/src/query.mjs
+@@ -1,6 +1,18 @@
+-import { products, orders } from './data.mjs';
++import { products, orders, availableProductIds } from './data.mjs';
++
++const availableProducts = new Set(availableProductIds);
++
+ function wait(rows, query) {
+  return new Promise((resolve,reject)=>setTimeout(()=>query.q==='error'?reject(Error('Query unavailable')):resolve({rows,count:rows.length}),query.q==='Cap'?250:15));
+ }
+-export function queryProducts(f) {return wait(products.filter(row=>(!f.q||row.name.toLowerCase().includes(f.q.toLowerCase()))&&(!f.category||row.category===f.category)&&(!f.status||row.status===f.status)),f);}
++
++export function queryProducts(filters) {
++ return wait(products.filter(product => (
++  (!filters.q || product.name.toLowerCase().includes(filters.q.toLowerCase()))
++  && (!filters.category || product.category === filters.category)
++  && (!filters.status || product.status === filters.status)
++  && (!filters.stock || (filters.stock === 'in') === availableProducts.has(product.id))
++ )), filters);
++}
++
+ export function queryOrders(f) {return wait(orders.filter(row=>(!f.q||row.name.toLowerCase().includes(f.q.toLowerCase()))&&(!f.status||row.status===f.status)&&row.date>=f.from&&row.date<=f.to),f);}
+diff --git a/test/filter-state.test.mjs b/test/filter-state.test.mjs
+index 34a9b84..06b82c5 100644
+--- a/test/filter-state.test.mjs
++++ b/test/filter-state.test.mjs
+@@ -20,7 +20,7 @@ test('product URL state distinguishes its published default from all statuses',
+ test('product URL state preserves valid values and rejects unknown enums', () => {
+   assert.deepEqual(
+     parseProductFilters(new URLSearchParams('p_q=Tea&p_category=food&p_status=draft')),
+-    { q: 'Tea', category: 'food', status: 'draft' },
++    { q: 'Tea', category: 'food', status: 'draft', stock: '' },
+   );
+   assert.deepEqual(
+     parseProductFilters(new URLSearchParams('p_category=unknown&p_status=unknown')),
+diff --git a/test/product-stock-query.test.mjs b/test/product-stock-query.test.mjs
+new file mode 100644
+index 0000000..1c47f57
+--- /dev/null
++++ b/test/product-stock-query.test.mjs
+@@ -0,0 +1,19 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { queryProducts } from '../src/query.mjs';
++
++const publishedProducts = { q: '', category: '', status: 'published' };
++
++test('product query composes stock membership with existing filters', async () => {
++  const inStock = await queryProducts({ ...publishedProducts, stock: 'in' });
++  const outOfStock = await queryProducts({ ...publishedProducts, stock: 'out' });
++  const foodInStock = await queryProducts({
++    ...publishedProducts,
++    category: 'food',
++    stock: 'in',
++  });
++
++  assert.deepEqual(inStock.rows.map(product => product.id), ['p1']);
++  assert.deepEqual(outOfStock.rows.map(product => product.id), ['p2', 'p4']);
++  assert.deepEqual(foodInStock.rows, []);
++});
+diff --git a/test/product-stock-state.test.mjs b/test/product-stock-state.test.mjs
+new file mode 100644
+index 0000000..2e82669
+--- /dev/null
++++ b/test/product-stock-state.test.mjs
+@@ -0,0 +1,21 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  PRODUCT_KEYS,
++  productDefaults,
++  parseProductFilters,
++  serializeProductFilters,
++} from '../src/filter-state.mjs';
++
++test('product stock defaults to all and is an owned URL field', () => {
++  assert.equal(productDefaults.stock, '');
++  assert.ok(PRODUCT_KEYS.includes('p_stock'));
++  assert.equal(serializeProductFilters(productDefaults).get('p_stock'), null);
++});
++
++test('product stock URL state accepts known values and rejects unknown values', () => {
++  assert.equal(parseProductFilters(new URLSearchParams('p_stock=in')).stock, 'in');
++  assert.equal(parseProductFilters(new URLSearchParams('p_stock=out')).stock, 'out');
++  assert.equal(parseProductFilters(new URLSearchParams('p_stock=unknown')).stock, '');
++  assert.equal(serializeProductFilters({ ...productDefaults, stock: 'in' }).get('p_stock'), 'in');
++});

@@ -1,0 +1,69 @@
+diff --git a/src/export-steps.mjs b/src/export-steps.mjs
+index 06dcb55..71a2d5e 100644
+--- a/src/export-steps.mjs
++++ b/src/export-steps.mjs
+@@ -1,24 +1,15 @@
+-export function begin(rows, write) {
+-  return { rows, write, decision: undefined, payload: undefined };
+-}
++export async function exportSelection(rows, write) {
++  if (rows.length === 0) return { kind: 'empty' };
+ 
+-export function classify(context) {
+-  const blocked = context.rows.filter((row) => row.status !== 'ready');
+-  context.decision = context.rows.length === 0
+-    ? { kind: 'empty' }
+-    : blocked.length
+-      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }
+-      : { kind: 'ready', ids: context.rows.map((row) => row.id) };
+-}
++  const blockedIds = rows
++    .filter((row) => row.status !== 'ready')
++    .map((row) => row.id);
+ 
+-export function encode(context) {
+-  if (context.decision.kind === 'ready') {
+-    context.payload = { schema: 1, document_ids: context.decision.ids };
++  if (blockedIds.length > 0) {
++    return { kind: 'blocked', ids: blockedIds };
+   }
+-}
+ 
+-export async function dispatch(context) {
+-  if (context.decision.kind !== 'ready') return context.decision;
+-  await context.write(context.payload);
+-  return { kind: 'sent', ids: context.decision.ids };
++  const ids = rows.map((row) => row.id);
++  await write({ schema: 1, document_ids: ids });
++  return { kind: 'sent', ids };
+ }
+diff --git a/src/keyboard.mjs b/src/keyboard.mjs
+index c04db7c..0db4b63 100644
+--- a/src/keyboard.mjs
++++ b/src/keyboard.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-steps.mjs';
+ 
+ export async function handleKeyboardExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++  return exportSelection(rows, write);
+ }
+diff --git a/src/toolbar.mjs b/src/toolbar.mjs
+index 4ee21aa..9fd844d 100644
+--- a/src/toolbar.mjs
++++ b/src/toolbar.mjs
+@@ -1,8 +1,5 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
++import { exportSelection } from './export-steps.mjs';
+ 
+ export async function handleToolbarExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
++  return exportSelection(rows, write);
+ }

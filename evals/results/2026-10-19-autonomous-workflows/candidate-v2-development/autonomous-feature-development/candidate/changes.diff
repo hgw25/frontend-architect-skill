@@ -1,0 +1,160 @@
+diff --git a/README.md b/README.md
+index 04a9827..13470a4 100644
+--- a/README.md
++++ b/README.md
+@@ -6,9 +6,14 @@ This is an existing frontend form submission capability. Its public async API is
+ Fields have unique string names, optional boolean disabled/required and an optional
+ sync or async `validate(value, values)` returning a string error or undefined.
+ Disabled fields are neither validated nor submitted. Unknown values are omitted.
++Fields may also define a synchronous `enabledWhen(values)` predicate. It runs once
++per submission for each non-disabled field; a falsy result makes the field inactive,
++so it is neither validated nor submitted. Conditions, validators and payload
++construction share a shallow snapshot of the values captured when submission starts.
+ Required emptiness is undefined, null or the empty string; zero, false, whitespace
+ and empty arrays are valid. Required errors are `Required` and skip that field's
+ custom validator. Custom errors retain their text. Await validation before sending
+-once; return `{ errors }` without sending on validation failure. Propagate validator
+-and transport rejections. Preserve own keys such as `__proto__` and do not mutate
+-fields or values. The existing implementation satisfies these original contracts.
++once; return `{ errors }` without sending on validation failure. Propagate validator,
++condition, and transport failures. Preserve own keys such as `__proto__` and do not
++mutate fields or values. The design is recorded in
++[`docs/conditional-fields.md`](docs/conditional-fields.md).
+diff --git a/docs/conditional-fields.md b/docs/conditional-fields.md
+new file mode 100644
+index 0000000..df65e4d
+--- /dev/null
++++ b/docs/conditional-fields.md
+@@ -0,0 +1,99 @@
++# Conditional field submission design
++
++## Requirement and contract
++
++`processForm(fields, values, send)` supports fields whose participation depends on
++the values captured when a submission starts. A field may provide the synchronous
++predicate `enabledWhen(valuesSnapshot)`. A non-disabled field is active when it has
++no predicate or its predicate returns a truthy value.
++
++Active fields retain the existing required/custom-validation and payload rules.
++Inactive fields are neither validated nor submitted. Static `disabled` takes
++precedence and prevents the predicate from running. Each applicable predicate runs
++exactly once per submission. Predicate errors, like validator and transport errors,
++propagate to the caller. The function does not mutate the caller's fields or values.
++
++All decisions in one submission use one shallow, top-level snapshot of `values`.
++This keeps eligibility, validation, and the payload internally consistent if the
++caller changes the original values while asynchronous validation is pending. A
++shallow snapshot matches the form's top-level field-name contract; nested value
++objects retain their existing identities.
++
++## Implementation sequence
++
++There are two dependency-ordered increments:
++
++1. In `src/process-form.js`, capture the values snapshot and derive the active field
++   set by applying `disabled` and `enabledWhen`. Reuse that set and snapshot for
++   required checks, custom validators, and payload construction. Complete when
++   inactive predicates/validators cannot affect submission, predicates run once,
++   and mid-flight changes to the original values do not change the result.
++2. Expose the conditional field contract in `README.md` and run the complete Node
++   test suite. Complete when original form behavior and conditional branches pass
++   together, including errors and prototype-like field names.
++
++## Code contracts and ownership
++
++- `processForm(fields, values, send): Promise<unknown>` remains the sole public
++  operation and owns the submission snapshot, field eligibility, validation order,
++  error collection, and the single transport call.
++- A field's optional `enabledWhen(valuesSnapshot): boolean` owns only its domain
++  condition. It is called by `processForm` after the static disabled check and
++  before validation.
++- Existing `validate(value, valuesSnapshot)` callbacks and `send(payload)` retain
++  their contracts. `send` is called once only when all active fields validate.
++
++## Technical architecture
++
++```text
++Caller
++  | fields, current values, send
++  v
++processForm                         Field callbacks
++  |-- owns top-level snapshot --------> enabledWhen(snapshot)
++  |-- owns active-field set ----------> validate(value, snapshot)
++  |-- owns errors/payload
++  `-----------------------------------> send(payload)
++                                           |
++                                           v
++                                      transport result
++```
++
++Callbacks are dependencies supplied by the caller. They cannot access the later
++transport step except through the values and result contracts above.
++
++## Data flow
++
++```text
++fields + values
++  -> copy values -> valuesSnapshot
++  -> for each field
++       disabled? ---- yes -> inactive (predicate is not called)
++       enabledWhen? - yes -> call once -> falsy -> inactive
++                              |
++                            truthy
++                              v
++                            active
++  -> validate each active field against valuesSnapshot
++       | error text -> collect -> return { errors }
++       | thrown/rejected error ----------> reject unchanged
++       v
++     no errors
++  -> build payload from active names + valuesSnapshot
++  -> send(payload) -> return/await its result
++       `-- thrown/rejected transport error -> reject unchanged
++```
++
++## Verification and evolution
++
++The repository's original tests cover required values, custom validation, mutation
++safety, transport behavior, and special property names. Conditional tests cover
++inactive and active branches, once-per-submission evaluation, disabled precedence,
++snapshot consistency, propagated failures, and special names. `npm run check` is
++the decisive combined check. Both increments are implemented; on 2026-10-19 that
++command passed all 13 tests under Node's test runner.
++
++A realistic follow-up is adding another predicate based on multiple fields. It only
++adds a field-local `enabledWhen` function; the submission pipeline and callback
++contract do not change. Asynchronous conditions would be a different lifecycle
++contract and should be designed explicitly rather than being accepted accidentally.
+diff --git a/src/process-form.js b/src/process-form.js
+index 5b23b0d..9733e80 100644
+--- a/src/process-form.js
++++ b/src/process-form.js
+@@ -1,18 +1,22 @@
+ /** Existing form submission entry point. */
+ export async function processForm(fields, values, send) {
+-  const eligible = fields.filter(field => !field.disabled);
++  const valuesSnapshot = { ...values };
++  const activeFields = fields.filter(field =>
++    !field.disabled && (!field.enabledWhen || field.enabledWhen(valuesSnapshot)));
+   const errors = {};
+-  for (const field of eligible) {
+-    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
++  for (const field of activeFields) {
++    const value = Object.hasOwn(valuesSnapshot, field.name)
++      ? valuesSnapshot[field.name]
++      : undefined;
+     let error;
+     if (field.required && (value === undefined || value === null || value === '')) {
+       error = 'Required';
+     } else if (field.validate) {
+-      error = await field.validate(value, values);
++      error = await field.validate(value, valuesSnapshot);
+     }
+     if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });
+   }
+   if (Object.keys(errors).length) return { errors };
+-  return send(Object.fromEntries(eligible.map(field => [field.name,
+-    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));
++  return send(Object.fromEntries(activeFields.map(field => [field.name,
++    Object.hasOwn(valuesSnapshot, field.name) ? valuesSnapshot[field.name] : undefined])));
+ }

@@ -1,0 +1,269 @@
+# 看板卡片排序技术设计
+
+## 1. 结论与边界
+
+采用“单一乐观顺序 + 统一排序命令 + 可中断 FLIP + 串行合并保存”的方案：
+
+- `desiredIds` 是页面当前唯一的业务顺序，拖动和上移/下移都通过同一个纯函数修改它；React 按该顺序和稳定的 `card.id` 渲染。
+- FLIP 只保存元素几何和 Web Animations `Animation` 句柄。它不能改写或回滚 `desiredIds`，失败时直接清理视觉效果，DOM 仍是正确终态。
+- 每次排序先立即提交 React 状态，不等待动画或网络。新操作到来时，从卡片当前屏幕位置重定向到新位置。
+- `boardApi.saveOrder(ids)` 只有一个调用协调器：同一时刻至多一个请求；请求期间的多次排序合并成最后一个待保存快照。
+- 每张卡继续提供原生 `Button` 上移/下移；拖动不是完成排序的唯一方式。焦点按 `card.id + action` 保留在同一卡的控件上。
+
+这是设计交付，不包含实现。工作区没有真实应用文件、包清单、测试配置或文档约定；下文文件名和符号均标为**拟新增/拟修改**，不能视为已经存在。已有且应复用的事实只有 React、TypeScript、`Card`、`Button`、错误提示、`boardApi.saveOrder(ids)`、稳定 `card.id`、可滚动 CSS Grid 和可变卡片高度。
+
+### 已接受的可观察契约
+
+1. 指针拖放或上移/下移后，卡片顺序立即改变；边界位置的无效移动不保存、不播动画。
+2. 同一张卡从旧位置连续移动到新位置；动画期间仍可排序、滚动和操作页面。
+3. 拖动、按钮和重试遵守同一排序与保存策略，并使用已有标准错误提示。
+4. `prefers-reduced-motion: reduce` 下立即显示终态，不做位置补间。
+5. 操作后焦点仍位于同一卡片的同类控件；卡片不能上移/下移时，对应按钮为禁用状态。
+6. 卸载、改变容器尺寸或动画异常不会产生第二份业务顺序，也不会在卸载后发布 UI 状态。
+
+### 实现前必须核对、但不改变本设计边界的事实
+
+- 项目的最低浏览器/设备与触控支持矩阵；它决定 Pointer Events、Web Animations API 是否可直接使用，还是需要已有兼容层。未核对前不宣称浏览器兼容。
+- 现有状态所有者、数据刷新策略、组件实际路径、测试框架和包管理器；下文路径应按项目约定映射。
+- `saveOrder` 的成功返回、取消能力、失败是否能确定“服务端未提交”，以及服务端是否提供版本/冲突协议。本方案不假设请求取消等于服务端取消，也不在错误后盲目回滚。
+- 产品是否要求鼠标之外的触摸拖动、跨列/跨看板拖动、自动滚动、拖动把手样式和排序公告文案。本期默认同一列表内、鼠标与触摸单指拖动；键盘通过上下移按钮完成等价操作。
+- 代表性卡片数量、设备和性能基线。没有测量结果，不设臆测的毫秒门槛，也不引入虚拟列表。
+
+## 2. 状态、规则与所有权
+
+### 2.1 最小状态
+
+拟由看板列表的排序 feature（最小共同所有者）持有：
+
+```ts
+type CardId = string;
+
+type OrderState = {
+  desiredIds: readonly CardId[];   // 当前渲染及下一次保存的唯一业务顺序
+  confirmedIds: readonly CardId[]; // 本页面最后一次明确保存成功的快照，仅用于状态说明/恢复决策
+  persistence: 'idle' | 'saving' | 'error';
+};
+
+type FocusTarget = {
+  cardId: CardId;
+  action: 'move-up' | 'move-down' | 'drag-handle';
+};
+```
+
+卡片内容按现有数据源以 `card.id` 查找，渲染列表由 `desiredIds` 派生；不再维护第二个“动画顺序”或拖动专用卡片数组。`confirmedIds` 不是渲染源，只记录已确认语义。动画几何、活动指针和焦点目标放在 refs/闭包中，避免高频移动触发 React 重渲染。
+
+### 2.2 统一排序规则
+
+拟新增纯函数（路径按项目 feature 约定调整）：
+
+```ts
+type MoveResult =
+  | { changed: false; ids: readonly CardId[] }
+  | { changed: true; ids: readonly CardId[]; from: number; to: number };
+
+function moveCard(
+  ids: readonly CardId[],
+  cardId: CardId,
+  toIndex: number,
+): MoveResult;
+```
+
+规则：用稳定 ID 定位；目标索引限制在 `[0, ids.length - 1]`；缺失 ID、空列表、单卡列表或最终索引不变均返回 `changed: false`。按钮分别传 `currentIndex - 1` 和 `currentIndex + 1`，拖放根据命中卡片计算插入索引。只有 `changed: true` 才进入提交、公告、动画和保存。纯函数不访问 DOM、不发请求。
+
+统一命令是所有入口的唯一写路径：
+
+```ts
+type ReorderSource = 'drag' | 'move-up' | 'move-down';
+
+function requestCardMove(input: {
+  cardId: CardId;
+  toIndex: number;
+  source: ReorderSource;
+  focusTarget: FocusTarget;
+}): void;
+```
+
+该命令按可见顺序执行：捕获当前视觉几何与焦点 -> 调用 `moveCard` -> 若有变化则同步提交 `desiredIds` -> 在 layout 阶段启动 FLIP/恢复焦点/发布无障碍公告 -> 把同一份 ID 快照交给保存协调器。这样拖动和按钮不会分叉出不同规则、错误或持久化流程。
+
+## 3. 交互与动画设计
+
+### 3.1 拖动
+
+拖动把手使用原生 `Button` 语义及明确名称（如“拖动〈卡片标题〉”），以 Pointer Events 捕获单一活动指针；达到小幅移动阈值后才进入拖动态，避免点击抖动。活动数据只包含 `pointerId`、`cardId` 和当前候选索引：
+
+- 指针移动时，拖动卡片使用临时 `translate` 跟随；原网格位置保留占位，避免内容塌陷。候选索引通过当前可见卡片的矩形中点命中，适配可变高度和 Grid 排列，不用固定行高推算。
+- 接近滚动容器边缘时，如产品确认需要触摸/长列表自动滚动，由同一拖动 owner 在 `requestAnimationFrame` 中驱动滚动；它不改变排序规则。
+- `pointerup` 只调用 `requestCardMove`；`pointercancel`、`Escape`、卸载或活动卡片消失则撤销拖动态并清理 pointer capture/样式，不保存。
+- 拖动样式清理和 FLIP 由同一个 motion owner 协调，不能让两个 `transform` 同时写一张卡。提交前先记录拖动卡的当前视觉矩形，再移除拖动 transform；FLIP 从该视觉位置接管。
+
+不使用原生 HTML Drag and Drop 作为默认方案，因为触摸与自定义滚动/命中行为不稳定，且它不能替代按钮的可访问操作。也不在没有包清单和兼容策略的情况下指定或安装第三方拖拽库；若真实项目已有批准的交互基础设施，应让其替换“Pointer Events 拖动 owner”，而 `moveCard`、提交命令、保存和 FLIP 契约不变。
+
+### 3.2 可中断 FLIP
+
+选择 FLIP 是因为 CSS Grid、可变高度和任意位置重排需要旧/新几何映射；单纯给 `transform` 加 CSS transition 不知道每张卡的起点。使用 Web Animations API 管理可取消句柄，不增加专用动画库。
+
+每次有效移动：
+
+1. **First**：在现有动画仍播放时读取所有受影响卡片的当前 `getBoundingClientRect()`；因此连续操作以用户眼中位置为起点。批量完成读取。
+2. 取消旧 `Animation` 句柄并清除旧内联样式/拖动样式。取消只影响表现，不改业务状态。
+3. 同步提交新的 `desiredIds`，保证 React 在同一交互边界完成 DOM 顺序更新；具体使用项目既有同步提交方式，只有确需在本事件中取得 Last 时才使用 React DOM 的 `flushSync`。
+4. **Last**：在 `useLayoutEffect` 中批量读取新矩形，再统一写入动画。只计算 `translateX/translateY`，不缩放可变高度内容，避免文字失真。
+5. **Invert/Play**：对仍存在且发生位移的稳定 ID 从 `translate(delta)` 播放到 `translate(0)`；完成或取消后删除句柄和内联样式。
+
+几何按当前视口矩形比较。容器在播放期间滚动时，元素随滚动内容自然移动，动画不阻塞滚动；新的排序会重新读取当前视觉矩形。`ResizeObserver` 只观察网格容器：动画期间尺寸变化时取消并清理当前动画，让真实 DOM 立即落在正确布局；不尝试用过期矩形继续播放。卡片增删时只处理 First/Last 都存在的 ID，新出现/已删除卡不伪造位置。
+
+`prefers-reduced-motion: reduce` 为 true 时跳过 First/Last 与位置动画，仍立即提交状态、保存、恢复焦点并公告结果。媒体查询变化应通过一个已清理的订阅反映到后续操作；不强行中止用户已主动允许且正在结束的短动画，除非项目的现有偏好策略要求立即停止。
+
+动画持续时间和 easing 在真实浏览器观察后使用项目 token；在没有设计 token 和性能证据时不写死为跨项目标准。无论 `animate()` 缺失、抛错、被取消或组件卸载，清理后 DOM 顺序即正确终态。
+
+### 3.3 焦点与公告
+
+- `Card` 根节点及三个操作控件注册 `card.id + action` ref。稳定 key 使 DOM 节点在重排时复用；layout 阶段仅当焦点意外丢失或落到 `body` 时，对记录的同一卡控件调用 `focus({ preventScroll: true })`，不抢走用户主动移到别处的焦点。
+- 位于首/尾的上移/下移按钮使用真实 `disabled`。不要用 `aria-disabled` 留下无效动作，也不要因保存中或动画中禁用控件。
+- 一个看板级、礼貌级别的 live region 公告“〈卡片〉已移至第 X 项，共 N 项”；拖动与按钮共享文案生成器。拖动过程的候选位置是否持续公告，需结合现有无障碍文案策略核对；至少在完成时公告。
+- 操作后不得自动滚动回旧位置；显式焦点恢复使用 `preventScroll`。焦点可见且不被 sticky/overlay 遮挡需在真实布局检查。
+
+## 4. 保存、错误和生命周期
+
+拟新增一个看板实例级 `orderPersistence` owner，复用 `boardApi.saveOrder` 和已有标准错误展示。它不是通用请求框架，只实现顺序保存的串行合并策略：
+
+```ts
+type OrderPersistence = {
+  submit(ids: readonly CardId[]): void;
+  retry(): void;
+  dispose(): void;
+};
+```
+
+策略如下：
+
+1. `submit` 总是复制稳定的 ID 快照。空闲时立即保存；保存中仅覆盖一个 `queuedLatest`，所以 A 保存期间发生 B、C，网络序列是 A -> C，而 UI 立即显示 A、B、C。
+2. A 成功后，仅把 A 标成 `confirmedIds`；若 `queuedLatest` 与 A 不同，立刻保存最新快照。旧成功绝不能把页面渲染回 A。
+3. 当前请求失败时，使用已有标准错误提示并进入 `error`。UI 保留最新 `desiredIds`，队列暂停；不基于旧闭包回滚，也不把失败当作成功。用户仍可继续排序，新顺序覆盖待重试快照。
+4. `retry` 保存当时最新的 `desiredIds`，而不是失败请求的陈旧快照。若现有标准错误组件已定义重试入口则接入它；没有则只保留现有可恢复交互，不能私自改变产品错误体验。
+5. 卸载时 `dispose` 阻止 promise completion 再发布组件状态，并清理动画、媒体查询、`ResizeObserver`、pointer capture 和自动滚动帧。除非 `boardApi` 明确支持可靠取消，否则不声称取消已提交请求；也不新增 `beforeunload` 阻塞或 `sendBeacon` 旁路。
+
+该策略要求确认 `saveOrder` 的服务端语义。若服务端允许并发客户端写入，本地串行只能保证当前页面的提交顺序，不能解决另一标签页/设备冲突；真正的跨客户端一致性需要后端版本号或冲突响应，这是待核对的 API 契约，不应由动画层补救。
+
+## 5. 技术架构图
+
+以下均为拟议责任边界，路径应映射到真实项目约定：
+
+```text
+┌──────────────────────── Board/CardGrid（组合、渲染） ────────────────────────┐
+│ desiredIds -> 现有 Card（key = card.id）                                   │
+│                 ├─ 现有 Button：上移/下移 ─┐                              │
+│                 └─ Button：拖动把手 ───────┤                              │
+└─────────────────────────────────────────────┼──────────────────────────────┘
+                                              ▼
+                            requestCardMove（唯一排序命令）
+                              │         │          │
+                    moveCard  │         │          │ focus refs + live region
+                  （纯规则）  │         │          │
+                              ▼         ▼          ▼
+                         OrderState   ReorderMotionOwner
+                       （业务真相）  （Pointer/FLIP/清理；无业务顺序）
+                              │
+                              ▼ submit(readonly CardId[])
+                       OrderPersistence
+                  （单请求、合并最新、错误/卸载策略）
+                              │
+                              ▼
+              既有 boardApi.saveOrder(ids) ──> 服务端边界
+                              │ rejected
+                              └───────────────> 既有标准错误提示
+```
+
+依赖方向：界面入口依赖统一命令；命令依赖纯规则、页面状态、motion 与 persistence 窄接口；motion 不依赖 API，persistence 不依赖 DOM。不要让 `Card` 各自发保存请求或拥有排序数组。
+
+## 6. 数据流图
+
+```text
+用户按钮/拖放(cardId, targetIndex)
+  -> requestCardMove
+     -> Motion.captureCurrentRects()             [读取当前视觉位置]
+     -> moveCard(desiredIds, cardId, targetIndex)
+        ├─ changed:false -> 结束（无动画、公告、保存）
+        └─ changed:true -> nextIds
+             -> set desiredIds(nextIds)           [DOM 立即成为业务终态]
+             -> layout phase
+                -> Motion.playToNewRects()
+                   ├─ reduce/resize/异常 -> 清理并保持 DOM 终态
+                   └─ 新操作 -> 从当前视觉矩形取消并重定向
+                -> restoreFocusIfLost(cardId, action)
+                -> announce(position, count)
+             -> Persistence.submit(nextIds snapshot)
+                ├─ idle -> boardApi.saveOrder(snapshot)
+                └─ saving -> queuedLatest = snapshot
+                     success -> confirmedIds = snapshot
+                       ├─ 有更新快照 -> 保存最新快照
+                       └─ 无更新快照 -> idle
+                     failure -> 既有标准错误 + error/暂停
+                       ├─ 后续排序 -> 更新 desiredIds/待重试快照
+                       └─ retry -> 保存 retry 时的最新 desiredIds
+
+任意时刻卸载
+  -> dispose motion/observer/pointer/focus publication
+  -> dispose persistence publication
+  -> 已开始的 API 请求是否能取消：遵循 boardApi 契约，不作虚假保证
+```
+
+## 7. 依赖有序的实施步骤（共 4 步）
+
+### 步骤 1：建立唯一排序规则与按钮路径
+
+**拟修改/新增**：看板列表状态 owner、`moveCard`、现有 `Card` 操作区。
+
+- 将渲染顺序收敛到 `desiredIds`，接入上移/下移按钮、边界禁用、稳定 ref 和 live region。
+- 暂不加动画；先证明 DOM 终态、焦点和公告正确。
+
+**完成检查**：纯函数覆盖首/尾、缺失 ID、无变化和任意跨位移动；浏览器组件测试从按钮操作后断言可见 DOM 顺序、焦点仍在同一卡按钮、公告正确，且无效移动不调用保存入口。
+
+### 步骤 2：接入统一保存协调器
+
+**前置**：步骤 1 的 `requestCardMove` 和真实 `boardApi` 契约已核对。
+
+- 复用现有 API/错误组件，实现单 in-flight、合并最新、失败暂停、重试最新与卸载后不发布。
+- 不让按钮与拖动分别实现请求或错误处理。
+
+**完成检查**：用可控 promise 验证 A 保存中发生 B/C 只按 A -> C 调用；A 成功不覆盖 C；A 失败显示一次标准错误、保留 C，重试提交 C；卸载后的完成不更新 UI。若服务端失败语义不明确，记录并阻断“自动回滚”实现。
+
+### 步骤 3：接入拖动与可中断 FLIP
+
+**前置**：步骤 1 的统一命令稳定，浏览器矩阵及动画 API 支持已核对。
+
+- 实现 pointer drag owner、实际矩形命中、拖动清理；drop 只调用统一命令。
+- 实现批量 First/Last、仅 translate 的 WAAPI 动画、中断重定向、resize/reduced-motion/unmount 清理。
+
+**完成检查**：真实浏览器中覆盖可变高度卡片和可滚动 Grid；动画未结束时再次按钮移动和再次拖动，最终 DOM/API 快照一致且没有跳回；动画中滚动可用；resize 取消后终态正确；离页无残留回调；reduced-motion 下无位置动画但顺序、焦点、公告和保存均工作。
+
+### 步骤 4：代表性运行时验收与收口
+
+**前置**：前三步集成，真实项目已有检查命令可用。
+
+- 在支持矩阵中的代表性浏览器/触摸设备检查 pointer capture、点击阈值、滚动、焦点可见、缩放/长内容和错误重试。
+- 用代表性卡片数量录制一次排序与连续排序的浏览器性能轨迹，检查重复 layout、长任务、掉帧和未清理动画；只根据测量调整受影响 ID 范围、持续时间或命中计算。
+- 回看真实调用者，确认没有平行排序状态、Card 内请求或动画决定业务状态。
+
+**完成检查**：项目类型检查及相关测试通过；真实浏览器验收记录包含按钮、拖动、连续输入、滚动、resize、减少动态、保存失败/重试和离页。性能结论只报告实际设备、浏览器、数据规模与测量结果。
+
+## 8. 验收矩阵与证据状态
+
+| 风险 | 决定性检查 | 当前证据 |
+| --- | --- | --- |
+| 两个入口规则分叉 | 按钮与 drop 对相同输入得到相同 ID 顺序并走同一 mock API | 仅设计，未执行 |
+| 连续动画跳变 | 动画中重复移动，逐帧观察起点来自当前视觉位置，最终 DOM 顺序正确 | 需真实浏览器 |
+| 可变高度/Grid 算错 | 长短内容、窄/宽容器下跨多项拖动 | 需真实布局 |
+| 滚动/resize 产生过期几何 | 动画中滚动；动画中 resize 后取消到正确终态 | 需真实浏览器 |
+| 保存竞态覆盖新顺序 | 控制 A/B/C promise 顺序，断言调用和发布策略 | 可做集成测试，未执行 |
+| 错误恢复回滚后来编辑 | A 失败后再移动并重试，UI 与提交均为最新快照 | 可做集成测试，未执行 |
+| 焦点丢失或页面跳动 | 键盘触发后断言 activeElement 的 card/action 且 scroll 未被恢复改变 | 需真实浏览器 |
+| 减少动态失效 | 模拟/系统启用 reduce，断言无动画但完整完成排序 | 需真实浏览器 |
+| 清理泄漏 | 拖动/动画/请求中卸载，断言无观察器、帧、句柄或卸载后发布 | 集成 + 浏览器，未执行 |
+| 性能不可接受 | 支持矩阵代表设备、真实卡片规模的 Performance 轨迹 | 无基线，待测 |
+
+## 9. 现实后续变化检查
+
+若下一期增加“跨列移动”，`moveCard` 将演进为接收来源列/目标列并原子返回两个 ID 列表，保存 API 也需要服务器支持同一操作的原子语义；现有 motion owner 仍按稳定 `card.id` 测量跨容器 First/Last，按钮可扩展为“移到上一列/下一列”。本设计把规则、视觉和保存分开，能容纳该变化，但本期不预建通用工作流引擎、跨列协议或多容器注册表。
+
+如果只增加“撤销”，应把已确认/本地命令历史放在排序 feature，而不是从动画矩形恢复；这再次保持动画不是业务真相。

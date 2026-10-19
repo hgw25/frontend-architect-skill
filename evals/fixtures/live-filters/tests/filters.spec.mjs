@@ -1,0 +1,68 @@
+import { test, expect } from '@playwright/test';
+const results=page=>page.getByRole('list',{name:'Results'});
+test('product drafts, application, category and reset preserve accepted behavior',async({page})=>{
+ await page.goto('/?page=products&utm=keep');
+ await expect(results(page).getByRole('listitem')).toHaveCount(3);
+ await page.getByLabel('Product keyword',{exact:true}).fill('Tea');
+ await expect(results(page).getByRole('listitem')).toHaveCount(3);
+ expect(new URL(page.url()).searchParams.has('p_q')).toBe(false);
+ await page.getByRole('button',{name:'Apply',exact:true}).click();
+ await expect(results(page)).toHaveText('Tea');
+ expect(new URL(page.url()).searchParams.get('p_q')).toBe('Tea');
+ expect(new URL(page.url()).searchParams.get('utm')).toBe('keep');
+ await page.getByRole('button',{name:'Reset',exact:true}).click();
+ await expect(results(page).getByRole('listitem')).toHaveCount(3);
+ await page.getByRole('combobox',{name:'Product category',exact:true}).selectOption('wear');
+ await page.getByRole('button',{name:'Apply',exact:true}).click();
+ await expect(results(page)).toHaveText('CapCoat');
+ await page.getByRole('combobox',{name:'Product status',exact:true}).selectOption('draft');
+ await page.getByRole('combobox',{name:'Product category',exact:true}).selectOption('');
+ await page.getByRole('button',{name:'Apply',exact:true}).click();
+ await expect(results(page)).toHaveText('Mug');
+});
+test('product URL is restored by reload and browser history',async({page})=>{
+ await page.goto('/?page=products');
+ const q=page.getByLabel('Product keyword',{exact:true});
+ await q.fill('Tea');await page.getByRole('button',{name:'Apply',exact:true}).click();await expect(results(page)).toHaveText('Tea');
+ await q.fill('Cap');await page.getByRole('button',{name:'Apply',exact:true}).click();await expect(results(page)).toHaveText('Cap');
+ await page.goBack();await expect(q).toHaveValue('Tea');await expect(results(page)).toHaveText('Tea');
+ await page.reload();await expect(q).toHaveValue('Tea');await expect(results(page)).toHaveText('Tea');
+ await page.goForward();await expect(q).toHaveValue('Cap');await expect(results(page)).toHaveText('Cap');
+});
+test('orders apply valid input immediately and keep invalid dates local',async({page})=>{
+ await page.goto('/?page=orders&utm=keep');
+ await expect(results(page).getByRole('listitem')).toHaveCount(3);
+ await page.getByLabel('Order keyword',{exact:true}).fill('Alice');
+ await expect(results(page).getByRole('listitem')).toHaveCount(2);
+ expect(new URL(page.url()).searchParams.get('o_q')).toBe('Alice');
+ await page.getByRole('combobox',{name:'Order status',exact:true}).selectOption('paid');await expect(results(page)).toHaveText('Alice paid');
+ const applied=page.url();
+ await page.getByLabel('From date',{exact:true}).fill('2026-10-30');
+ await expect(page.getByRole('alert')).toContainText(/date|range|before|after/i);expect(page.url()).toBe(applied);
+ await expect(results(page)).toHaveText('Alice paid');
+ await page.getByLabel('To date',{exact:true}).fill('2026-11-01');
+ await expect(results(page).getByRole('listitem')).toHaveCount(0);
+ await page.getByRole('button',{name:'Reset',exact:true}).click();
+ await expect(page.getByLabel('From date',{exact:true})).toHaveValue('2026-09-20');
+ await expect(page.getByLabel('To date',{exact:true})).toHaveValue('2026-10-19');
+ await expect(page.getByRole('combobox',{name:'Order status',exact:true})).toHaveValue('');
+ await expect(results(page).getByRole('listitem')).toHaveCount(3);
+ expect(new URL(page.url()).searchParams.get('utm')).toBe('keep');
+});
+test('outdated query responses and query errors cannot impersonate current results',async({page})=>{
+ await page.goto('/?page=products');await expect(results(page).getByRole('listitem')).toHaveCount(3);
+ const q=page.getByLabel('Product keyword',{exact:true});
+ await q.fill('Cap');await page.getByRole('button',{name:'Apply',exact:true}).click();
+ await q.fill('Tea');await page.getByRole('button',{name:'Apply',exact:true}).click();
+ await expect(results(page)).toHaveText('Tea');await page.waitForTimeout(300);await expect(results(page)).toHaveText('Tea');
+ await q.fill('error');await page.getByRole('button',{name:'Apply',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText(/unavailable|failed|error/i);
+});
+test('native keyboard, narrow layout, long labels and text resizing remain usable',async({page})=>{
+ await page.setViewportSize({width:360,height:800});await page.goto('/?page=products');
+ await page.evaluate(()=>{document.documentElement.style.fontSize='200%';for(const span of document.querySelectorAll('label span'))span.textContent+=' translated label with considerably longer text';});
+ const inputs=page.getByRole('textbox');await inputs.first().focus();await inputs.first().fill('Tea');
+ await inputs.first().press('Enter');await expect(results(page)).toHaveText('Tea');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);
+ await expect(page.getByRole('button',{name:'Reset',exact:true})).toBeVisible();
+});

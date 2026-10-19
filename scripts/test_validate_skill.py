@@ -13,6 +13,14 @@ import yaml
 
 
 class ReviewCaseSchemaTests(unittest.TestCase):
+    def test_unknown_required_profile_is_a_schema_error(self):
+        document = yaml.safe_load((validate_skill.ROOT/'evals/cases.yaml').read_text())
+        document['cases'][0]['acceptance_profiles'] = ['missing-profile']
+        with patch.object(validate_skill, 'load_yaml', return_value=document):
+            errors = []
+            validate_skill.validate_evals(errors)
+        self.assertTrue(any('Unknown acceptance profile' in error for error in errors), errors)
+
     def test_review_snapshots_allow_optional_commands_but_require_valid_structure(self):
         source = yaml.safe_load((validate_skill.ROOT / 'evals/cases.yaml').read_text())
         review = next(case for case in source['cases'] if case.get('task_type') == 'review')
@@ -107,10 +115,13 @@ class ReleaseMetadataTests(unittest.TestCase):
             encoding="utf-8",
         )
         (root / "README.md").write_text(
-            "python install-skill-from-github.py "
-            f"--repo {repository} --ref v{readme_ref}\n",
+            f"[v{readme_ref}](https://github.com/{repository}/releases/tag/v{readme_ref})\n"
+            "[Maintenance](skills/frontend-architect-update/SKILL.md)\n",
             encoding="utf-8",
         )
+        companion = root / "skills/frontend-architect-update"
+        companion.mkdir(parents=True, exist_ok=True)
+        (companion / "VERSION").write_text(version + "\n")
 
     def validate(self, root: Path) -> list[str]:
         errors: list[str] = []
@@ -140,8 +151,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             errors = self.validate(root)
 
         self.assertTrue(any("CHANGELOG.md" in error for error in errors))
-        self.assertTrue(any("--ref v0.2.0" in error for error in errors))
-        self.assertTrue(any("canonical GitHub repository" in error for error in errors))
+        self.assertTrue(any("release link must match VERSION" in error for error in errors))
         self.assertTrue(any("stale GitHub repository owner" in error for error in errors))
 
     def test_rejects_non_semantic_version(self) -> None:
@@ -155,6 +165,17 @@ class ReleaseMetadataTests(unittest.TestCase):
             errors,
             ["VERSION must contain one semantic version such as 0.2.0"],
         )
+
+    def test_second_raw_install_workflow_and_companion_version_drift_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_release_files(root)
+            with (root/'README.md').open('a') as stream:
+                stream.write('python installer.py --path . --ref v0.2.0\n')
+            (root/'skills/frontend-architect-update/VERSION').write_text('0.1.0\n')
+            errors = self.validate(root)
+        self.assertTrue(any('second raw root-install' in error for error in errors), errors)
+        self.assertTrue(any('Companion VERSION' in error for error in errors), errors)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,12 @@
 # Frontend Architect
 
-一个面向 AI 编码代理的高级前端与前端架构 Skill，覆盖 Web、App/跨端和小程序运行时。
+一个面向 AI 编码代理的高级前端与前端架构 Skill，将需求开发与架构设计贯通，并提供代码审查，
+覆盖 Web、App/跨端和小程序运行时。用户说明目标与对象后，技能自行发现上下文、选择流程，
+完成适用的设计、实现、工程质量检查和验证，无需再列一遍工程要求。
 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
-当前发布版本：[v0.5.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.5.0)。
+当前发布版本：[v0.6.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.6.0)。
 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 它解决什么问题
@@ -107,95 +109,64 @@ frontend-architect-skill/
 
 ## 开发、发布与安装
 
-本项目采用单向发布流程，不从开发目录建立长期全局链接：
+开发目录 → 验证与评测 → 不可变 Git tag → 官方 skill-installer 暂存 → 统一安装事务。
+从 [v0.6.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.6.0) 起，主技能与独立维护技能使用同一发布版本，
+安装维护包含下述统一执行器。
 
-```text
-project/skills/frontend-architect-skill
-        ↓ 开发与评测
-GitHub repository
-        ↓ skill-installer
-~/.codex/skills/frontend-architect
-```
+安装、检查版本、更新与回滚统一使用独立的
+`frontend-architect-update`（源码 `skills/frontend-architect-update/SKILL.md`）。
+只维护这一份操作流程，README 不再提供另一套手动移动目录的升级命令。
+首次引导时，通过系统 skill-installer 从同一不可变发布标签的
+`skills/frontend-architect-update` 路径安装独立维护技能，再请求
+`$frontend-architect-update` 安装或更新主技能。检查版本不会自动升级。
 
-1. 在普通项目目录开发 Skill。
-2. 运行结构校验和行为评测。
-3. 提交并推送到 GitHub。
-4. 使用 `skill-installer` 从 GitHub 安装发布版本。
+当前源码维护可使用已审查的
+`manage_installation.py`（独立维护技能的 `scripts/` 目录），
+对已暂存并验证的候选执行 `inspect`、`activate` 或 `rollback`。
+具体参数、授权边界与官方暂存命令只有维护技能一个权威来源。
+执行器统一处理首次安装、更新、回滚、并发锁、文件核对、外部备份、失败恢复和回执；
+移除主技能中的嵌套维护技能，保留独立安装的维护技能。备份在技能发现目录之外，
+并与目标使用同一文件系统。本地变更和来源未知按已有授权处理，不静默覆盖。
 
-仓库发布后，可以请求 Codex：
-
-```text
-使用 skill-installer 从 GitHub 安装 hgw25/frontend-architect-skill 仓库根目录的
-frontend-architect Skill。
-```
-
-也可以使用系统安装脚本：
-
-```bash
-python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo hgw25/frontend-architect-skill \
-  --path . \
-  --ref v0.5.0 \
-  --name frontend-architect
-```
-
-安装器会把 GitHub 中的发布内容复制到
-`~/.codex/skills/frontend-architect`。如果目标目录已经存在，安装会停止，避免
-静默覆盖现有版本。这里的 `--path .` 是单 Skill 仓库的有意选择；如果未来改为一个
-仓库存放多个 Skill，再将发布内容移动到独立子目录并调整安装路径。
-
-正式安装只使用不可变 Git tag，不省略 `--ref`，否则不同时间安装到的 `main` 内容可能
-不同。Codex 通常会自动检测 Skill 文件变化；如果更新没有出现，再重新启动 Codex。
-
-### 从已安装版本升级
-
-安装器不会覆盖已有目录。先把新版本下载到临时目录，确认下载成功后再替换现有安装；
-备份放在 `~/.codex/skills` 之外，避免 Codex 同时发现两个同名 Skill：
-
-```bash
-set -euo pipefail
-
-skill_release="v0.5.0"
-skill_stage_dir="$(mktemp -d)"
-skill_backup_root="$HOME/.codex/skill-backups"
-skill_backup_dir="$skill_backup_root/frontend-architect-$(date +%Y%m%d-%H%M%S)"
-
-python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo hgw25/frontend-architect-skill \
-  --path . \
-  --ref "$skill_release" \
-  --name frontend-architect \
-  --dest "$skill_stage_dir"
-
-mkdir -p "$skill_backup_root"
-mv ~/.codex/skills/frontend-architect "$skill_backup_dir"
-mv "$skill_stage_dir/frontend-architect" ~/.codex/skills/frontend-architect
-rmdir "$skill_stage_dir"
-
-printf 'Backup: %s\n' "$skill_backup_dir"
-```
-
-新版本在下一次调用时通常即可使用。如果需要回滚，先把当前目录移到
-`~/.codex/skill-backups` 下的另一个名称，再将上面输出的备份目录移回
-`~/.codex/skills/frontend-architect`。
+开发时沿用本仓库校验与行为评测；发布前核对 VERSION、CHANGELOG、标签和验证提交。
+[评测及安装维护技术设计](docs/engineering/evaluation-and-maintenance.md)记录本轮职责、数据流与验收。
+实际生成、正反例与剩余限制见[本轮复核](evals/results/2026-10-19-evaluation-acceptance/report.md)，
+发布检查见[v0.6.0 发布验收](evals/results/2026-10-19-release-0.6.0/report.md)。
 
 ## 使用
 
 显式调用示例：
 
 ```text
-使用 $frontend-architect 实现这个需求，并说明关键架构取舍。
+使用 $frontend-architect 实现这个需求。
 ```
 
 ```text
-使用 $frontend-architect review 这个模块，重点检查模块边界、状态所有权和测试。
+使用 $frontend-architect 设计这个模块的架构。
 ```
 
 ```text
-使用 $frontend-architect 判断这里应该使用纯函数、Reducer、状态机还是类。
+使用 $frontend-architect 审查这个模块。
 ```
 
 该 Skill 默认也允许 Codex 在匹配的前端开发与架构任务中自动发现。
+
+需求开发与架构设计相辅相成：拆解功能时确定职责、函数或类契约和数据流，按依赖逐步实现，
+再用实际调用与验证结果修正设计、实施步骤和图示，交付前保持文档与代码一致。
+共同工程原则和相关专题贯穿这条过程：复用、模块与函数职责、依赖方向、编程范式、状态与
+资源所有权、扩展边界，以及适用的运行时、交互、安全和性能要求，都要对应到具体设计取舍。
+重要选择在原技术文档中留下理由和检查依据，设计稿与实际代码均按同一标准自审；不以列出
+原则名称、文档齐全或功能测试通过代替工程质量判断，也不机械地给每个任务套上所有模式。
+具体方法也由业务行为触发：重排与空间连续性会引出 FLIP 等过渡机制的取舍；共享界面部件会
+引出 Atomic Design 与组合边界；独立业务变化会引出 Colocation/FSD；状态与副作用会引出
+函数式核心、对象或状态机；响应与帧成本会引出 RAIL 和渲染链路分析。适用条件、停止条件
+及原专题位置见[行为到设计方法的导航](references/architecture-and-code.md#match-design-lenses-to-behavior)。
+用户只提出开发目标，也默认包含适用的架构设计、代码质量检查和验证；明确只要设计时，
+沿同一过程交付可实施的技术文档，并在该交付边界停止。代码审查自行寻找当前有效契约，沿调用
+关系检查需求符合度及完整的适用工程标准，给出具体发现和有证据边界的质量结论。
+仅审查时不修改实现；已有测试全绿不能代替函数、模块、所有权和维护成本的判断。
+“最高标准”落实为同一套可检查的工程要求，范围和验证深度随任务调整，不以更多抽象、
+目录或假想防护证明质量，也不作超出实际覆盖的全面达标承诺。
 
 ## 核心观点
 
@@ -208,12 +179,20 @@ Skill 按四个部分组织：入口中的核心判断体系和任务执行方�
 状态或资源的所有者、实际执行位置和可发现错误的验证；新边界用有现实依据的变化
 检验，而不靠目录数量证明架构质量。证据变化时可以回到前面的决定重新调整。
 
-执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。明确的小改动
-直接实现，边界清楚的方案在对话中简述；只有需要跨阶段或协作保留的重要决定才落成
-简短文档。文档不是默认审批门槛。
+执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。新建或改变
+业务流程、重新分配职责的重构、共享基建和迁移，默认先形成技术文档再改实现，无需
+用户额外提醒。文档明确拆成多少步、每步功能与依赖、支撑的类型及函数或类契约、
+技术架构图、数据流转图和逐步验收；实现中同步修订，交付时补回实际验证结果。
+文案、间距或沿用既有契约的局部接线仍可直接完成。文档不增加默认审批门槛。
+详见[需求到技术设计](references/architecture-and-code.md#turn-requirements-into-an-executable-technical-design)。
+
+验证还要沿实际消费路径检查跨步骤结果：结构变化后能否继续键盘操作，已确认命令遇到
+后续读取失败时用户能否仍看到确认，性能样本是否来自原始与最终代码的可比条件。
+成本基线在实现前取得；交付前通过定义和调用查找核对技术文档的重要契约与两类图示。
+已有测试没有覆盖的重要完成组合，由代理自主补查。
 
 领域概念和重要决策优先沉淀到项目已有说明：定义保存概念、身份和关系，决策记录保留
-选择与理由，实施方案保存验收和后续步骤。已确认的修订及时更新原记录；未解决的
+选择与理由，技术设计保存功能拆分、代码契约、图示及验收。已确认的修订及时更新原记录；未解决的
 契约冲突保持明确，不猜测身份映射。按需创建有后续用途的简短记录，小改动无需先建
 词汇表、ADR 或初始化会话。详见[领域知识与决策指导](references/architecture-and-code.md#preserve-domain-knowledge-and-decisions)。
 
@@ -301,6 +280,15 @@ python3 scripts/validate_skill.py
 新增[无原对话接手检查](evals/followups/README.md)：冻结第一版后由新代理仅凭仓库接手，
 检查理解、修改集中程度和契约回归。[本轮记录](evals/results/2026-09-15-maintainer-handoff/summary.md)
 仅支持单场景未观察到退化，不代表已证明对人类维护或整套规则的显著提升。
+
+[思想到实际代码的验证](evals/results/2026-10-19-autonomous-workflows/implementation-verification/report.md)
+补充八组短请求实现、异步编码和库存接手，以及权限一致的自主浏览器/包消费者检查。
+原始失败、夹具纠错、焦点遗漏、性能基线与文档对齐缺口均保留，不将术语或一次全绿视为最高标准证明。
+
+[通用判断与自主验证复测](evals/results/2026-10-19-autonomous-workflows/judgment-refinement/report.md)
+进一步修改交互连续性、确认与后续同步、原始成本基线及定义驱动的文档核对，加入邀请页迁移检查。
+27 份采集保留全部失败与无效运行；确认分离、焦点及迁移已有运行证据，原始基线采集和文档验收
+状态仍有遗漏，尚未稳定满足四项自主验收。
 
 可以用隔离的 Codex CLI 会话生成可复查的原始输出、fixture diff 和验证日志：
 
@@ -398,19 +386,6 @@ tag 标识，发布变化记录在 [CHANGELOG.md](CHANGELOG.md)。本项目采�
 
 ### 更新维护子技能
 
-`skills/frontend-architect-update` 是独立的维护子技能，可检查版本、从稳定 tag
-更新本机安装、识别本地修改并备份回滚。它复用系统 skill-installer，尚未提供独立 CLI。
-可显式调用 `$frontend-architect-update`，例如“更新本机 frontend-architect”。
-维护子技能独立安装，避免更新主技能时覆盖正在执行的维护流程。
-
-安装更新子技能（与主技能共用发布标签，但使用独立安装目录）：
-
-```bash
-python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo hgw25/frontend-architect-skill \
-  --path skills/frontend-architect-update \
-  --ref v0.5.0 --name frontend-architect-update
-```
-
-已存在的安装需先暂存新版、校验并备份旧版，再替换；安装器不会直接覆盖。
-当前更新子技能提供代理执行流程，尚无独立 CLI，尚未完成更新/回滚故障注入验证。
+维护技能独立安装与更新，使用同一个安装事务的
+`--skill-name frontend-architect-update`，不由主技能中的嵌套副本覆盖。
+操作流程见[安装与维护入口](#开发发布与安装)，故障恢复由同一执行器验证。

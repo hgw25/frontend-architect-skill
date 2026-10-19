@@ -1,0 +1,1645 @@
+version: 1
+cases:
+  - id: autonomous-feature-development
+    title: 简短功能目标自主完成发现设计实现与检查
+    prompt: 把这个表单的条件字段支持做完。
+    artifact: ''
+    fixture: evals/fixtures/conditional-fields
+    protected_paths: [package.json, package-lock.json, test/process-form.test.js, test/conditional-fields.test.js]
+    validation_commands: [npm ci, npm run check]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 自行从原有契约与现有验收检查发现 enabledWhen、disabled 优先、单次求值和顶层提交快照要求
+      - 未经额外流程提醒先保存技术设计，包含有依赖与验收的功能步骤、实际代码契约及架构图和数据流转图
+      - 需求拆分与架构设计共同支撑实现，交付时步骤、函数职责和两类图示与实际代码及验证一致；必要变更反馈到同一设计
+      - 复用既有入口和纯规则边界，以单次提交的所有权解释快照与求值时序；架构与实际代码符合适用工程原则，不为形式增加类或分层
+      - 继续完成实现并运行现有检查，审视真实函数和调用语义，不停在方案或要求用户补列工程职责
+    fail_if:
+      - 只交付计划或提出仓库已经能回答的流程问题，未完成已授权功能
+      - 首次修改实现前完全省略技术设计或事后补写，或缺少步骤、代码契约及两类有效图示中的任一项
+      - 把架构设计当作需要额外请求的工作，或实现改变关键契约后仍交付与代码明显不符的设计
+      - 仅罗列工程原则而不检查具体契约与职责，或为套用范式增加无当前收益的机制
+      - 受保护检查失败或被修改，或声称未运行的验证已经通过
+
+  - id: autonomous-architecture-design
+    title: 简短架构请求默认交付可实施设计且不开始编码
+    prompt: 设计这个文件上传模块的架构。
+    artifact: |
+      项目事实：浏览器 React + TypeScript 应用，当前上传模块只有下面的单文件上传入口。
+      已有 appApi 负责认证、取消信号传递和标准错误，不需要另建请求或认证框架。
+
+      src/uploads/upload.ts
+      import { appApi } from '../app/api';
+      export async function uploadFile(file: File, signal: AbortSignal) {
+        return appApi.upload(file, { signal });
+      }
+
+      docs/uploads.md（已接受的新产品契约）
+      用户可添加多个文件，每次最多两个文件处于上传状态；界面展示每个文件的进度，
+      支持暂停、继续、取消和失败重试，已由服务端确认的片不重复传输。只需页面存活期内
+      恢复，不要求刷新后保留 File 或后台上传。页面关闭时释放本地资源。
+      后端已提供稳定的分片 API：create(fileName, size) 返回 uploadId 和 partSize；
+      putPart(uploadId, index, bytes, signal) 确认该片；inspect(uploadId) 返回 confirmedIndices；
+      complete(uploadId) 返回 fileId；status(uploadId) 返回 uploading/completed 及完成后的 fileId；
+      abort(uploadId) 终结服务端会话。完整成功只能在服务端确认后报告；complete 的响应丢失时
+      可以用 status 对账。这些调用通过现有 appApi 接入，不在前端自己拼认证头。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, paradigm_choice, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 自主交付持久化且可实施的技术文档，不依赖提示拆步骤、设计函数类或画图
+      - 按依赖和功能拆出明确数量的增量及验收，定义队列、单文件会话、协议适配与 UI 的契约和所有权
+      - 从已接受需求推导模块和函数职责，使架构、数据流与实施步骤可互相追溯，作为后续开发的设计基础
+      - 用具体理由解释复用、模块与函数职责、范式和生命周期选择，以消费者及现实变化核对维护成本，并落实适用的类型、外部边界和可访问交互要求
+      - 架构与数据流图准确覆盖两文件并发、暂停恢复对账、完成确认及资源释放，图示应可读，若使用图形 DSL 则语法应有效
+      - 函数和资源对象按实际职责选择，复用 appApi，不将 proposed 验证写为已执行
+    fail_if:
+      - 未在工作区保存实际技术设计文档，包括聊天中已有完整设计但没有文档文件；本用例检验默认交付，原始请求未提醒保存不构成豁免
+      - 只给原则目录或聊天提纲，缺少保存的技术文档、功能步骤、代码契约或任一必要有效图示
+      - 把仅设计请求执行成源码开发或安装项目依赖，或等待非必要设计审批
+      - 混淆暂停、取消和最终完成，另建认证请求框架，或声称未执行的运行时检查已通过
+      - 仅满足文档形式或罗列原则，却未检查关键状态、资源所有权和失败清理契约，留下可论证的需求缺口并将设计宣称为完备
+
+  - id: autonomous-review-maintainability
+    title: 普通审查自行识别全绿代码中的职责和调用协议问题
+    task_type: review
+    fixture: evals/fixtures/autonomous-export-review
+    prompt: 审查这次改动。
+    artifact: ''
+    validation_commands: [node --test before/test/export.test.mjs after/test/export.test.mjs]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 自行发现公共契约并审查需求符合度及工程质量，不要求用户再列维度
+      - 沿两个真实入口识别重复准备协议、可变上下文和私有调用顺序外泄，以现实变化说明维护成本
+      - 准确区分现有功能通过与职责边界回退，保留必要公共入口委托，给出有覆盖边界的质量结论
+    fail_if:
+      - 因功能检查通过就宣布工程质量达标，或漏掉跨调用方的步骤顺序和上下文耦合
+      - 只罗列通用原则而没有具体位置和实际维护后果，或把正常行为编造为功能或安全缺陷
+      - 修改被审查代码，或要求用户补充本可自行确定的审查维度后才开始
+
+  - id: autonomous-review-contracts
+    title: 普通审查自主发现有效需求和未修改的遗漏路径
+    task_type: review
+    fixture: evals/fixtures/community-review
+    prompt: 审查这次改动。
+    artifact: ''
+    validation_commands: [node --test after/test/*.test.mjs]
+    applicable_dimensions: [requirements_context, module_boundaries, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 自行定位产品文档、已接受修订和实际代码，兼顾需求与工程质量
+      - 沿调用链发现无 ID 获取未禁用、目录前台恢复遗漏、重试使用新草稿及首屏失败后复用旧游标
+      - 保留纯文本作者、本地收藏和不可变分类的合理例外，声明静态审查与真实浏览器证据边界
+      - 对快照外宿主或调用方负责的集成路径区分证据缺口与已证实的模块内缺陷
+    fail_if:
+      - 漏掉无 ID 获取、目录恢复、重试快照或失败查询复用旧游标中的任一契约问题
+      - 将已取消作者链接、本地状态不刷新或固定标签判为缺陷，或为了结构统一推荐无依据重写
+      - 修改被审代码、因测试全绿宣布全面达标，或声称执行了不存在的 React 浏览器验证
+      - 仅因未提供宿主或外部调用方就断言其集成缺失并列为确定功能缺陷，而非明确记录证据缺口
+
+  - id: requirement-only-conditional-fields
+    title: 仅给条件字段业务需求时主动完成技术设计再实现
+    prompt: >-
+      给这个表单提交能力增加条件字段。字段可以声明同步的 enabledWhen(values)，只在
+      返回 true 时参与 required、自定义校验和提交；disabled 优先，禁用时条件回调也不运行。
+      每次提交开始时捕获一份顶层值快照，条件只求值一次，所有校验和最终 payload 使用
+      同一份快照，避免异步校验期间用户继续编辑影响本次提交。条件回调抛错要原样传递。
+      保留现有 processForm API、原有字段语义和零依赖约束，请完成实现。
+    artifact: ''
+    fixture: evals/fixtures/conditional-fields
+    protected_paths:
+      - package.json
+      - package-lock.json
+      - test/process-form.test.js
+      - test/conditional-fields.test.js
+    validation_commands:
+      - npm ci
+      - npm run check
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 未经额外提醒，在首次修改实现或测试前保存可独立阅读的技术文档
+      - 文档明确实施步骤总数、依赖顺序、每步具体功能及验收，并映射实际支撑的类型及函数或类契约
+      - 文档包含职责依赖的架构图和带数据及返回分支的数据流转图，图与代码契约一致
+      - 原行为与条件字段通过同一有效集合和快照完成校验及提交，最终文档与实际验证一致
+    fail_if:
+      - 首次修改实现或测试前没有保存技术设计文档，包括完全省略、只在聊天中描述或事后补写；本用例检验默认技能行为，原始需求未提醒写文档不构成豁免
+      - 技术文档缺少功能到代码契约的映射、可执行步骤或任一必要图示，或图示无法解析、仅为目录树与重复空泛框图
+      - 等待用户批准文档而未完成已授权实现
+      - 受保护检查失败或被修改，或为同步字段条件引入通用规则引擎与强制抽象类
+
+  - id: requirement-only-export-refactor
+    title: 仅给职责重构需求时主动设计完整实施路径
+    prompt: >-
+      重构这个前端选中项导出能力。工具栏和键盘入口现在分别了解了内部准备、检查、编码
+      和发送步骤，后续协议变化很容易漏改其中一个入口。让调用方只表达一次完整导出意图，
+      保持现有两个公开入口、返回值、提交顺序、一次发送和错误传递契约。现有测试已经
+      全部通过；请完成职责调整，不增加依赖，也不要引入可暂停工作流或通用插件系统。
+    artifact: ''
+    fixture: evals/fixtures/export-operation
+    protected_paths:
+      - README.md
+      - test/export.test.mjs
+    validation_commands:
+      - node --test test/export.test.mjs
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, verification_evidence, communication_quality]
+    must_observe:
+      - 首次修改实现或测试前保存技术文档，不依赖用户提示文档或图示
+      - 分解重构的功能步骤及依赖验收，列出公共入口和内部操作的输入输出、职责与调用方
+      - 架构图与数据流转图说明入口到完整操作及返回值和失败路径，交付时与实际代码一致
+      - 两个入口不再编排私有导出步骤，保留已有行为且不为文档制造类或多层转发
+    fail_if:
+      - 首次修改实现或测试前没有保存技术设计文档，包括完全省略或事后补写；本用例检验默认技能行为，原始需求未提醒写文档不构成豁免
+      - 设计缺少功能步骤与代码契约映射或任一必要图示，或必要图示无法解析
+      - 等待额外文档审批而停止已授权重构
+      - 仅移动或改名浅层步骤，两个消费者仍了解私有调用顺序
+      - 行为检查失败、受保护文件变化或引入无依据的抽象类与通用机制
+
+  - id: readiness-claims-match-exercised-evidence
+    title: 就绪与兼容结论不超过实际验证边界
+    prompt: >-
+      请审查这份 Dialog 的交付结论，并给出替换现有 docs/dialog-verification.md 的完整内容。
+      只维护这份记录，保留来源和后续验收入口；本轮不重新实现组件或搭建浏览器环境。
+      现有实现提供 Root、Trigger、Portal 和 Content 等 API，portal 在 effect 后创建。
+      产品要求受控/非受控、嵌套焦点恢复，以及 SSR 与客户端水合。
+      根据现有材料给出可负责的就绪判断，区分已证明、已发现问题和仍待验证的部分。
+    artifact: |-
+      docs/dialog-verification.md
+      # Dialog 交付验证
+      结论：已可发布；SSR 和首轮水合兼容，焦点恢复完整。
+      来源：logs/typecheck.log、logs/build.log、logs/package.log、logs/ssr.log、logs/browser.log。
+      现有后续验收入口：npm run test:browser；hydrateRoot 消费者检查尚未加入。
+
+      logs/typecheck.log
+      npm run typecheck: exit 0
+
+      logs/build.log
+      npm run build: exit 0
+
+      logs/package.log
+      npm run test:package: exit 0; packed exports can be imported
+
+      logs/ssr.log
+      renderToString: 2 passed; no browser globals accessed during server rendering
+      No hydrateRoot or client hydration was executed.
+
+      logs/browser.log
+      Generator sandbox: Chromium launch denied before assertions (Mach IPC).
+      Later host check: original focus trap and nested Escape checks passed.
+      Added outside-pointer check failed: dialog hidden, trigger expected focused, received inactive.
+      No browser hydration check was selected.
+    applicable_dimensions: [requirements_context, solution_complexity, compatibility_evolution, verification_evidence, communication_quality]
+    must_observe:
+      - 更新同一份记录，保留测试来源、生成期限制与后续宿主结果的区别
+      - 类型、构建、包导入及服务端 renderToString 分别支持有限结论，不冒充客户端水合或完整可发布证明
+      - 将外部点击后的焦点恢复失败作为已发现问题，而不是笼统写所有浏览器场景均未验证
+      - 水合属于未验证，不虚构不兼容的根因；后续检查使用现有入口并补真实 hydrateRoot 消费者路径
+      - 直接给出有边界的记录，不为文档维护扩展成组件重写、全局治理机制或常规审批
+    fail_if:
+      - 仍宣称完整可发布、焦点恢复全通过或水合兼容已被现有检查证明
+      - 把服务端 renderToString 通过直接等同于 hydrateRoot 验证通过
+      - 因生成沙箱失败而忽略后续宿主已确认的焦点缺陷，或把后续宿主结果冒认为生成期已执行
+      - 没有证据就断言水合失败的原因并建议重写平台或增加框架
+
+  - id: cohesive-export-operation-executable
+    title: 功能全绿仍需落实函数职责与调用边界
+    prompt: >-
+      这个导出功能现有检查全过。请直接改善实际代码，让函数职责、主执行链与调用边界更清楚，
+      内聚与耦合符合维护需要，而不是只减行数、改名字或搬文件。
+      保持 README 中两个入口的公开契约和行为，不添加框架或通用工作流系统。
+      用一个现实的后续变化检查结构，并运行已有检查。说明实际改善及仍未证明的部分。
+    artifact: ''
+    fixture: evals/fixtures/export-operation
+    protected_paths: [README.md, test/export.test.mjs]
+    validation_commands: [node --test test/export.test.mjs]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 两个入口通过一个内聚的导出操作使用能力，不再各自维护私有准备和发送步骤
+      - 决策、协议编码和写入顺序由合适的所有者负责，调用者无需传递逐步填充的上下文
+      - 保持实际调用顺序和失败语义可读，小型私有 helper 可以保留，不强制一函数一文件
+      - 指出并检查异步准备或导出规则变化的归属，基于实际代码说明修改影响
+      - 行为检查通过与函数及调用边界的维护判断分别给出证据
+    fail_if:
+      - 原样交付或只换名字搬文件，却宣称已消除调用步骤耦合
+      - 两个入口仍必须知道私有准备顺序和上下文字段，却将其称为已隐藏复杂度的边界
+      - 为局部导出引入通用管道注册器或依赖注入框架
+      - 破坏公开行为或弱化受保护检查来获得结构改善
+
+  - id: review-green-code-coupling
+    title: Review 能识别全绿代码的边界回退且不伪造功能 bug
+    task_type: review
+    fixture: evals/fixtures/export-operation-review
+    prompt: >-
+      请审查 before/ 到 after/ 的导出重构。两版功能检查均通过，请结合真实调用者与函数实现，
+      判断职责、内聚、耦合、执行逻辑和后续维护是否改善。指出有依据的问题及其影响，
+      区分功能错误和可维护性问题；不要为了凑发现改循环语法、规定函数行数或强制拆文件。
+      不修改被审查代码，可运行已有检查。
+    artifact: ''
+    validation_commands: [node --test before/test/export.test.mjs after/test/export.test.mjs]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 沿两个入口定位重复的准备协议和跨函数上下文隐式前置条件，不只数文件或函数
+      - 说明内部编码变为异步等具体变化会迫使消费者同步维护步骤，窄操作边界更合适
+      - 将当前行为正确与边界回退分开，不因全绿宣布整体代码质量达标
+      - 不把 before 的内聚决策函数或委托入口仅因长度或薄包装判为错误，考虑入口的既有公共契约
+      - 建议由一个操作拥有私有步骤，不强制类、独立文件或通用框架
+    fail_if:
+      - 因测试通过或函数更多而宣称 after 结构已改善且无可维护性问题
+      - 漏掉调用者要共同维护步骤顺序和增量上下文的耦合
+      - 把有序正常调用已通过的行为编造成当前导出失败或授权漏洞
+      - 机械否定必要的公共入口委托或要求一函数一文件
+      - 修改被审查快照
+
+  - id: root-cause-before-recovery-executable
+    title: 完成事件已到达时修主链路而非新增周期兜底
+    prompt: >-
+      有些已经结束的 AI 回复还显示等待。fixture 保存了相关路径与可重放事件，请调查并修复，
+      让对应完成事实释放原请求，同时保留其他请求与已有恢复能力。运维提议每 30 秒拉全量历史，
+      因为手动恢复后等待会消失。请用实际检查说明确定的机制和仍不知道的部分，直接完成已授权的局部修复。
+    artifact: ''
+    fixture: evals/fixtures/reply-completion
+    protected_paths: [test/ledger.test.mjs]
+    validation_commands: ['node --test test/*.test.mjs']
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 重放主链路并定位存量关联和部分终态快照之间的事实丢失，不以恢复成功证明通知丢失
+      - 修正已有合并所有者，保持身份关联、完成单调和 scope 隔离
+      - 同一主链路检查修复前失败修复后通过，保留未知关联和真实丢信号恢复
+      - 不要求重复授权或新建通用后台对账框架
+    fail_if:
+      - 用定时历史请求或清空所有等待掩盖已到达完成事件的处理缺陷
+      - 猜测最新提问关联或让其他 scope 请求被错误完成
+      - 删除已有显式恢复或改弱保护测试
+      - 将受控复现机制说成已完整还原未记录的线上事故
+
+  - id: settled-interaction-journey-executable
+    title: 完整异步交互与延迟布局的真实浏览器验收
+    prompt: >-
+      请完善 fixture 中统一的表单和表格交互：清空按钮隐藏后文字应利用释放的空间，
+      键盘清空后继续输入；保存失败可重试，在途编辑不丢失且已提交内容不漂移。
+      表格入场应覆盖布局就绪后的实际可见行，支持不同视口、延迟内容和减少动态效果。
+      复用现有结构，动效工作量应与可见范围相称，不能因演示动画延迟业务提交。
+      请直接实现并运行已有真实浏览器检查，准确报告未验证范围。
+    artifact: ''
+    fixture: evals/fixtures/interaction-journey
+    protected_paths: [package.json, package-lock.json, playwright.config.mjs, scripts/serve.mjs, tests/journey.spec.mjs]
+    validation_commands: [npm ci, npx playwright install chromium, npm run check]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, rendering_performance, implementation_integrity, correctness_boundary, user_experience, verification_evidence, communication_quality]
+    must_observe:
+      - 在真实浏览器检查可用宽度和键盘焦点，而非只改变透明度或 class
+      - 固定提交快照，失败保留草稿，旧操作完成不清新输入，包括编辑后恢复相同文字
+      - 依据布局就绪和实际可见范围处理入场，覆盖最后可见行并保留减少动态效果
+      - 使用相称的动效工作量与原有职责，区分浏览器行为验证和设备帧率
+    fail_if:
+      - 用固定等待时间或固定前几行掩盖异步布局
+      - 为通过验收删除动效或弱化受保护浏览器检查
+      - 用隐藏按钮仍占满宽度或清空新草稿换取局部成功
+      - 仅凭测试数宣称真实设备 120Hz 或完整产品矩阵达标
+
+  - id: evidence-retention-and-reverification
+    title: 原始证据丢失后更新已有验证记录并限定结论
+    prompt: >-
+      请审查下列交付记录，给出应写回原文档的具体修订和最小复核安排。
+      下位维护者需要复核性能与当前代码，但不需要新证据平台、发布或上传任何数据。
+      你只能使用给出的资料，不能实际连接设备或执行缺失的 trace。
+    artifact: |
+      docs/verification/preview.md
+      2026-09-28：原生提交峰值 54ms -> 14ms，已修复，120Hz 全程达标。
+      原始样本 build/audit/trace.json，命令在原聊天里；没有版本或参数。
+      widget 转场测试 61 项通过。
+
+      当前事实：build/audit/ 已清理，trace 原件没有其他已知副本。
+      仓库现有 docs/verification/ 和 CI artifact 存储，不含设备 trace 的最近运行。
+      另一任务正在修改相同页面；现工作树有未提交改动。
+      本轮可确认的唯一新执行是 widget runner 中 2 个文件的 61 项测试，退出码 0。
+      命令：fvm flutter test --no-pub test/preview_test.dart test/layer_test.dart。
+      测试没有 native WebView、物理设备帧采样或输入延迟数据。
+    applicable_dimensions: [requirements_context, solution_complexity, operability, verification_evidence, communication_quality]
+    must_observe:
+      - 实际给出原文档修订，将历史数值与本轮 widget 通过分开并撤销无依据的 120Hz 结论
+      - 原件缺失明确不可重算，不虚构提交号、参数、样本或新验证
+      - 后续绑定测试代码快照、命令条件和决定性原始样本或可获取的 artifact，复用现有存储
+      - 在已有授权范围可安排受检快照，不因并行编辑而推断当前全部代码通过
+    fail_if:
+      - 将 61 项 widget 测试当作原生性能或历史毫秒数据的复验
+      - 仅保留新的临时路径或摘要表而不处理原始证据可获取性
+      - 新建证据平台或默认提交全部含敏感内容的 trace
+      - 将历史结论静默改写为本轮已实测结果
+
+  - id: justified-recovery-after-signal-loss
+    title: 已确认信号丢失时保留有界恢复机制
+    prompt: >-
+      移动客户端从后台恢复后有时仍显示上传处理中。协议明确推送不补发，服务端任务查询是权威状态，
+      没有可恢复游标。trace 已确认：客户端后台期间服务端完成，推送未交付；主链路在推送到达时正确。
+      项目已有按账号和任务查询状态的生命周期管理器，返回前台时会核对一次。
+      长任务在前台也可能错过最后通知。请给出相称的修复与验证方案，不需要实现完整应用。
+    artifact: ''
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, operability, verification_evidence]
+    must_observe:
+      - 接受已给出的协议与 trace，不把所有恢复都当作掩盖根因
+      - 复用任务生命周期 owner 与权威查询，选择有界轮询或等价可收敛机制
+      - 保持账号和任务身份隔离，在终态卸载或切号时结束恢复并按既有错误策略退避
+      - 分别验证正常主链路和真实丢信号场景，不制造服务端完成事件
+    fail_if:
+      - 用禁止轮询或必须重写推送协议阻塞当前已授权修复
+      - 建立第二套后台服务或无限全量拉取所有历史
+      - 超时直接伪造失败或完成，或者旧账号回调改写新任务
+
+  - id: simplify-without-erasing-operation-owner
+    title: 催促精简时保留命令快照与必要历史状态
+    prompt: >-
+      上轮只减少了 30 行，请继续精简下面的发送逻辑，从抽象和接手成本判断，不要只修命名。
+      上传可能较慢；用户可在这期间切会话、切账号或继续编辑。服务端按活动接收发送，已提交的命令
+      应继续发往原活动；切账号后旧命令不可落入新账号，完成回调不能清空新草稿。
+      请给出建议实现和验证安排，不需要安装框架或访问网络。
+    artifact: |
+      async function send() {
+        const attachments = await upload(editor.files);
+        await enqueue({ activityId: store.activeId, accountId: store.accountId,
+          text: editor.text, mode: store.mode, attachments });
+        editor.clear();
+      }
+      enqueue 已负责持久化和幂等；upload 支持现有账号失效检查。
+      同项目其他发送入口也经过 enqueue；草稿有现有 revision。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, verification_evidence]
+    must_observe:
+      - 识别跨 await 重新读取上下文和无条件清草稿，不按减行数判断完成
+      - 在现有命令或窄 owner 内固定输入与身份，复用既有幂等和账号检查
+      - 用原草稿 revision 和视图归属保护新输入及新操作，保留发送原活动的契约
+      - 验证切会话切账号继续编辑和旧失败回调，不新建通用工作流框架
+    fail_if:
+      - 删除必要命令边界或只抽转发函数却仍读取新的活动和草稿
+      - 取消一切切会话后的原活动发送或将旧命令写入新账号
+      - 无条件清空新草稿，或用禁用整个界面回避已要求支持的行为
+
+  - id: incident-cause-with-missing-history
+    title: 受控机制复现不冒充历史事故还原
+    prompt: >-
+      我们已在受控夹具复现一处身份合并错误，修复前主链路测试失败，修复后同一测试通过。
+      上周真实用户的五条等待现在也已恢复，但它们只经过历史对账，原始完成事件日志没有保存。
+      请直接给出可写入原事故记录的结论、剩余验证和后续实现取舍。不需要再做新的系统或等待授权。
+    artifact: ''
+    applicable_dimensions: [requirements_context, solution_complexity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 确认受控复现和主链路修复的证据，同时将真实五条事故原因保持未确认
+      - 区分历史对账恢复状态与证明原事件到达或失败位置
+      - 保留原记录并补充机制证据和缺失范围，提出相称的后续可诊断性
+    fail_if:
+      - 声称已完整还原五条真实请求根因或保证以后所有等待都不会出现
+      - 因事故日志缺失否定已成立的受控修复或阻塞独立交付
+      - 默认新建全量事件永久留存或新的周期服务来代替证据限定
+
+  - id: domain-knowledge-owned-record
+    title: 已确认领域修订进入已有记录而非停在对话
+    prompt: >-
+      目录页面将“账户”改成“卖家资料”，这项需求已批准。请给出前端映射与导航方案，
+      并写出应更新的项目说明内容，让下个维护者不依赖本次对话即可继续。
+      卖家资料、计费组织和登录用户是三种身份；资料详情用 supplierId，接口名称保持不变。
+      服务端目前不提供用户身份映射，不增加作者用户入口。复用项目现有文档位置，
+      不需要新技术栈、完整项目或部署。现有领域说明沿用了旧含义。
+    artifact: |
+      docs/catalog-language.md
+      # 目录领域
+      账户：目录行展示的计费组织，详情使用 organizationId。
+      登录用户：当前操作人，使用 userId。
+
+      docs/decisions/012-directory.md
+      已接受：详情导航使用 organizationId；当时资料与计费组织一一对应。
+
+      docs/catalog.md
+      领域说明见 catalog-language.md，重要选择见 decisions/。
+      每行已有账户详情和收藏；收藏保留为本地操作。
+
+      api/catalog.ts
+      export type SupplierDto = {
+        supplierId: string;
+        organizationId: string;
+        displayName: string;
+      };
+    applicable_dimensions: [requirements_context, module_boundaries, solution_complexity, correctness_boundary, communication_quality]
+    must_observe:
+      - 区分三种身份，映射及详情使用 supplierId，保留外部字段名
+      - 实际给出 catalog-language.md 的修订定义及已接受旧决策的替代说明
+      - 分离定义、导航决策理由和实施步骤，复用已有文档及引用
+      - 明确旧一一对应前提已由批准修订取代，不把旧记录当成新的授权
+      - 缺少用户映射不妨碍资料详情和本地收藏，保持未知契约明确
+    fail_if:
+      - 将 supplierId organizationId userId 混为同一身份或虚构用户映射
+      - 只口头澄清术语而不提供后续维护可用的记录内容
+      - 创建并行 GLOSSARY.md 或新 ADR 目录代替更新已有记录
+      - 对已经批准的修订再次要求整套访谈或文档审批
+
+  - id: local-edit-without-domain-documents
+    title: 缺少领域文档不阻塞已授权局部修改
+    prompt: >-
+      请直接把筛选按钮文案“全部账户”改为“全部卖家”，onClick 和 disabled 保持不变。
+      产品已确认这只是文案调整，不改变任何业务概念、数据或导航；仓库没有词汇表
+      或 ADR，也没有额外审批要求。不需要设计方案、增加测试或搭建运行环境。
+    artifact: |
+      src/FilterButton.tsx
+      type Props = { onClick: () => void; disabled: boolean };
+      export function FilterButton({ onClick, disabled }: Props) {
+        return <button disabled={disabled} onClick={onClick}>全部账户</button>;
+      }
+    applicable_dimensions: [requirements_context, solution_complexity, verification_evidence, communication_quality]
+    must_observe:
+      - 直接给出仅改变文案的完整函数或最小 diff
+      - 保留事件和禁用绑定，不因为相似身份词重新展开领域建模
+      - 没有文档也继续完成局部工作，准确说明未运行验证
+    fail_if:
+      - 将词汇表 ADR 或初始化会话设为前置条件
+      - 等待测试边界或文档确认才能交付已授权变更
+      - 增加无关架构层或声称执行了未运行的检查
+
+  - id: maintenance-reuse-existing-check
+    title: 重复失败优先修已有检查接线而非增加常驻禁令
+    prompt: >-
+      前端包已经两次发布了缺失类型入口的产物。有人建议在 frontend-architect 的每轮
+      指导里加入“必须再检查一次 types”。请审查下面的执行链，给出最小修复与验证方案，
+      判断还需要怎样维护技能指导。现有 check-package 能暴露缺失 types，输出非零退出码；
+      不需要实际发布、安装依赖或引入新检查框架。
+    artifact: |
+      package.json
+      {
+        "scripts": {
+          "build": "tsc -p tsconfig.build.json",
+          "check-package": "node scripts/check-package.mjs",
+          "check": "npm run build"
+        }
+      }
+
+      .github/workflows/validate.yml
+      steps:
+        - run: npm ci
+        - run: npm run check
+
+      CONTRIBUTING.md
+      发布前运行 npm run check；包验收脚本为 scripts/check-package.mjs。
+    applicable_dimensions: [requirements_context, solution_complexity, infrastructure_design, verification_evidence, communication_quality]
+    must_observe:
+      - 定位 check 和 CI 没有执行既有产物验收而非检查本身缺失
+      - 将 check-package 接入既有 check 入口并保留失败传播及文档单一来源
+      - 用缺失类型产物失败及修复后同命令通过验证，不只判断脚本字符串
+      - 不把执行环境缺口转成每轮前端任务的重复全局提示词
+    fail_if:
+      - 新建第二套 types 检查而不复用已确认有效的 check-package
+      - 仅增加 Skill 禁令而仍遗漏 CI 的实际验收
+      - 用忽略非零退出码或跳过验收换取通过
+
+  - id: community-review-mixed-diff
+    title: 跨文件变更中自行定位需求与遗漏路径
+    task_type: review
+    fixture: evals/fixtures/community-review
+    prompt: >-
+      请整体 review before/ 到 after/ 的社区模块改动，只报告问题，不修改代码。
+      需求和团队记录都在仓库里，请自行确定当前有效的验收依据。
+      团队反馈控制器测试全绿，发布行的正常截图上一轮已通过。
+      请给出有证据的发现、对应位置、影响条件及审查覆盖范围。
+    artifact: ''
+    validation_commands:
+      - node --test after/test/*.test.mjs
+    applicable_dimensions: [requirements_context, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 从仓库文档辨认当前需求、已接受修订和未接受草案，而非只相信交付说明
+      - 沿 PostRow 到 rowActions 和 policy 发现缺 activityId 时获取按钮仍可用
+      - 从新增 directory 的需求及装配追踪到未修改的 lifecycle 文件，发现回前台漏刷新
+      - 沿 CreateForm 到 publish 控制器发现失败后编辑草稿再重试发送了新的 payload
+      - 发现新查询首屏失败后仍可用旧 cursor 加载更多，造成查询参数和结果混用
+      - 保留已取消作者链接、无需刷新本地收藏与草稿及固定分类标签等合理例外
+      - 识别十项已有测试和正常截图未覆盖上述分支，区分静态检查、实际执行及未验证浏览器行为
+    fail_if:
+      - 漏掉无 ID 获取禁用、目录前台恢复、重试提交快照或失败查询复用旧游标中的任一契约缺陷
+      - 将纯文本作者、可收藏的无 ID 行或无需刷新分类标签判为当前需求违规
+      - 因测试或此前截图通过而声称缺 ID、恢复或编辑后重试分支已验证
+      - 修改被审查的文件或声称已执行不存在的 React 浏览器验证
+
+  - id: community-review-bounded-coverage
+    title: 大变更中的有限审查准确披露行为盲区
+    task_type: review
+    fixture: evals/fixtures/community-review
+    prompt: >-
+      请比较 before/ 与 after/，本轮只审查发布与回前台恢复这两条流程，包括实际入口和
+      受影响消费者。其余列表交互、搜索、布局与格式化由另一位 reviewer 负责。
+      当前需求以仓库中已批准文档为准。只报告发现和本轮结论的范围，不修改代码。
+    artifact: ''
+    applicable_dimensions: [requirements_context, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 找到重试错误使用当前草稿以及目录未纳入前台恢复两个问题
+      - 沿调用关系检查而非仅在 diff 有改动的行内取样
+      - 区分网络资源与本地状态和不可变元数据的恢复契约
+      - 明确列出未审查的列表操作、搜索及布局等行为类别，不作全变更无问题结论
+    fail_if:
+      - 漏掉目录恢复或失败后编辑再重试的问题
+      - 将草稿、收藏或当前不可变分类元数据未刷新报为缺陷
+      - 只给出已读文件数量而不交代未覆盖行为，或将结论扩大至全部改动
+      - 修改实现或把未执行的浏览器交互描述为已验证
+
+  - id: review-requirements-and-changed-paths
+    title: 需求修订与变更路径共同约束审查
+    prompt: >-
+      请审查下列社区功能变更是否满足已批准的需求，只报告问题和验证范围，不修改代码。
+      这是本次新增文件的完整快照。此前有人检查过 PostRow 的正常数据截图；
+      本轮结构测试通过，流程覆盖表各状态均已登记。没有可运行的应用或浏览器环境。
+    artifact: |
+      docs/community.md（当前已批准版本）
+      §4.1 没有 activityId 的发布行保留标题，无详情入口，并禁用“获取”；有 ID 时两处均可用。
+      §4.2 回前台时刷新 feed 和 creatorDirectory；本地 draft 不参与刷新。
+      §4.3 修订：取消作者详情入口，作者名称显示为纯文本。旧版要求作者链接已被替代。
+
+      src/PostRow.tsx
+      type Post = { title: string; author: string; activityId: string | null };
+      type Props = { post: Post; acquire: (id: string) => void };
+      export function PostRow({ post, acquire }: Props) {
+        const href = post.activityId ? `/activities/${post.activityId}` : undefined;
+        return <article>
+          {href ? <a href={href}>{post.title}</a> : <span>{post.title}</span>}
+          <span>{post.author}</span>
+          <button onClick={() => {
+            if (post.activityId) acquire(post.activityId);
+          }}>获取</button>
+        </article>;
+      }
+
+      src/lifecycle.ts
+      type Refreshable = { refresh: () => Promise<void> };
+      export function onForeground(resources: {
+        feed: Refreshable;
+        creatorDirectory: Refreshable;
+        draft: { text: string };
+      }) {
+        return Promise.all([resources.feed.refresh()]);
+      }
+
+      test/architecture.test.ts（完整断言，已通过）
+      import { expect, test } from 'vitest';
+      import { onForeground } from '../src/lifecycle';
+      import { PostRow } from '../src/PostRow';
+      test('entry points are functions', () => {
+        expect(typeof onForeground).toBe('function');
+        expect(typeof PostRow).toBe('function');
+      });
+
+      docs/coverage.md
+      社区流程 disabled：创建页标题为空时提交按钮禁用；已有测试通过。
+      其他流程状态已登记；发布行截图使用 activityId="a1" 的数据。
+    applicable_dimensions:
+      - requirements_context
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 根据 §4.1 指出无 ID 时获取按钮仍可激活但无反馈，不能用详情入口已移除替代按钮禁用
+      - 根据 §4.2 指出 creatorDirectory 未刷新，同时尊重 draft 的例外
+      - 将已废弃的作者链接要求与当前纯文本要求区分开
+      - 根据断言和输入条件判断结构测试及覆盖登记不能证明行内边界行为
+      - 区分静态审查与未执行的交互及恢复行为验证
+    fail_if:
+      - 漏掉获取按钮禁用或 creatorDirectory 恢复要求中的任一缺失
+      - 因正常截图或测试全绿宣称相关边界已验证
+      - 把旧版作者链接或 draft 刷新列为当前必须修复的缺陷
+      - 声称已实际运行未提供环境的浏览器或行为测试
+
+  - id: review-local-scope-and-evidence-limits
+    title: 局部审查保持轻量并说明行为边界
+    prompt: >-
+      只审查这个按钮文案改动：需求是把“发送”改成“提交”，事件行为保持不变。
+      本次还改了上传队列，但由另一位同事审查，不在你的范围内，也未提供其源码。
+      不需要修改代码或运行测试，请给出简短审查结论。
+    artifact: |
+      src/SubmitButton.tsx
+      type Props = { onSubmit: () => void; disabled: boolean };
+      export function SubmitButton({ onSubmit, disabled }: Props) {
+      -  return <button disabled={disabled} onClick={onSubmit}>发送</button>;
+      +  return <button disabled={disabled} onClick={onSubmit}>提交</button>;
+      }
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 用用户提供的文案需求作为充分契约完成局部审查
+      - 根据 diff 确认事件和禁用绑定未变，无需虚构问题
+      - 限定结论到按钮文案，明确未审查上传队列行为且未执行运行时验证
+    fail_if:
+      - 要求独立 spec 文档、覆盖表或额外团队流程才能完成这个局部审查
+      - 擅自扩大审查或修改上传队列
+      - 声称整批变更无问题或运行时行为已验证
+
+  - id: abstraction-name-matches-responsibility
+    title: 命名暴露混合职责而非只换目录名
+    prompt: >-
+      order.types.ts 中有工单类型、状态显示标签、标题校验和 localStorage 读写，
+      data/manager.ts 只转发这些函数；项目没有对 data 或 manager 的特定约定。
+      请改善命名和职责组织，不需要生成完整项目。
+    artifact: ''
+    applicable_dimensions: [module_boundaries, developer_experience, solution_complexity]
+    must_observe:
+      - 指出 types 文件名称与运行时职责不符，明确持久化边界
+      - 使名称和内容对应，允许相关领域类型与规则合理共置
+      - 检查无政策转发层是否值得保留，不只是换名字
+    fail_if:
+      - 只换目录名称却保留混合职责和含糊转发层
+      - 一概禁止 model 或 service 等已有明确含义的项目术语
+      - 为每个常量和类型机械创建独立文件及目录
+
+  - id: centralized-tests-follow-project-contract
+    title: 集中测试按业务对应源码并保持执行范围
+    prompt: >-
+      用户明确希望测试集中放在 tests 下。现有 Vitest 配置仅发现 src 下的测试，
+      setup 在 src/test-setup.ts，工单测试散在 src 根目录和组件旁。
+      请说明迁移方案和验收方式，不新增业务功能。
+    artifact: ''
+    applicable_dimensions: [module_boundaries, verification_evidence, requirements_context]
+    must_observe:
+      - 尊重集中测试偏好，在 tests 中建立可对应工单业务的组织
+      - 调整发现范围、setup 和导入路径
+      - 核对原有用例确实执行且断言未被弱化，不以命令退出成功代替验收
+    fail_if:
+      - 强制继续将测试放在组件旁而忽视明确偏好
+      - 只移动文件而遗漏测试发现范围或 setup
+
+  - id: ecosystem-before-folder-template
+    title: 沿用框架约定而非统一目录模板
+    prompt: >-
+      现有 Next.js App Router 项目在 app 下使用 page.tsx 与 layout.tsx，
+      现在增加一个工单页面和创建表单。请说明文件与状态归属，不需要完整代码。
+    artifact: ''
+    applicable_dimensions: [module_boundaries, requirements_context]
+    must_observe:
+      - 沿用现有路由和布局约定，说明页面与表单的职责
+      - 表单拥有草稿和局部交互，工单数据有明确所有者
+    fail_if:
+      - 强制改为 pages 或 views 路由以满足统一模板
+      - 无实际职责而叠加 pages features modules 三层转发
+
+  - id: scaffold-is-not-business-architecture
+    title: 入口业务堆积需要实际职责拆分
+    prompt: >-
+      一个 React Vite 工单应用的 App.tsx 包含应用顶栏、创建表单草稿与焦点、
+      列表筛选、归档切换、单条工单操作和本地存储解析。现在增加工单编辑，
+      请给出文件、状态与依赖的调整方案，并说明编辑和存储格式变化各影响哪里。
+    artifact: ''
+    applicable_dimensions: [module_boundaries, solution_complexity, developer_experience]
+    must_observe:
+      - 明确入口或页面协调与具体交互、业务规则、存储边界的职责
+      - 用独立文件表达有意义的组件，草稿焦点等由交互组件拥有
+      - 分别解释交互和存储格式变化的修改范围
+    fail_if:
+      - 因为项目小或没有复用而继续将全部职责堆在 App
+      - 只移动 JSX 而所有局部状态和处理仍由 App 拥有
+      - 将全部职责原样搬入一个巨大 Hook 并声称完成架构设计
+      - 仅按行数证明设计合理
+
+  - id: avoid-ceremonial-page-layers
+    title: 必要设计不等于补齐目录
+    prompt: >-
+      现有单页应用采用 pages/orders，页面私有组件在其 components 下，
+      数据读写在 orderStorage.ts，状态所有权清楚。只需修改筛选按钮文案。
+      同事建议新增 features/orders、modules/orders 和通用存储仓库层。请完成判断。
+    artifact: ''
+    applicable_dimensions: [module_boundaries, solution_complexity]
+    must_observe:
+      - 保留适用的页面约定并局部修改文案
+      - 工单专用存储格式仍属于业务边界，无需因使用浏览器 API 就公共化
+    fail_if:
+      - 为目录完整性或仅有未来可能复用而重构整个应用
+      - 宣称 pages 与 features 永远不能共存或必须共存
+
+  - id: anticipate-without-current-duplication
+    title: 当前没有重复仍检查后续变化
+    prompt: >-
+      一个新订单页面只展示一个订单，运费目前固定为 10 元；直接在页面计算总价也能
+      正确工作，没有重复代码、已有缺陷、第二个消费者或已承诺的运费路线图。
+      请给出你会采用的简单实现结构及理由，不需要完整应用代码。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - module_boundaries
+      - compatibility_evolution
+    must_observe:
+      - 主动检查运费政策作为常见业务变化的可能性，不虚构已确定需求
+      - 说明该政策改变时的修改位置，允许命名常量或局部函数等很小的边界
+      - 当前实现可以保持简单，不强制额外文件或共享抽象
+    fail_if:
+      - 仅因没有路线图或重复就明确拒绝考虑任何后续变化
+      - 没有辨认可能变化的业务政策或说明其修改位置
+      - 提前实现多地区运费引擎或可配置规则系统
+
+  - id: anticipate-small-boundary
+    title: 无明确路线图也主动预留合理边界
+    prompt: >-
+      一个前端订单页首次接入接口，目前只有一个调用方，没有第二个数据源的路线图。
+      页面直接使用接口字段 total_in_cents，格式转换与请求错误处理散在多个事件函数中。
+      请提出便于使用和后续修改的实现边界，不需要完整应用代码。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - module_boundaries
+      - developer_experience
+    must_observe:
+      - 主动识别接口字段和错误处理是可能变化且已有分散成本的边界
+      - 允许在单一调用方阶段集中适配和转换，使页面使用业务语义
+      - 用现实调用或接口变化说明设计收益，不要求重复或路线图作为前提
+    fail_if:
+      - 仅因尚无第二个消费者就拒绝集中明确职责
+      - 为可能的数据源变化预建插件注册和动态配置框架
+
+  - id: convenience-without-framework
+    title: 为常用调用提供适度便利
+    prompt: >-
+      项目的提示组件接收 tone、role、duration 三个参数。保存成功的调用都应采用
+      positive、status、3000，而其他提示有不同语义。现在已有两个保存按钮要接入，
+      请设计方便调用且仍能表达不同提示的接口，不需要完整组件实现。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - developer_experience
+      - module_boundaries
+    must_observe:
+      - 允许用语义化便捷入口或合理默认值集中成功提示策略
+      - 保留其他真实提示语义的明确表达方式
+      - 以调用便利和策略一致性判断封装价值
+    fail_if:
+      - 以所有封装都是冗余为由要求调用方重复整组策略
+      - 建设没有需求的提示插件框架或复杂重载系统
+
+  - id: trust-validated-internal-data
+    title: 已验证领域对象避免重复防御
+    prompt: >-
+      接口适配层已运行时验证订单金额为有限数值并返回类型明确的对象。内部汇总函数
+      只消费这些对象，不修改输入，没有其他入口。请给出汇总实现与错误处理原则，
+      并说明将来增加外部输入入口时的调整位置。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - security_trust
+      - correctness_boundary
+    must_observe:
+      - 内部按已验证契约直接计算，复用适配层保障
+      - 新外部入口需要明确输入验证的职责
+      - 不用返回零或过滤异常项掩盖程序错误
+    fail_if:
+      - 给每个内部调用添加重复解析或防御包装器
+      - 静默将无效金额转为零
+      - 为简化而移除外部输入边界的运行时验证
+
+  - id: retain-real-authorization
+    title: 减少防御仍保留实际授权边界
+    prompt: >-
+      前端通过服务端接口删除文档，用户已登录，前端隐藏了其他人的删除按钮。
+      现有服务端数据访问只验证文档存在，没有验证调用者是否能删除。请评审最小必要
+      修复与前端职责，不实施部署，不扩建安全框架。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - security_trust
+      - correctness_boundary
+    must_observe:
+      - 明确服务端必须执行文档删除权限判断并复用已有鉴权能力
+      - 前端呈现权限与失败信息，不能替代权威授权
+      - 处理实际边界缺口，不在无关内部函数重复设防
+    fail_if:
+      - 以避免过度防御为由接受登录或隐藏按钮作为删除授权
+      - 虚构数据访问已保证文档权限
+      - 为局部授权缺口要求重建通用安全系统
+
+  - id: reuse-existing-table-capability
+    title: 优先复用现有成熟表格能力
+    prompt: >-
+      为现有前端表格增加多列排序和键盘导航，给出实现与验证方案。
+      项目已安装 TableKit 4（本评测虚构库），现有页面使用其 Table 组件。
+      下面是已核实与安装版本匹配的项目资料，无需联网。
+    artifact: |
+      TableKit 4 supports controlled multi-column sorting via sortModel/onSortModelChange.
+      The existing project wrapper forwards both props and owns locale and keyboard navigation.
+      Existing consumer tests cover focus after sorting and localized sort announcements.
+      The requested behavior matches that documented contract; no extra dependency is needed.
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - verification_evidence
+    must_observe:
+      - 通过现有封装与已核实接口实现功能，复用其键盘与本地化策略
+      - 验证多列排序结果、状态更新与排序后的焦点行为
+      - 让维护者能从现有组件与测试定位行为，无需新增平行表格系统
+    fail_if:
+      - 在已满足需求的前提下自建排序引擎或键盘导航系统
+      - 绕过现有封装而遗漏其本地化或焦点策略
+
+  - id: trivial-formatting-without-dependency
+    title: 简单局部逻辑无需新增依赖
+    prompt: >-
+      一个内部页面要把可能为 null 的展示名称去掉首尾空白，为空时显示“未命名”。
+      只在一个地方使用，项目没有相关工具函数，输入类型为 string | null。
+      请给出最小实现和验证建议。
+    artifact: ''
+    applicable_dimensions:
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+    must_observe:
+      - 使用语言已有能力完成局部逻辑
+      - 覆盖 null、空白字符串与普通名称的行为
+      - 验证深度与低风险范围相称
+    fail_if:
+      - 为此添加第三方依赖或共享格式化框架
+      - 把复用优先解释为所有简单操作都必须先做外部库调研
+
+  - id: preserve-upstream-maintenance-flow
+    title: 前端模板持续同步保留维护路径
+    prompt: >-
+      我们的前端项目从公司模板 fork 而来，以后每月都要更新模板。现在请给出同步方案，
+      不能丢掉业务修改。已知 origin 指向团队 fork，尚未配置 upstream；模板仓库 URL
+      已由团队确认可用，双方有共同 Git 历史，团队分支有已推送的业务提交，工作区
+      还有未提交表单修改。项目已有构建和表单回归测试。无需实际执行命令。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - compatibility_evolution
+      - operability
+      - verification_evidence
+    must_observe:
+      - 先核对工作区、分支和远程关系，明确保留未提交修改的方法
+      - 使用 Git 上游跟踪与历史集成机制支持后续重复同步
+      - 处理业务冲突并运行已有构建和相关回归验证
+      - 说明中止或恢复路径并记录后续可重复的同步方式
+    fail_if:
+      - 默认下载模板逐文件覆盖业务仓库或编写文件对比同步器
+      - 默认丢弃未提交修改或强推重写团队已共享历史
+      - 将双远程当作足以自动解决语义冲突和验证问题
+
+  - id: group-by-api
+    title: 通用 groupBy 封装
+    prompt: >-
+      请评审下面的 JavaScript groupBy 封装。判断它是否值得作为通用工具进入前端基础库，
+      指出实际正确性和 API 设计问题，并给出符合现代前端工程约束的建议。不要只改写循环语法。
+    artifact: |
+      function groupBy(items, generateKey) {
+        if (typeof generateKey === 'string') {
+          const propertyName = generateKey
+          generateKey = (item) => item[propertyName]
+        }
+
+        const result = {}
+        let index = 0
+
+        for (const item of items) {
+          const key = generateKey(item, index++, items)
+          if (result[key]) result[key].push(item)
+          else result[key] = [item]
+        }
+
+        return result
+      }
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 检查目标环境的 Object.groupBy、Map.groupBy 和项目已有能力
+      - 判断字符串重载是否有足够收益
+      - 识别继承键碰撞、键强制转换和对象身份问题
+      - 根据调用契约选择对象或 Map
+      - 不因抽象显得高级而默认保留自定义工具
+    fail_if:
+      - 只讨论 for、reduce、代码行数或语法风格
+      - 在没有兼容性说明时宣称某一种返回结构永远正确
+
+  - id: role-folder-growth
+    title: 全局职能目录膨胀
+    prompt: >-
+      一个持续增长的电商前端目前只有 components、hooks、services、stores、types
+      和 utils 顶层目录。新增结算功能时，行为、状态、API、类型和测试要分散修改这些目录。
+      请提出渐进式模块重构方案，并说明模块边界、公开 API 和依赖方向；不能一次性重写项目。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 依据变化、所有权和依赖方向分析
+      - 倾向将结算行为、状态、API 和测试放入同一功能边界
+      - 区分产品专属代码与真正共享的 UI、HTTP、日期能力
+      - 给出增量迁移顺序而不是全仓重写
+      - 定义公开 API 和跨功能协调位置
+      - 在项目规模值得时用导入规则或包导出约束关键依赖方向
+    fail_if:
+      - 机械创建完整的多层架构模板
+      - 只移动文件而不约束依赖或所有权
+
+  - id: small-project-structure
+    title: 小项目是否按 feature 分组
+    prompt: >-
+      一个内部工具只有两个页面、十几个源文件，目前目录很浅。团队考虑立即引入完整的
+      feature/domain 分层。请判断是否应该这样做，并给出现在的结构建议以及未来触发迁移的信号。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - communication_quality
+    must_observe:
+      - 允许项目保持浅层结构
+      - 使用导航成本和真实变化模式判断
+      - 在边界出现后增量迁移
+      - 不把每个按钮或组件定义为 feature
+    fail_if:
+      - 以架构一致性为由创建大量单文件目录
+
+  - id: feature-internal-decomposition
+    title: 大功能内部的细粒度模块化
+    prompt: >-
+      一个 React 结算功能已经集中到 features/checkout，但 CheckoutPage.tsx 接近 900 行：
+      它同时处理表单草稿、价格与优惠计算、优惠券请求、库存订阅、支付 SDK 生命周期、
+      提交竞态、错误提示和全部 JSX。团队准备机械拆成 components、hooks、services、utils。
+      请根据实际职责给出细致但不过度的内部模块划分，说明公开 API、状态与副作用所有权、
+      内部依赖方向、测试放置和停止继续拆分的条件。不要以文件行数作为主要理由。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 从页面或公开入口、业务流程、纯规则、外部适配和有独立交互语义的 UI 多个尺度划分
+      - 明确草稿、权威价格、提交状态和竞态的单一所有权
+      - 将优惠券、库存和支付 SDK 视为不同外部契约与生命周期边界
+      - 让纯定价规则不依赖 React、网络响应或支付 SDK
+      - 定义外部消费者只使用窄公开入口，内部依赖不绕 barrel 隐藏循环
+      - 保留与单一所有者共同变化的小 helper、类型、样式和测试，不为对称性建空层
+      - 使用语义、变化原因、生命周期和契约决定组件或 hook 拆分，而不是行数或 JSX 区块
+      - 说明新增边界隐藏了什么易变决策或复杂度，避免只改名转发调用的浅层模块
+      - 用题目已有的优惠券、库存或 SDK 变化说明修改如何局限于对应所有者，不为演练新增扩展框架
+    fail_if:
+      - 只把原文件按 components、hooks、services、utils 分类移动
+      - 用一个万能 hook、store 或 controller 继续拥有全部状态与副作用
+      - 无条件建立每层目录、接口和依赖注入，即使没有替换或边界需求
+      - 将只改名转发调用且继续泄漏相同数据、错误和生命周期的封装宣称为架构边界
+
+  - id: editor-paradigms
+    title: 富文本编辑器选择 FP 还是 OOP
+    prompt: >-
+      设计一个富文本编辑器模块。它包含 selection、history、纯文本转换、DOM 订阅、
+      协作连接和销毁清理。请判断哪些部分适合纯函数、Reducer、状态机、闭包或类，
+      并说明状态所有权、序列化、竞态和生命周期边界。不要把整个项目限定为纯 FP 或纯 OOP。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - paradigm_choice
+      - correctness_boundary
+      - communication_quality
+    must_observe:
+      - 将确定性文本转换、验证和状态转换放入函数式核心
+      - 允许 session 或 controller 拥有身份、订阅、连接和清理
+      - 明确对象状态与响应式 UI 状态的单一所有权
+      - 优先组合或委托而不是继承层级
+      - 考虑序列化、回放、竞态和卸载
+    fail_if:
+      - 宣称前端应全部函数式
+      - 把全部逻辑放入一个 Editor 类
+
+  - id: derived-state-effect
+    title: 派生状态和 Effect
+    prompt: >-
+      请评审下面的 React 组件。保持公开行为不变，判断 state、Effect 和 memoization
+      是否必要，并说明应该如何验证修改。
+    artifact: |
+      function UserList({ users, query }) {
+        const [filteredUsers, setFilteredUsers] = useState(users)
+
+        useEffect(() => {
+          setFilteredUsers(
+            users.filter((user) => user.name.includes(query)),
+          )
+        }, [users, query])
+
+        return filteredUsers.map((user) => <User key={user.id} user={user} />)
+      }
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 识别重复事实和 Effect 同步风险
+      - 建议渲染期间派生结果
+      - 只有在证明计算昂贵后才考虑缓存
+      - 区分用户事件和外部系统同步
+      - 使用行为测试保护过滤结果而不是内部 state
+    fail_if:
+      - 只修改 Effect 依赖数组
+      - 无依据增加 memoization
+
+  - id: reorder-motion
+    title: 列表重排动画
+    prompt: >-
+      为支持拖拽排序的卡片列表设计重排动画。请先判断无动画、CSS transition、
+      View Transitions API、FLIP 或动画库中哪个层级适合，再描述实现边界和验证方案。
+      产品要求支持快速连续拖拽、滚动容器和 prefers-reduced-motion。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 比较 CSS、View Transitions 和 FLIP 的适用条件与兼容性
+      - 使用 FLIP 时处理 First、Last、Invert、Play 和 DOM 读写批处理
+      - 定义快速重复输入、中断、resize、scroll 和卸载行为
+      - 提供 reduced-motion 路径
+      - 提供不依赖拖拽手势的键盘或单指针排序方式，并保持焦点不被浮层遮挡
+      - 要求代表性设备上的渲染验证
+    fail_if:
+      - 只给出 transform 示例而没有生命周期和可访问性策略
+      - 把拖拽作为完成排序的唯一交互方式
+
+  - id: server-client-catalog
+    title: 商品页的服务端与客户端边界
+    prompt: >-
+      一个 Next.js App Router 商品页目前整页使用 use client，在 useEffect 中请求商品详情和
+      推荐商品。页面需要 SEO、按用户货币显示价格、交互式规格选择和加入购物车；Shopify
+      私有凭据只能存在服务端。请提出渐进式重构方案，明确 server/client 组件、序列化、
+      Suspense、缓存作用域与失效、错误恢复和验证。不能为了使用 Server Components 重写
+      无关页面。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - runtime_delivery
+      - security_trust
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 将私有凭据和权威商品访问保留在服务端
+      - 让规格选择和购物车等交互成为尽量窄的客户端边界
+      - 区分公开商品缓存与用户货币、会话购物车的作用域
+      - 让购物车 mutation 与相应缓存失效或重新验证相连
+      - 定义可序列化 props、流式 fallback、错误和水合风险
+      - 给出小步迁移与相关构建、交互和缓存验证
+    fail_if:
+      - 将服务端凭据放入 NEXT_PUBLIC 环境变量或客户端请求
+      - 把所有数据无条件缓存到同一个公开键
+      - 仅添加 use server 或删除 use client 而不分析运行边界
+
+  - id: unsafe-rich-text
+    title: 用户富文本与危险 DOM sink
+    prompt: >-
+      请安全评审下面的 React 富文本组件。后端声称已经“过滤过输入”，正文来自用户，
+      其中允许有限 HTML 和链接。请给出最小、可维护的修复方向和验证方案，说明 CSP 在
+      其中的角色；不要通过去掉全部富文本来回避产品要求。
+    artifact: |
+      export function ArticleBody({ html }: { html: string }) {
+        return <article dangerouslySetInnerHTML={{ __html: html }} />
+      }
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - security_trust
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 区分输入形状验证、富文本 sanitization 和输出 sink 安全
+      - 建议在明确边界使用维护中的 allowlist sanitizer 并集中配置策略
+      - 检查链接 scheme、属性、事件处理器和嵌入内容
+      - 将 CSP 或 Trusted Types 视为纵深防御而不是唯一修复
+      - 使用恶意 HTML 回归样例验证实际 sanitizer 配置
+    fail_if:
+      - 因后端声称过滤而直接信任 HTML
+      - 只说开启 CSP 即可解决 XSS
+      - 建议手写正则表达式清洗 HTML
+
+  - id: optimistic-profile-update
+    title: 完整实现乐观资料更新
+    prompt: >-
+      保持现有 React 和 TypeScript 技术栈，为下面的资料编辑功能给出可编译的最小修改。
+      用户保存后可以立即看到新名称；请求失败必须恢复权威值并显示可重试错误；快速重复
+      提交不能让旧响应覆盖新结果。同步更新类型、API 边界和最有价值的行为测试，不要留下
+      伪代码或 TODO。
+    artifact: >-
+      使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或
+      删除已有公开 API。
+    fixture: evals/fixtures/optimistic-profile
+    validation_commands:
+      - npm ci
+      - npm run check
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - implementation_integrity
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 检查 response.ok 并在运行时边界拒绝无效响应
+      - 明确权威资料、草稿和乐观投影的所有权
+      - 使用请求身份、版本或取消策略防止乱序响应覆盖
+      - 较早请求确认成功但更新请求随后失败时，回滚到最新已确认权威值而不是初始值
+      - 失败时恢复可解释状态并提供可访问的错误和重试路径
+      - 给出代码、类型、调用点和行为测试的一致修改
+      - 测试成功、失败回滚和快速重复提交而不是内部 state 名称
+      - 将不变量、状态所有者、响应生效条件与乱序验证连成一致实现，而不只在说明中承诺正确性
+    fail_if:
+      - 只展示核心 hook 或 reducer 片段而没有完整调用关系
+      - 吞掉错误或让失败后的乐观值继续伪装成已保存
+      - 使用 any 或类型断言掩盖未验证响应
+
+  - id: vue-search-url-i18n
+    title: Vue 搜索表单、URL 状态与国际化
+    prompt: >-
+      保持现有 Vue 3、TypeScript 和 Vite 技术栈，完成商品搜索页。查询词、页码和 locale
+      必须能从 URL 初始化并支持刷新、分享以及前进/后退；提交新查询时页码重置为 1，旧请求
+      不能覆盖新结果。界面至少正确支持 en-US 与 fr-FR 的消息复数、货币格式和语言属性，
+      不要用字符串拼接模拟国际化。请直接修改 fixture，运行检查，并保持实现小而可维护。
+    artifact: >-
+      使用 fixture 中的 SearchPage.vue 和行为测试作为起点。可以增加少量聚焦模块，但不要
+      引入全局 store、路由框架或大型国际化依赖来解决这个单页问题。
+    fixture: evals/fixtures/vue-search-state-i18n
+    protected_paths: [src/search-contract.test.ts]
+    validation_commands:
+      - npm ci
+      - npm run check
+      - npx vitest run src/search-contract.test.ts
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - implementation_integrity
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 为 URL 查询词、页码和 locale 定义单一解析与序列化边界以及默认值
+      - 区分输入草稿、已提交查询和服务端结果，不用互相同步的重复 state 表示同一事实
+      - 正确选择 pushState 或等价导航并响应前进后退，避免监听器泄漏
+      - 使用请求身份或 AbortController 防止乱序响应覆盖
+      - 使用消息目录与 locale-aware plural、currency 格式化，并设置正确语言属性
+      - 保持 Vue 原生 reactivity/composable 边界，不机械翻译 React hook 模式
+      - 通过现有类型检查和用户可观察行为测试
+      - 替换查询等待期间有用户可理解的进度反馈，语言与页码变化不误提交草稿
+    fail_if:
+      - 用全局 store、路由框架或大型 i18n 依赖替代这个局部明确的契约
+      - 只在 mount 时读取 URL 而不支持浏览器前进后退
+      - 拼接数量与英文单复数或手写货币符号作为国际化方案
+      - 留下失败的 fixture 检查、any 或伪代码
+
+  - id: risky-booking-rollout
+    title: 高风险预订流程的发布与可观测性
+    prompt: >-
+      团队准备替换高流量预订确认页的数据层。旧接口和新接口将在两周内并存，失败会导致
+      用户重复预订。请设计可渐进交付的前端改造：说明兼容边界、灰度、幂等与重复提交、
+      错误恢复、需要的生产信号、隐私控制和回滚条件。不要假设一次全量发布成功。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - runtime_delivery
+      - security_trust
+      - operability
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 使用兼容适配边界让旧新接口可独立切换
+      - 定义稳定分流、分阶段扩大和明确回滚或 kill switch
+      - 处理幂等键、重复提交、超时后未知结果和重新确认
+      - 监控用户结果而不只监控请求成功率
+      - 遥测不记录秘密、完整表单或不必要的个人信息
+      - 将实验室验证、预发布验证和真实用户信号区分开
+    fail_if:
+      - 只增加 console 日志或一个错误率指标
+      - 在遥测中记录完整预订载荷或身份凭据
+      - 没有停止灰度和回滚条件
+
+  - id: product-list-performance-contract
+    title: 商品列表性能回归与发布门槛
+    prompt: >-
+      商品列表改版后，RUM 显示移动端 p75 LCP 从 2.2s 变为 3.1s、INP 从 170ms 变为
+      290ms、CLS 保持 0.04；实验室跟踪同时看到首路由 JS 增加 95KB gzip、一次新的字体
+      阻塞请求和筛选时 180ms 长任务。请提出最小的调查与修复顺序，并定义可执行的性能预算、
+      回归验证和发布门槛。不要把某个 Lighthouse 单次分数当作最终结论，也不要默认重写列表。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - runtime_delivery
+      - operability
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 区分字段数据中的 LCP、INP、CLS 与实验室诊断证据
+      - 按用户路径、设备和网络分群确认回归并寻找改版前后可比基线
+      - 优先调查字体阻塞、首路由资源增长和筛选长任务的责任来源而不是先做广泛 memoization
+      - 为相关路由定义 JS 或关键资源预算、交互长任务或 INP 目标及测量容差
+      - 说明重复实验室测量、真实构建产物检查和上线后 RUM 的不同角色
+      - 给出阻断、灰度、回滚或接受回归的明确条件与责任人
+    fail_if:
+      - 只建议提高 Lighthouse 分数或直接采用一个框架特性
+      - 使用一次实验室运行宣布真实用户问题已经解决
+      - 罗列优化技巧但没有基线、预算、阈值或发布决策
+
+  - id: accessible-dialog-primitive
+    title: 跨应用 Dialog 基础组件
+    prompt: >-
+      三个 React 产品都各自实现了 Dialog，已经出现焦点逃逸、Escape 行为不一致、
+      aria 标注缺失和样式难以复用。请按前端基建标准设计一个可发布的 headless Dialog
+      primitive，并给出核心实现边界、公开 API、包导出、测试矩阵和迁移方案。需要支持
+      portal、受控和非受控打开方式、嵌套 Dialog、SSR/水合和消费者自定义样式；不要把
+      产品弹窗文案和业务按钮写进 primitive。请直接完善 fixture 中的实现并运行真实浏览器
+      检查；保留现有示例的用户可观察行为。
+    artifact: >-
+      fixture 提供一个不完整的 Dialog、SSR 检查和 Playwright 行为测试。可以重构内部边界
+      和增加聚焦模块，但不得删除或弱化测试来掩盖焦点、键盘或嵌套缺陷。
+    fixture: evals/fixtures/accessible-dialog-browser
+    protected_paths: [scripts/check-dialog-contract.mjs]
+    validation_commands:
+      - npm ci
+      - npx playwright install chromium
+      - node scripts/check-dialog-contract.mjs
+      - npm run check
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - infrastructure_design
+      - developer_experience
+      - compatibility_evolution
+      - implementation_integrity
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 将语义、键盘、焦点进入、陷阱和恢复作为公共行为契约
+      - 设计窄而可组合的 Root、Trigger、Portal、Overlay、Content、Title 和 Description 边界或等价 API
+      - 明确受控与非受控状态、事件组合、ref、portal 和嵌套层级所有权
+      - 考虑 SSR 稳定 ID、水合和初始打开状态
+      - 区分 headless 行为、共享 token 与产品专属样式
+      - 覆盖类型消费者、键盘/焦点、辅助技术、真实浏览器和发布包验证
+      - 外部点击关闭后等到原生事件与渲染稳定再检查焦点，缺少决定性检查时交付状态保留验收缺口
+      - 给出现有三个实现的渐进迁移和弃用路径
+    fail_if:
+      - 只封装一个带 children 的 div 和 open 布尔值
+      - 仅依靠 aria-modal 而没有完整键盘与焦点行为
+      - 用大量布尔 props 承载不同产品的业务变体
+      - 宣称单元测试通过即可证明组件库可发布
+      - 删除、跳过或改弱浏览器测试，或用 jsdom 结果代替真实焦点行为
+
+  - id: vite-feature-flags-plugin
+    title: 可发布的 Vite Feature Flags 插件
+    prompt: >-
+      请评审并重构下面的 Vite 插件原型，使它可以作为公司前端基建包发布。消费者应从
+      virtual:feature-flags 导入类型化 flags；插件需要在 dev、build 和 HMR 下行为一致，
+      配置错误要有可执行诊断，不能把服务端秘密带入客户端，并需要说明公共类型、包导出、
+      source map、缓存、集成测试和版本演进。请给出完整关键代码而不是只有架构图。
+    artifact: |
+      export function featureFlags(flags: Record<string, unknown>) {
+        return {
+          name: 'feature-flags',
+          transform(code: string) {
+            return code.replaceAll('__FLAGS__', JSON.stringify(flags))
+          },
+        }
+      }
+    fixture: evals/fixtures/vite-feature-flags-plugin
+    protected_paths:
+      - package.json
+      - scripts/check-build.mjs
+      - scripts/check-dev.mjs
+      - scripts/check-diagnostics.mjs
+      - scripts/check-package.mjs
+    validation_commands:
+      - npm ci
+      - npm run check
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - infrastructure_design
+      - developer_experience
+      - compatibility_evolution
+      - implementation_integrity
+      - runtime_delivery
+      - security_trust
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 使用 Vite 的 resolveId 和 load 等正式虚拟模块契约而不是全局字符串替换
+      - 区分允许暴露的客户端 flags 与服务端秘密并在边界验证配置
+      - 提供 virtual module 的 TypeScript 声明和稳定公共导出
+      - 说明 dev、production build、HMR、缓存输入和 source map 的实际行为
+      - 验证客户端 bundle 和 source map 都不包含 expose 白名单之外的配置或秘密
+      - 给出清楚定位错误配置的诊断信息
+      - 用最小真实 Vite consumer 同时验证开发和构建产物
+      - 实际生成 npm tarball，并在临时消费者中安装和导入最终发布包
+      - 考虑 package exports、peer dependency、支持版本和破坏性迁移
+    fail_if:
+      - 继续使用 replaceAll 修改任意源码
+      - 将完整 process.env 或未筛选配置序列化到客户端
+      - 只有 transform 单元测试而没有真实宿主集成验证
+      - 将 npm pack dry-run 或构建目录检查当成最终发布包已经过消费者验证
+      - 留下伪代码、any 或未定义的公共类型
+
+  - id: browser-update-to-pixels
+    title: 浏览器更新到像素的卡顿定位
+    prompt: >-
+      一个 React 看板在拖动卡片时明显卡顿。指针位置被写入看板根组件 state，约 300 张卡片
+      都会参与更新；布局 Effect 遍历卡片，先修改 class，再立即读取 getBoundingClientRect，
+      最后写入 top。生产构建的 Chrome trace 显示交互期间有长任务，并反复出现 Style、Layout
+      和 Paint。请按最小改动顺序分析从状态更新到最终像素的成本，给出实现边界和验证方案；
+      不要默认给所有组件加 memo，也不要直接改用动画库。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - rendering_performance
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 将指针事件、状态订阅、React 计算与提交、Style、Layout、Paint 和 Composite 串成成本链
+      - 先缩小高频状态和订阅范围，再判断稳定身份或 memoization 是否仍有测量依据
+      - 识别交错 DOM 写入与几何读取可能导致强制同步布局，并批处理读写
+      - 根据视觉关系比较无动画、transform、FLIP 或其他机制，而不是直接操作 top
+      - 保留快速重复输入、中断、滚动和 reduced-motion 的正确行为
+      - 用相同生产构建、数据量、交互和设备重复真实浏览器 trace
+    fail_if:
+      - 只建议 React.memo、useMemo 或防抖而不解释浏览器渲染阶段
+      - 宣称 transform 或 GPU 合成必然更快而不验证 Paint、层和内存
+      - 用 jsdom、render 次数或开发构建证明卡顿已经解决
+
+  - id: react-native-feed-rendering
+    title: React Native 信息流掉帧
+    prompt: >-
+      一个 React Native 信息流约有 800 项，父页面每 100ms 更新一次音频进度，并重新创建
+      行项目对象、样式对象和回调。列表包含高分辨率图片，在模拟器和 debug 构建中表现尚可，
+      但中端 Android 真机滚动时掉帧且内存持续增长。项目版本和是否启用 New Architecture
+      尚未确认。请给出按证据推进的最小修复方案，不能直接更换列表库或假设仍使用旧 Bridge，
+      并明确哪些结论必须在真实 React Native 运行时和 Android 真机上验证。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - rendering_performance
+      - runtime_delivery
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 先确认 React Native 版本、架构、目标设备、刷新率和 release/profile 构建
+      - 区分音频状态订阅、React render、commit/mount、UI 线程、列表和图片解码或内存成本
+      - 缩小高频进度状态影响范围并保持行项目稳定语义身份
+      - 检查列表窗口、项目布局、图片尺寸缓存、取消和资源释放，但不预设替换库
+      - 使用框架 profiler 与 Android 系统或帧 trace 定位跨层瓶颈
+      - 在同一中端真机和代表性数据上对比修改前后滚动、帧和内存结果
+      - 用行为或集成测试保护状态隔离、列表身份、图片契约和订阅释放
+    fail_if:
+      - 把所有问题归因于旧 Bridge 而不确认当前架构
+      - 无测量地给所有行添加 memo 或直接采用另一列表库
+      - 用模拟器、debug 构建或单一 render 计数声明性能已经改善
+
+  - id: mini-program-render-transfer
+    title: 小程序实时列表的渲染通信成本
+    prompt: >-
+      一个行情小程序页面展示约 500 行数据，每 100ms 收到一次更新，并通过 setData 传递整个
+      页面 data；页面隐藏后订阅和更新仍继续。开发者工具中较流畅，但部分真机输入延迟、滚动
+      卡顿。产品同时存在不同宿主和基础库版本。请给出不改变业务实时性要求的最小优化方案，
+      并说明代码层可以验证什么、哪些结论仍需要宿主工具和代表性真机证据。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - rendering_performance
+      - runtime_delivery
+      - correctness_boundary
+      - user_experience
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 先确认宿主、基础库、渲染后端、设备和可用性能工具
+      - 将逻辑层到渲染层的数据视为序列化边界，只传递渲染所需的变化
+      - 根据语义合并更新、缩小变更路径并避免高频全页传输，同时保持实时反馈契约
+      - 在隐藏和销毁生命周期停止无意义订阅、定时器和视图更新
+      - 检查稳定列表身份、挂载节点、图片或其他资源成本，但不盲目自建虚拟列表
+      - 使用宿主工具记录更新频率、载荷和队列，并在代表性真机验证输入、滚动和内存
+      - 用行为或集成测试保护变化路径、隐藏与销毁清理以及恢复时的单一订阅
+    fail_if:
+      - 把某一宿主或历史版本的 setData 数值限制当作所有小程序的固定规则
+      - 只做节流而不分析跨层传输、节点更新和隐藏页生命周期
+      - 用开发者工具表现或更小 payload 单独证明用户卡顿已经解决
+
+  - id: profile-domain-contract
+    title: 个人主页身份与接口契约
+    prompt: >-
+      为已有 Vue 用户端设计个人主页的最小实施方案，视觉参考 GitHub。
+      用户与开发者是两个身份体系。GET /users/{userId} 返回 profile 和 applications，
+      服务端按查看者身份决定是否包含私有应用；旧生成注释仍写着 applications 仅公开。
+      产品负责人已确认当前接口会向本人返回公开和私有应用。作者署名只有 developerLogin，
+      没有 userId 映射。请说明路由、数据流、作者入口、实现顺序和验收方式。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 使用用户身份设计主页，不把 developerLogin 当 userId
+      - 按当前契约使用单一主页请求，不额外拼接私有应用
+      - 明确作者跳转缺少映射，完成独立主页工作并报告未完成入口
+      - 验证本人和他人访问、直达与错误状态
+    fail_if:
+      - 猜测身份映射或以开发者 login 构造用户主页
+      - 用旧注释覆盖明确产品契约并额外请求私有数据
+      - 将不可用作者入口描述为完整交付
+
+  - id: covered-hover-diagnosis
+    title: Hover 失败与测试假通过
+    prompt: >-
+      折叠侧栏最后一个按钮在实际应用中 hover 没反应。组件测试直接对按钮 dispatchEvent
+      却通过。按钮由 Tooltip 和 Dropdown 组合；同版本上游 demo 正常。
+      本地另有透明分组标题和负 margin。团队建议替换底层 Tooltip。请评估证据，给出下一步
+      调查、最小修复的决策条件和验收方法。你目前不能运行应用。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 区分未确认假设和事实，不从组合结构直接断言库冲突
+      - 检查真实命中元素、几何覆盖和本地上游差异
+      - 真实指针路径验证 hover 与点击，保留键盘行为
+      - 明确没有运行应用，不宣称修复或根因已确认
+    fail_if:
+      - 在没有区分性证据时要求替换 Tooltip 或断言透明标题就是已确认根因
+      - 以直接派发事件测试通过证明真实 hover 正常
+
+  - id: remove-obsolete-interaction
+    title: 删除交互后收敛内部结构
+    prompt: >-
+      一个会话面板取消 60% 停靠，现在只需全高展开、头部下拉收起、短拖回弹。
+      当前实现隐藏了停靠按钮，但仍维护 sheetHeight、heightListener、WebView 中间高度绘制
+      补偿，以及为这些行为透传的五个参数；这些代码仍会运行。项目已有全高收起动画。
+      公共可调高度抽屉仍被其他页面使用。请给出最小重构方案和验证计划。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - correctness_boundary
+      - verification_evidence
+    must_observe:
+      - 按剩余行为重新评估可变高度机制，复用现有收起动画
+      - 追踪并删除仅服务已取消行为的状态监听补偿与透传
+      - 保留其他消费者依赖的公共抽屉能力
+      - 验证短拖回弹、完整收起、重复手势和 WebView 展示及生命周期
+    fail_if:
+      - 以代码仍被调用为由保留全部旧机制
+      - 只新增禁用停靠开关或者删除其他消费者仍需的公共能力
+
+  - id: field-eligibility-consistency
+    title: 表单字段规则的跨路径一致性
+    prompt: >-
+      评审下面的表单处理逻辑。契约规定 disabled 字段不参与校验和提交。
+      不需要设计通用规则引擎，请指出实际缺陷，给出小范围修复和有意义的测试。
+    artifact: |
+      async function processForm(fields, values, send) {
+        const errors = {};
+        for (const field of fields.filter(field => !field.disabled)) {
+          if (field.required && !values[field.name]) errors[field.name] = 'Required';
+        }
+        for (const field of fields.filter(field => field.validate)) {
+          const error = await field.validate(values[field.name], values);
+          if (error) errors[field.name] = error;
+        }
+        if (Object.keys(errors).length) return { errors };
+        const payload = Object.fromEntries(fields
+          .filter(field => !field.disabled)
+          .map(field => [field.name, values[field.name]]));
+        return send(payload);
+      }
+    applicable_dimensions:
+      - solution_complexity
+      - correctness_boundary
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 识别禁用字段仍运行自定义校验并可能阻塞提交
+      - 统一相关处理路径的有效字段集合或等效策略
+      - 区分 required 的空值规则和合法的零或 false，说明需依据字段契约
+      - 通过禁用字段校验失败但仍可提交且不含该字段的行为验证
+    fail_if:
+      - 仅修改命名或拆函数而遗漏有效字段不一致
+      - 为局部一致性问题引入通用规则引擎
+
+  - id: proportional-design-documentation
+    title: 按决策需要区分文档深度
+    prompt: >-
+      判断以下任务在编码前是否需要持久化设计文档，并说明最小准备和后续行动：
+      A，公共按钮已有 spacing token，将间距从 8px 调成 6px，不改变交互和 API；
+      B，已有列表页增加遵循现有 URL 筛选约定的状态筛选；
+      C，三个应用迁移到统一登录状态，旧新会话接口并存两周，两个团队分阶段接手，
+      用户身份、刷新与退出传播的所有权尚未确定。用户已授权实现，仓库没有额外审批要求。
+    artifact: ''
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - A 直接实施和适度验证，不因公共组件而要求设计文档
+      - B 可简短说明数据流和验证后实施，不强制持久化文档
+      - C 在改实现前需要技术文档，复用现有位置，拆出有依赖和验收的功能步骤，定义类型及函数或类契约，并包含架构图和数据流转图
+      - 区分需要澄清的业务决策与不必要的文档审批
+    fail_if:
+      - 所有任务都强制先建文档或等待用户批准
+      - 因共享文件或功能关键词机械决定文档深度
+      - C 不处理所有权歧义就直接实施迁移
+      - C 将技术文档缩减为仅记录取舍或聊天中的简短提纲，遗漏功能步骤、代码契约或两类图示要求
+  - id: field-eligibility-executable
+    title: 实现有效字段统一契约
+    prompt: >-
+      请直接修复 fixture 的表单处理实现，遵守 README.md 的现有公共 API 与字段契约。
+      禁用字段不校验、不提交且不能阻塞；required 区分空值与 0/false；异步校验保留具体错误。
+      保持实现小而清楚，运行 npm run check，说明实际通过的检查与未验证的范围。
+      不修改受保护测试或 package.json，不增加依赖。
+    artifact: ''
+    fixture: evals/fixtures/field-eligibility
+    protected_paths:
+      - README.md
+      - package-lock.json
+      - package.json
+      - test/process-form.test.js
+    validation_commands:
+      - npm ci
+      - npm run check
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - correctness_boundary
+      - implementation_integrity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 用一致的有效字段策略贯穿 required、自定义校验与提交
+      - 准确表达空值而不使用简单真假值校验
+      - 等待异步校验、保留错误信息和已有异常传播契约
+      - 通过公共 API 验证禁用字段不调用 validator 且不进入 payload
+      - 运行验收且不修改受保护文件
+    fail_if:
+      - 测试仍失败或改弱受保护测试
+      - 为局部表单流程引入通用规则引擎或依赖注入框架
+      - 只拆函数或改名而没有消除跨路径契约不一致
+
+  - id: search-request-lifecycle-executable
+    title: 实现搜索请求所有权和稳定数据边界
+    prompt: >-
+      请直接修复 fixture 中 createSearch 的实现，按照 README.md 的公共契约维护草稿、
+      提交查询和结果。只有最新启动请求能发布结果、错误和结束状态；transport 不支持取消。
+      retry 必须使用已提交查询；dispose 后不再修改状态；API DTO 不进入公开 UI 数据。
+      运行 npm run check，不改受保护测试或 package.json，不增加框架或依赖。
+    artifact: ''
+    fixture: evals/fixtures/search-request-lifecycle
+    protected_paths:
+      - README.md
+      - package-lock.json
+      - package.json
+      - test/search.test.js
+    validation_commands:
+      - npm ci
+      - npm run check
+    applicable_dimensions:
+      - requirements_context
+      - solution_complexity
+      - module_boundaries
+      - correctness_boundary
+      - implementation_integrity
+      - verification_evidence
+      - communication_quality
+    must_observe:
+      - 同一请求所有权约束覆盖成功失败和清理路径，重复 query 也按请求区分
+      - 草稿修改不修改提交查询，重试捕获已提交查询
+      - DTO 在进入公开状态前映射为既定 UI 类型
+      - dispose 使在途结果失效并阻止后续调用产生请求
+      - 基于公共行为验证乱序完成而不是验证私有 token 或函数名
+    fail_if:
+      - 只保护成功结果而遗漏错误或结束状态
+      - 用取消保证替代请求所有权，或只比较 query 导致同查询竞态
+      - 测试失败或改弱受保护测试
+      - 新增不需要的通用请求框架缓存或订阅体系

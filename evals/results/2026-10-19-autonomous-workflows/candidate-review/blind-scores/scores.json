@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "autonomous-review-maintainability",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "审查准确结合 README 中“单次、不可暂停操作”及两个公开入口的契约来判断改动，没有脱离项目语境。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "明确识别出原本简单流程被拆成可变 context 和四阶段编排所带来的不必要复杂度，并提出保留共享完整流程的适度方案。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "准确指出两个入口重复承担流程编排职责，会造成顺序与完整性漂移；建议由共享 exportSelected 统一封装、入口仅委托，边界合理。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "正确区分维护性缺陷与行为回归，指出可变 context 的漏调或乱序风险，同时没有虚构当前公开契约已被破坏。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "明确报告运行了指定测试且 10 项通过；生成期自检和后续主机验证均支持该陈述，且快照未修改也得到验证。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "发现按优先级、具体位置、成因、后续变化风险和可执行修复建议组织，内容简洁清楚。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "详细评分锚点及案例专属预期观察列表未提供；评分仅依据给定维度、快照、响应及验证输出。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "autonomous-review-contracts",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "正确依据当前产品契约识别了“重试必须复用失败载荷”和“前台恢复同时刷新目录”两项明确要求，且未把草案决策或发布说明误当成验收标准。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "问题定位到各自职责明确的 publish controller 与 lifecycle 模块，建议的修复也保持了现有注入式 API、局部控制器和资源生命周期边界。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "报告的两个问题都真实且修复方向正确，但漏掉了另一项直接违反契约的问题：rowActions.acquireDisabled 未检查 activityId，导致已发布、未拥有但缺少 activityId 的条目仍显示可用的 Get 按钮，虽然点击不会执行获取。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "常规 10 项测试通过，并有针对两个报告问题的最小运行复现，分别证明重试发送了 B 而非失败时的 A，以及前台恢复只调用 feed。还准确指出现有 publish 测试为何未覆盖载荷变化。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "输出简洁、按严重度分级，包含精确文件位置、契约影响、具体复现场景和直接修复建议；测试状态与未修改快照也交代清楚。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "快照不包含 React 宿主、浏览器测试或页面绑定，因此无法据此验证 URL 同步、键盘交互、真实渲染和宿主级前台事件接线。",
+          "生成器检查仅提供命令输出尾部而非完整命令审计，但现有输出足以支持其测试通过及两个定向复现结论。"
+        ],
+        "normalized_score": 14.4,
+        "case_failures": [
+          {
+            "rule": "漏掉无 ID 获取、目录恢复、重试快照或失败查询复用旧游标中的任一契约问题",
+            "reason": "响应发现了目录恢复和重试载荷问题，但漏掉另外两项：`acquireDisabled` 未检查 `activityId`，会让无 ID 的已发布未拥有条目显示可获取；替换查询失败时旧 `cursor` 被保留，之后 `loadMore()` 会在新查询下复用旧游标。"
+          }
+        ],
+        "verdict": "fail"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "autonomous-review-maintainability",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "审查准确引用 README 中“单次操作、无需可暂停准备流程”的明确契约，并据此判断重构是否合适。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "准确识别出 begin/classify/encode/dispatch 对简单原子操作造成的不必要阶段化、共享可变上下文和隐式顺序依赖，并给出更简单的单一操作建议。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "指出两个公开入口重复掌握内部编排协议，未来规则或阶段变化需同步修改；建议恢复共享的 exportSelected 边界，判断具体且符合现有模块契约。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "正确区分了行为正确性与可维护性问题；现有代码确实保持空选择、阻塞、顺序、单次写入、错误传播和异步期间 ID 稳定等结果契约。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "明确报告 before 与 after 均为 10/10，通过的自检记录和后续主机 20 项联合验证均支持该结论，且 fixture 未修改也由主机检查确认。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "发现按严重度呈现，包含精确文件定位、风险机制、现实后续变化影响和可执行修复建议；结论简洁且没有夸大功能回归。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "autonomous-review-contracts",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "Correctly reconciles the revision-2 requirements with accepted decisions, recognizes that the draft category decision is not binding, and notes behavior that does satisfy the accepted creator-navigation and favorites decisions."
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "Reviews the relevant controller, lifecycle, policy/action, routing, and URL-integration seams without demanding out-of-scope host implementation or introducing unrelated architectural concerns."
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "Identifies five concrete, evidence-supported contract violations: retry payload drift, stale-cursor pagination mixing, incomplete foreground refresh, inconsistent acquisition enablement, and absent production integration for shareable filters. Severities and proposed remedies are proportionate."
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "Accurately reports the passing 10-test suite and supplements it with focused executable reproductions for four behavioral defects. It clearly separates verified controller behavior from browser and host behavior that could not be checked."
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "Findings are prioritized, localized, explain observable failure scenarios, connect directly to requirements, and give concise remediation and test guidance. The merge recommendation is consistent with the evidence."
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "The supplied snapshot contains no browser host or browser harness, so real rendering, keyboard interaction, and history-navigation behavior cannot be independently assessed.",
+          "The DIFF section is empty; evaluation relies on the complete before/after file snapshots and recorded validations."
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

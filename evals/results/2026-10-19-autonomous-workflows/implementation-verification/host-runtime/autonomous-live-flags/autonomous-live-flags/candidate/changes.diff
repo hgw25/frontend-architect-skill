@@ -1,0 +1,439 @@
+diff --git a/README.md b/README.md
+index f4c90c0..adb296e 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,8 @@
+ # Project feature flags
+ 
++See [the plugin design](docs/feature-flags-plugin-design.md) for its public
++contract, lifecycle, security boundary, and verification plan.
++
+ Applications import flags from virtual:feature-flags. The existing consumer uses
+ featureFlags({ source, expose }) in its Vite configuration; source is a filesystem
+ path or file URL to a JSON object, expose lists the flag names allowed in clients.
+diff --git a/docs/feature-flags-plugin-design.md b/docs/feature-flags-plugin-design.md
+new file mode 100644
+index 0000000..b9c4aa0
+--- /dev/null
++++ b/docs/feature-flags-plugin-design.md
+@@ -0,0 +1,122 @@
++# Feature flags Vite plugin design
++
++## Outcome and current facts
++
++The package must let a Vite application expose an explicit subset of a JSON
++feature-flag file through `virtual:feature-flags`. Its existing consumer contract
++is `featureFlags({ source, expose })`, where `source` is a filesystem path or file
++URL and `expose` is the client allow-list. JSON values are supported. Unlisted
++values may be secrets and therefore must not occur in generated JavaScript or
++source maps.
++
++The package is ESM and Vite 8 is its host and peer. Vite owns module resolution,
++watching, invalidation, build output and source-map assembly. The plugin owns
++configuration normalization, reading and validating the source, allow-listing,
++and generating the virtual module. The JSON file remains the authority; neither
++the plugin nor the browser mutates it.
++
++Acceptance requires production builds, development reloads, useful missing-key
++diagnostics, consumer TypeScript declarations, and installation from the packed
++artifact. An invalid URL scheme, malformed JSON, a non-object root, or a missing
++exposed key is a configuration/source error and fails the requesting Vite load.
++
++## Four dependency-ordered increments
++
++1. **Define the public contract and package surface.** Add typed options and JSON
++   value types, retain the named `featureFlags` entry point, declare the virtual
++   module from the exported JSON type, and make the package publishable. Complete
++   when the plugin and example type-check only through public entry points.
++2. **Resolve and validate the source.** Normalize file URLs and filesystem paths
++   against Vite's resolved root, read JSON on demand, require an object root, and
++   select only own properties named by `expose`. Complete when failures name the
++   source and, for missing flags, the key.
++3. **Integrate the virtual module lifecycle.** Resolve the public virtual ID to an
++   internal ID, register the source with Vite's watcher, generate deterministic
++   ESM from only selected data, and invalidate the virtual module when the source
++   changes. Complete when build and live development consumers observe the
++   expected values and no unexposed token enters JavaScript or maps.
++4. **Verify the distributed consumer experience.** Document usage and run the
++   build, type, development, diagnostics and packed-install checks. Complete when
++   `npm run check` passes from a clean dependency install.
++
++## Code contracts and ownership
++
++- `FeatureFlagValue` is recursive JSON data; `FeatureFlagsOptions` contains
++  `source: string | URL` and `expose: readonly string[]`.
++- `featureFlags(options): Plugin` constructs one Vite plugin instance. It keeps
++  only normalized configuration for that instance; Vite owns hook scheduling.
++- `resolveSource(source, root): string` accepts local paths only and resolves a
++  relative path against the Vite project root.
++- `loadExposedFlags(source, expose): Promise<Record<string, FeatureFlagValue>>`
++  owns I/O, JSON/root validation, own-key checks, and allow-list projection. It
++  throws actionable errors rather than returning stale/default data.
++- `resolveId` and `load` own the virtual-module boundary. `load` registers the
++  file dependency before reading it. The generated module contains only the
++  projected record, so Vite source maps cannot recover the original JSON.
++- `handleHotUpdate` owns source-change invalidation and returns the virtual module
++  when present. The next load re-reads authoritative data; there is no plugin
++  cache or cross-project state to clean up.
++
++### Technical architecture
++
++```text
++Vite config / consumer project
++  | featureFlags(options)
++  v
++featureFlags plugin instance (packages/plugin/src/index.ts)
++  |-- configResolved ----------------------> normalized local source path
++  |-- resolveId("virtual:feature-flags") ---> internal virtual module ID
++  |-- load(internal ID) -------------------> source reader + validator
++  |                                             | readFile
++  |                                             v
++  |                                         flags.json
++  |                                             |
++  |<----------- generated ESM, exposed keys only
++  |-- handleHotUpdate(source) -------------> Vite moduleGraph invalidation
++  v
++application import { flags } from "virtual:feature-flags"
++```
++
++### Data flow
++
++```text
++options(source, expose)
++  -> configResolved: source path normalized against project root
++  -> consumer imports virtual:feature-flags
++  -> resolveId: public ID becomes internal ID
++  -> load: addWatchFile(source)
++  -> read UTF-8 -> JSON.parse -> require object root
++       | parse/root failure -> throw diagnostic with source
++  -> for each expose key: require own property
++       | missing -> throw diagnostic with key + source
++  -> projected record -> JSON serialization + safe JSON.parse literal -> generated ESM
++  -> Vite transforms/bundles -> consumer receives flags
++
++source change -> Vite watcher -> handleHotUpdate
++  -> invalidate internal module -> next import/load repeats the authoritative flow
++  -> new projected record reaches the consumer
++```
++
++## Verification, compatibility, and evolution
++
++The existing API and virtual import stay source-compatible. Runtime output is a
++read-only-by-contract record and errors are terminal so a bad rollout cannot
++silently use stale or empty flags. Checks cover workspace build/type use, secret
++absence in build artifacts, watch-mode updates, missing-key diagnostics, and a
++fresh consumer installing the tarball.
++
++A realistic next change is supporting a second source format. The source-reading
++and projection boundary allows a format-specific reader without changing virtual
++module resolution or the consumer API; it should be added only with a concrete
++format contract. Supporting remote URLs would additionally require freshness,
++cancellation and credential policy, so non-file URLs remain rejected today.
++
++## Implementation evidence
++
++Implemented on 2026-10-19. `npm run check` passed: package build, workspace and
++consumer type checks, production consumer build with secret-absence assertion,
++development source watching/reload, missing-key diagnostics, and packed-artifact
++installation all completed successfully. `npm test --workspace
++@frontend-architect-eval/feature-flags` also passed three focused contract tests
++covering unusual JSON property names (`__proto__`), client allow-listing, relative
++source resolution, watch registration, and rejection of remote URLs.
+diff --git a/packages/plugin/README.md b/packages/plugin/README.md
+new file mode 100644
+index 0000000..6ca40d9
+--- /dev/null
++++ b/packages/plugin/README.md
+@@ -0,0 +1,40 @@
++# `@frontend-architect-eval/feature-flags`
++
++A Vite 8 plugin that exposes an explicit, client-safe subset of a local JSON
++feature-flag file through a virtual module.
++
++```ts
++// vite.config.ts
++import { featureFlags } from '@frontend-architect-eval/feature-flags'
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  plugins: [
++    featureFlags({
++      source: new URL('./flags.json', import.meta.url),
++      expose: ['checkoutV2', 'theme'],
++    }),
++  ],
++})
++```
++
++Add the declaration entry point to the consumer's `tsconfig.json`:
++
++```json
++{
++  "compilerOptions": {
++    "types": ["@frontend-architect-eval/feature-flags/virtual"]
++  }
++}
++```
++
++Then import the allow-listed values:
++
++```ts
++import { flags } from 'virtual:feature-flags'
++```
++
++`source` accepts a file URL, an absolute path, or a path relative to Vite's
++project root. The source must contain a JSON object and every name in `expose`
++must exist. Source changes invalidate the virtual module during development.
++Only exposed values are used to generate client code and source maps.
+diff --git a/packages/plugin/package.json b/packages/plugin/package.json
+index f5b6fe3..9db0965 100644
+--- a/packages/plugin/package.json
++++ b/packages/plugin/package.json
+@@ -1,8 +1,9 @@
+ {
+   "name": "@frontend-architect-eval/feature-flags",
+   "version": "0.0.0",
+-  "private": true,
++  "description": "Expose an allow-listed JSON feature flag set through a Vite virtual module",
+   "type": "module",
++  "sideEffects": false,
+   "files": [
+     "dist"
+   ],
+@@ -17,7 +18,11 @@
+     }
+   },
+   "scripts": {
+-    "build": "tsc -p tsconfig.build.json && node scripts/copy-static.mjs"
++    "build": "tsc -p tsconfig.build.json && node scripts/copy-static.mjs",
++    "test": "node --test test/*.test.mjs"
++  },
++  "engines": {
++    "node": "^20.19.0 || >=22.12.0"
+   },
+   "peerDependencies": {
+     "vite": "^8.0.0"
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 289967d..ed642f7 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -1,10 +1,137 @@
+-import type { Plugin } from 'vite'
++import { readFile } from 'node:fs/promises'
++import { isAbsolute, resolve } from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++import type { HmrContext, Plugin, ResolvedConfig } from 'vite'
++
++export type FeatureFlagValue =
++  | boolean
++  | number
++  | string
++  | null
++  | readonly FeatureFlagValue[]
++  | { readonly [key: string]: FeatureFlagValue }
++
++export interface FeatureFlagsOptions {
++  /** A JSON file path, resolved from the Vite project root, or a local file URL. */
++  readonly source: string | URL
++  /** The only flag names that may be included in client modules. */
++  readonly expose: readonly string[]
++}
++
++const publicModuleId = 'virtual:feature-flags'
++const resolvedModuleId = `\0${publicModuleId}`
++
++export function featureFlags(options: FeatureFlagsOptions): Plugin {
++  const configuredSource = validateOptions(options)
++  const exposedNames = [...new Set(options.expose)]
++  let sourcePath = sourcePathForRoot(configuredSource, process.cwd())
+ 
+-export function featureFlags(flags: Record<string, unknown>): Plugin {
+   return {
+     name: 'feature-flags',
+-    transform(code: string) {
+-      return code.replaceAll('__FLAGS__', JSON.stringify(flags))
++
++    configResolved(config: ResolvedConfig) {
++      sourcePath = sourcePathForRoot(configuredSource, config.root)
++    },
++
++    resolveId(id: string) {
++      return id === publicModuleId ? resolvedModuleId : null
++    },
++
++    async load(id: string) {
++      if (id !== resolvedModuleId) return null
++
++      this.addWatchFile(sourcePath)
++      const flags = await loadExposedFlags(sourcePath, exposedNames)
++      const serializedFlags = JSON.stringify(flags)
++
++      return {
++        code: `export const flags = Object.freeze(JSON.parse(${JSON.stringify(serializedFlags)}));\n`,
++        map: null,
++      }
++    },
++
++    handleHotUpdate(context: HmrContext) {
++      if (resolve(context.file) !== resolve(sourcePath)) return
++
++      const module = context.server.moduleGraph.getModuleById(resolvedModuleId)
++      if (!module) return []
++
++      context.server.moduleGraph.invalidateModule(module)
++      return [module]
+     },
+   }
+ }
++
++function validateOptions(options: FeatureFlagsOptions): string | URL {
++  if (!options || (typeof options.source !== 'string' && !(options.source instanceof URL))) {
++    throw new TypeError('[feature-flags] "source" must be a filesystem path or file URL')
++  }
++  if (typeof options.source === 'string' && options.source.length === 0) {
++    throw new TypeError('[feature-flags] "source" must not be empty')
++  }
++  if (!Array.isArray(options.expose) || options.expose.some((name) => typeof name !== 'string')) {
++    throw new TypeError('[feature-flags] "expose" must be an array of flag names')
++  }
++  if (options.source instanceof URL && options.source.protocol !== 'file:') {
++    throw new TypeError(
++      `[feature-flags] "source" must be a local file URL; received ${options.source.protocol}`,
++    )
++  }
++
++  return options.source
++}
++
++function sourcePathForRoot(source: string | URL, root: string): string {
++  if (source instanceof URL) return fileURLToPath(source)
++  return isAbsolute(source) ? source : resolve(root, source)
++}
++
++async function loadExposedFlags(
++  sourcePath: string,
++  exposedNames: readonly string[],
++): Promise<Record<string, FeatureFlagValue>> {
++  let sourceText: string
++  try {
++    sourceText = await readFile(sourcePath, 'utf8')
++  } catch (error) {
++    throw new Error(
++      `[feature-flags] Unable to read ${JSON.stringify(sourcePath)}: ${errorMessage(error)}`,
++      { cause: error },
++    )
++  }
++
++  let parsed: unknown
++  try {
++    parsed = JSON.parse(sourceText)
++  } catch (error) {
++    throw new Error(
++      `[feature-flags] Invalid JSON in ${JSON.stringify(sourcePath)}: ${errorMessage(error)}`,
++      { cause: error },
++    )
++  }
++
++  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
++    throw new TypeError(
++      `[feature-flags] Expected a JSON object in ${JSON.stringify(sourcePath)}`,
++    )
++  }
++
++  const sourceFlags = parsed as Record<string, FeatureFlagValue>
++  const exposedFlags: Record<string, FeatureFlagValue> = Object.create(null)
++
++  for (const name of exposedNames) {
++    if (!Object.hasOwn(sourceFlags, name)) {
++      throw new Error(
++        `[feature-flags] Exposed flag ${JSON.stringify(name)} is missing from ${JSON.stringify(sourcePath)}`,
++      )
++    }
++    exposedFlags[name] = sourceFlags[name] as FeatureFlagValue
++  }
++
++  return exposedFlags
++}
++
++function errorMessage(error: unknown): string {
++  return error instanceof Error ? error.message : String(error)
++}
+diff --git a/packages/plugin/src/virtual.d.ts b/packages/plugin/src/virtual.d.ts
+index 7b86fc8..6ec429d 100644
+--- a/packages/plugin/src/virtual.d.ts
++++ b/packages/plugin/src/virtual.d.ts
+@@ -1,4 +1,6 @@
+ declare module 'virtual:feature-flags' {
+-  export type FeatureFlagValue = boolean | number | string
++  export type FeatureFlagValue =
++    import('@frontend-architect-eval/feature-flags').FeatureFlagValue
++
+   export const flags: Readonly<Record<string, FeatureFlagValue>>
+ }
+diff --git a/packages/plugin/test/plugin.test.mjs b/packages/plugin/test/plugin.test.mjs
+new file mode 100644
+index 0000000..cdad258
+--- /dev/null
++++ b/packages/plugin/test/plugin.test.mjs
+@@ -0,0 +1,60 @@
++import assert from 'node:assert/strict'
++import { mkdtemp, rm, writeFile } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { pathToFileURL } from 'node:url'
++import test from 'node:test'
++
++import { featureFlags } from '../dist/index.js'
++
++const resolvedModuleId = '\0virtual:feature-flags'
++
++test('preserves JSON property names while exposing only allowed flags', async (context) => {
++  const directory = await mkdtemp(join(tmpdir(), 'feature-flags-plugin-test-'))
++  context.after(() => rm(directory, { recursive: true, force: true }))
++
++  const source = join(directory, 'flags.json')
++  await writeFile(
++    source,
++    '{"__proto__":"literal","nested":{"enabled":true},"secret":"hidden"}',
++  )
++
++  const plugin = featureFlags({
++    source: pathToFileURL(source),
++    expose: ['__proto__', 'nested'],
++  })
++  const watched = []
++  const loaded = await plugin.load.call(
++    { addWatchFile(file) { watched.push(file) } },
++    resolvedModuleId,
++  )
++  assert.equal(typeof loaded, 'object')
++
++  const module = await import(`data:text/javascript,${encodeURIComponent(loaded.code)}`)
++  assert.deepEqual(
++    module.flags,
++    JSON.parse('{"__proto__":"literal","nested":{"enabled":true}}'),
++  )
++  assert.equal(Object.hasOwn(module.flags, '__proto__'), true)
++  assert.doesNotMatch(loaded.code, /hidden|secret/)
++  assert.deepEqual(watched, [source])
++})
++
++test('resolves relative sources from the Vite project root', async (context) => {
++  const directory = await mkdtemp(join(tmpdir(), 'feature-flags-plugin-test-'))
++  context.after(() => rm(directory, { recursive: true, force: true }))
++  await writeFile(join(directory, 'flags.json'), JSON.stringify({ enabled: true }))
++
++  const plugin = featureFlags({ source: 'flags.json', expose: ['enabled'] })
++  plugin.configResolved({ root: directory })
++  const loaded = await plugin.load.call({ addWatchFile() {} }, resolvedModuleId)
++
++  assert.match(loaded.code, /enabled/)
++})
++
++test('rejects non-file URLs before Vite starts', () => {
++  assert.throws(
++    () => featureFlags({ source: new URL('https://example.com/flags.json'), expose: [] }),
++    /local file URL.*https:/,
++  )
++})

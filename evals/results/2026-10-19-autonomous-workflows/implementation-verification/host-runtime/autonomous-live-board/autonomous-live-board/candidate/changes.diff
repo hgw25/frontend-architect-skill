@@ -1,0 +1,395 @@
+diff --git a/README.md b/README.md
+index cbfc76c..f6b9949 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,7 @@
+ # Team board
+ 
++排序流程与维护边界见 [看板卡片排序技术设计](docs/board-reordering.md)。
++
+ 实现当前项目的卡片排序。`src/data.mjs` 提供 80 张稳定 ID、不同内容长度的卡片，
+ `src/api.mjs` 已提供保存顺序的调用。页面使用原生 ESM，不更换技术栈。
+ 
+diff --git a/docs/board-reordering.md b/docs/board-reordering.md
+new file mode 100644
+index 0000000..40e35a5
+--- /dev/null
++++ b/docs/board-reordering.md
+@@ -0,0 +1,65 @@
++# 看板卡片排序技术设计
++
++## 目标与约束
++
++用户通过卡片按钮或拖拽手柄改变同一个业务顺序。每次有效操作立即更新 DOM 顺序并保存；动画只解释新旧位置，不是第二份排序状态。连续输入、滚动、窗口调整和看板隐藏不能让卡片跳回旧位置或留下动画。保存按提交顺序串行，最终持久化最新顺序，失败可见并可重试。保留稳定的卡片 DOM 身份、`data-card-id`、Board 列表标记和按钮焦点。
++
++## 依赖顺序与验收
++
++共 4 个按依赖排序的步骤：
++
++1. **建立稳定视图。** `createBoard()` 为每个稳定 ID 创建一次 `li`，控件事件把按钮与拖拽意图交给排序入口；`setBoardVisible()` 只挂载或卸载列表。验收：80 张卡片存在，隐藏后可恢复同一业务顺序，按钮操作后焦点仍在同一卡片的同一按钮上。
++2. **统一排序事务。** `moveByOffset(id, delta)` 与 `moveToIndex(id, targetIndex)` 仅计算有效目标，最终都调用 `commitOrder(nextOrder)`。后者原子更新唯一 `order`、重排现有节点、启动空间过渡并请求保存。验收：按钮和拖拽得到相同顺序，边界移动不产生保存。
++3. **解释空间变化。** `capturePositions()` 批量读取可见卡片几何，`animateFrom(previousPositions)` 在 DOM 已到最终顺序后执行只含位移的 FLIP。每个元素最多一个动画；新操作先采样当前视觉几何并取消旧动画，再从该位置过渡到新终态。隐藏、resize 和减少动态效果会取消并清理动画。验收：中间帧确实移动，连续操作不会跳回过时位置，销毁后无运行动画。
++4. **协调持久化。** `requestSave()` 将当前顺序快照标记为待保存；`flushSave()` 始终只有一个请求在途，成功后若已有新快照则继续保存，失败保留最新快照并显示 `Retry save`。旧请求只能确认自己的快照，不能清除后来意图。验收：快速连续修改最终提交最新顺序，失败可见，重试提交最新待保存值，成功显示 Saved。
++
++## 架构与责任
++
++```text
++DOM controls / pointer events
++            |
++            v
++  reorder intent functions
++            |
++            v
++  commitOrder(nextOrder) -----> save coordinator -----> saveOrder(ids)
++       |                              |
++       v                              v
++single order state              status / retry UI
++       |
++       v
++stable board DOM + FLIP owner
++```
++
++页面模块拥有短生命周期 UI 资源（拖拽状态、动画句柄、resize 清理），保存协调器拥有请求顺序与失败恢复。服务响应不携带可替换本地顺序的权威版本，因此客户端采用串行写入，避免较旧请求晚到覆盖较新意图。
++
++## 数据流
++
++```text
++button offset OR pointer target
++             |
++             v
++       next ID array
++             |
++       [commit once]
++        /          \
++       v            v
++reorder existing   pending snapshot
++DOM nodes          (copy of IDs)
++   |                    |
++final layout        serialized POST
++   |                    |
++current visual -> FLIP  +--> success -> save newer pending snapshot
++geometry -> animation   `--> failure -> alert + Retry save
++```
++
++## 关键选择与变化检查
++
++- CSS 不能在网格重排后直接过渡布局位置，因此使用 FLIP；只动画 `transform`，真实 DOM 在动画前已是终态。80 个元素的几何读取在每次有效排序时批量完成，避免逐项读写交错。
++- 指针拖拽采用 Pointer Events 和命中卡片目标，不引入新依赖；未来加入触摸或拖到首尾仍复用 `moveToIndex`，只需扩展目标索引计算。
++- 当前保存 API 没有版本或服务端顺序回读，串行写是能保证本客户端提交顺序的最小策略；未来 API 若提供版本，只需替换保存协调器，不影响排序和视图。
++- 卡片数据当前静态且稳定。若以后允许增删卡片，应在稳定视图所有者中增加按 ID 的节点对账，排序事务与保存契约无需改变。
++
++## 验证
++
++在真实 Chromium 中覆盖：按钮排序的 DOM 身份、焦点和中间帧；连续输入后的最终顺序；拖拽等价性；乱序风险下的串行保存、失败与重试；resize/scroll/隐藏后的清理；减少动态效果；固定 80 卡片连续操作的浏览器成本记录。
+diff --git a/src/app.mjs b/src/app.mjs
+index a238c98..d91bebb 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,17 +1,238 @@
+ import { cards } from './data.mjs';
+ import { saveOrder } from './api.mjs';
+-const app=document.querySelector('#app');let order=cards.map(c=>c.id),visible=true;
+-function draw(){
+- app.innerHTML='<button id="toggle">'+(visible?'Hide board':'Show board')+'</button><p role="status"></p>';
+- app.querySelector('#toggle').onclick=()=>{visible=!visible;draw();};
+- if(!visible)return;
+- const list=document.createElement('ol');list.setAttribute('aria-label','Board');app.append(list);
+- for(const id of order){const card=cards.find(c=>c.id===id),li=document.createElement('li');li.dataset.cardId=id;
+- li.innerHTML='<h2>'+card.title+'</h2><p>'+card.body+'</p><button>Move up</button><button>Move down</button><button>Move card '+id+'</button>';
+- li.querySelectorAll('button')[0].onclick=()=>move(id,-1);li.querySelectorAll('button')[1].onclick=()=>move(id,1);list.append(li);
+- // The existing layout adjustment reads after each write.
+- li.style.minHeight=(60+(list.getBoundingClientRect().height%5))+'px';
+- }
+-}
+-function move(id,delta){const i=order.indexOf(id),j=i+delta;if(j<0||j>=order.length)return;[order[i],order[j]]=[order[j],order[i]];draw();saveOrder(order).then(()=>app.querySelector('[role=status]').textContent='Saved').catch(()=>{});}
+-draw();
++
++const app = document.querySelector('#app');
++const cardById = new Map(cards.map((card) => [card.id, card]));
++const cardElements = new Map();
++const runningAnimations = new Map();
++const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
++
++let order = cards.map((card) => card.id);
++let boardVisible = true;
++let pendingSave = null;
++let saveInFlight = false;
++let savePaused = false;
++let drag = null;
++
++const toggleButton = document.createElement('button');
++const status = document.createElement('p');
++const errorRegion = document.createElement('div');
++const board = document.createElement('ol');
++
++status.setAttribute('role', 'status');
++status.setAttribute('aria-live', 'polite');
++errorRegion.setAttribute('role', 'alert');
++board.setAttribute('aria-label', 'Board');
++
++app.append(toggleButton, status, errorRegion);
++createBoard();
++setBoardVisible(true);
++
++toggleButton.addEventListener('click', () => setBoardVisible(!boardVisible));
++window.addEventListener('resize', cancelAnimations);
++reducedMotion.addEventListener('change', (event) => {
++  if (event.matches) cancelAnimations();
++});
++
++function createBoard() {
++  for (const id of order) {
++    const card = cardById.get(id);
++    const item = document.createElement('li');
++    const title = document.createElement('h2');
++    const body = document.createElement('p');
++    const moveUp = createButton('Move up', () => moveByOffset(id, -1));
++    const moveDown = createButton('Move down', () => moveByOffset(id, 1));
++    const handle = createButton(`Move card ${id}`);
++
++    item.dataset.cardId = id;
++    title.textContent = card.title;
++    body.textContent = card.body;
++    handle.className = 'drag-handle';
++    handle.addEventListener('pointerdown', (event) => beginDrag(event, id, handle));
++    item.append(title, body, moveUp, moveDown, handle);
++    cardElements.set(id, item);
++    board.append(item);
++  }
++}
++
++function createButton(label, onClick) {
++  const button = document.createElement('button');
++  button.textContent = label;
++  if (onClick) button.addEventListener('click', onClick);
++  return button;
++}
++
++function setBoardVisible(visible) {
++  boardVisible = visible;
++  toggleButton.textContent = visible ? 'Hide board' : 'Show board';
++  cancelDrag();
++  cancelAnimations();
++
++  if (visible) {
++    app.append(board);
++  } else {
++    board.remove();
++  }
++}
++
++function moveByOffset(id, delta) {
++  const sourceIndex = order.indexOf(id);
++  const targetIndex = sourceIndex + delta;
++  if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= order.length) return;
++
++  const nextOrder = order.slice();
++  [nextOrder[sourceIndex], nextOrder[targetIndex]] = [
++    nextOrder[targetIndex],
++    nextOrder[sourceIndex],
++  ];
++  commitOrder(nextOrder);
++}
++
++function moveToIndex(id, targetIndex) {
++  const sourceIndex = order.indexOf(id);
++  if (
++    sourceIndex < 0 ||
++    targetIndex < 0 ||
++    targetIndex >= order.length ||
++    sourceIndex === targetIndex
++  ) return;
++
++  const nextOrder = order.slice();
++  const [movedId] = nextOrder.splice(sourceIndex, 1);
++  nextOrder.splice(targetIndex, 0, movedId);
++  commitOrder(nextOrder);
++}
++
++function commitOrder(nextOrder) {
++  const previousPositions = boardVisible ? capturePositions() : null;
++  const focusedElement = board.contains(document.activeElement)
++    ? document.activeElement
++    : null;
++  cancelAnimations();
++  order = nextOrder;
++
++  const fragment = document.createDocumentFragment();
++  for (const id of order) fragment.append(cardElements.get(id));
++  board.append(fragment);
++  focusedElement?.focus({ preventScroll: true });
++
++  if (previousPositions) animateFrom(previousPositions);
++  requestSave(order);
++}
++
++function capturePositions() {
++  return new Map(
++    order.map((id) => [id, cardElements.get(id).getBoundingClientRect()]),
++  );
++}
++
++function animateFrom(previousPositions) {
++  if (reducedMotion.matches) return;
++
++  const finalPositions = new Map(
++    order.map((id) => [id, cardElements.get(id).getBoundingClientRect()]),
++  );
++
++  for (const id of order) {
++    const item = cardElements.get(id);
++    const first = previousPositions.get(id);
++    const last = finalPositions.get(id);
++    const x = first.left - last.left;
++    const y = first.top - last.top;
++    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) continue;
++
++    const animation = item.animate(
++      [
++        { transform: `translate(${x}px, ${y}px)` },
++        { transform: 'translate(0, 0)' },
++      ],
++      { duration: 450, easing: 'cubic-bezier(.2, .8, .2, 1)' },
++    );
++    runningAnimations.set(id, animation);
++    animation.addEventListener('finish', () => {
++      if (runningAnimations.get(id) === animation) runningAnimations.delete(id);
++    });
++    animation.addEventListener('cancel', () => {
++      if (runningAnimations.get(id) === animation) runningAnimations.delete(id);
++    });
++  }
++}
++
++function cancelAnimations() {
++  for (const animation of runningAnimations.values()) animation.cancel();
++  runningAnimations.clear();
++}
++
++function beginDrag(event, id, handle) {
++  if (event.button !== 0) return;
++  event.preventDefault();
++  cancelDrag();
++  drag = { id, pointerId: event.pointerId, handle };
++  handle.setPointerCapture(event.pointerId);
++  handle.closest('li').classList.add('is-dragging');
++  handle.addEventListener('pointerup', finishDrag);
++  handle.addEventListener('pointercancel', cancelDrag);
++}
++
++function finishDrag(event) {
++  if (!drag || event.pointerId !== drag.pointerId) return;
++  const { id } = drag;
++  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-card-id]');
++  cancelDrag();
++  if (target && board.contains(target)) moveToIndex(id, order.indexOf(target.dataset.cardId));
++}
++
++function cancelDrag() {
++  if (!drag) return;
++  const { handle, pointerId } = drag;
++  handle.closest('li').classList.remove('is-dragging');
++  handle.removeEventListener('pointerup', finishDrag);
++  handle.removeEventListener('pointercancel', cancelDrag);
++  if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
++  drag = null;
++}
++
++function requestSave(ids) {
++  pendingSave = ids.slice();
++  status.textContent = 'Saving…';
++  if (!savePaused) flushSave();
++}
++
++async function flushSave() {
++  if (saveInFlight || savePaused || !pendingSave) return;
++
++  const submittedOrder = pendingSave;
++  pendingSave = null;
++  saveInFlight = true;
++  status.textContent = 'Saving…';
++
++  try {
++    await saveOrder(submittedOrder);
++    saveInFlight = false;
++    if (pendingSave) {
++      flushSave();
++    } else {
++      status.textContent = 'Saved';
++      errorRegion.replaceChildren();
++    }
++  } catch (error) {
++    saveInFlight = false;
++    pendingSave ??= submittedOrder;
++    savePaused = true;
++    showSaveError(error);
++  }
++}
++
++function showSaveError(error) {
++  const message = document.createElement('span');
++  const retry = createButton('Retry save', retrySave);
++  message.textContent = `${error instanceof Error ? error.message : 'Save failed'}. `;
++  status.textContent = 'Save failed';
++  errorRegion.replaceChildren(message, retry);
++}
++
++function retrySave() {
++  savePaused = false;
++  errorRegion.replaceChildren();
++  flushSave();
++}
+diff --git a/src/style.css b/src/style.css
+index e8601ca..a64fb35 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -1 +1,48 @@
+-body{font:16px system-ui;margin:1rem}ol{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}li{border:1px solid #777;padding:1rem;background:#fafafa}button{margin:.2rem;min-height:2rem}p{overflow-wrap:anywhere}
++body {
++  margin: 1rem;
++  font: 16px system-ui;
++}
++
++ol {
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: 1rem;
++  padding: 0;
++  list-style: none;
++}
++
++li {
++  min-height: 60px;
++  padding: 1rem;
++  border: 1px solid #777;
++  background: #fafafa;
++}
++
++li.is-dragging {
++  outline: 2px solid #2463eb;
++  outline-offset: 2px;
++}
++
++button {
++  min-height: 2rem;
++  margin: 0.2rem;
++}
++
++.drag-handle {
++  cursor: grab;
++  touch-action: none;
++}
++
++.is-dragging .drag-handle {
++  cursor: grabbing;
++}
++
++p {
++  overflow-wrap: anywhere;
++}
++
++@media (max-width: 760px) {
++  ol {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
++}

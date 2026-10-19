@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "autonomous-live-filters",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 1,
+            "reason": "识别了商品/订单两种交互模式、URL 恢复、错误、竞态和无障碍需求，也检查了现有模块；但遗漏了页面专属查询参数契约，使用共享的 q/status，而验收明确要求 p_q/o_q。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用了现有 ui.mjs、query.mjs 和 History API，没有引入依赖或另造基础设施；辅助函数和单一请求序号与当前规模相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 1,
+            "reason": "URL、查询加载、页面渲染和行渲染已有清楚的局部函数边界，但两页筛选状态被 FILTER_PARAMETERS 和通用 updateUrl 混在同一参数空间，导致页面所有权与 URL 契约不清。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "纯转换用于日期和 URL 解析，命令式代码负责 DOM 生命周期与副作用，请求序号负责异步身份，选择与问题性质一致。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 1,
+            "reason": "实现不是片段，查询、状态、错误和调用链基本完整，5 项主机测试中有 3 项通过；但商品和订单 URL 参数均不符合契约，两个决定性测试失败，最终变更未形成完全一致的可验证实现。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "处理了无效日期、过期响应、查询失败、刷新及 popstate；但共享 q/status 参数会让商品页和订单页相互解释对方状态，缺少页面专属键这一关键身份边界。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "覆盖即时/提交式筛选、重置、日期错误、查询错误、状态播报、焦点样式、响应式布局和文本缩放；对应的键盘与布局主机测试通过。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 1,
+            "reason": "如实记录了 node --check、git diff --check 的通过结果以及沙箱中 Playwright 因监听权限受阻，未虚构端到端通过；但最终主机验收为 2/5 失败，核心 URL 行为仍未验证通过。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 1,
+            "reason": "范围、功能和验证限制表达简洁清楚，但开头“已完成”与后续主机验收仍有两个核心失败不一致，结论强于证据。"
+          }
+        ],
+        "global_failures": [
+          "决定性验收仍失败，却在总结中宣称“已完成”整体功能"
+        ],
+        "evidence_limits": [
+          "生成阶段的输出仅为命令尾部，未提供 README 的具体契约内容，无法判断页面专属 URL 参数是否已在文档中明确。",
+          "沙箱权限阻止了生成阶段的真实浏览器端到端验证；可观察行为主要依据之后的主机验证。"
+        ],
+        "normalized_score": 10.67,
+        "case_failures": [
+          {
+            "rule": "只交付文档或受保护浏览器检查失败、被弱化",
+            "reason": "后续主机验证中受保护的 Playwright 测试实际失败 2 项；商品页和订单页都使用了错误的 URL 参数名（实现写入 `q`，测试契约要求分别写入 `p_q` 和 `o_q`）。生成时因沙箱限制无法运行浏览器的说明本身属实，但不改变主机浏览器检查失败这一事实。"
+          }
+        ],
+        "verdict": "fail",
+        "validation_failures": [
+          "npm run check"
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "id": "autonomous-live-filters",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了两个页面不同的筛选语义、默认值、URL/历史恢复、异步竞态、响应式与无障碍要求，并基于既有 query/ui/data 契约实施。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用现有查询函数和 DOM 工具，仅新增小型 URL/校验模块与页面编排；设计文档还用现实的价格区间变化检验边界，未提前抽取通用筛选框架。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "filters.mjs 内聚默认值、解析、序列化和日期校验；app.mjs 负责页面状态、历史和异步副作用；查询及 UI 原语继续沿用既有模块，输入、结果和所有权清楚。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "无状态的 URL 转换和校验采用纯函数，DOM 生命周期、表单草稿、历史写入及请求代次留在有状态页面组合层，选择与转换和副作用性质相符。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "商品与订单主流程、默认值、Apply/Reset、URL 恢复、错误显示和竞态保护均有完整实现；宿主最终执行 5 项 Playwright 验收全部通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "覆盖缺失或反向日期、未知枚举、默认状态与显式“全部”状态的区别、无关参数保留、浏览器前进后退，以及旧成功或旧错误不得覆盖最新请求。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "使用原生带标签控件和表单提交，提供可见焦点、关联的日期错误、查询 alert、状态文本，并验证键盘提交、长标签、360px 窄屏和 200% 字号。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "生成阶段如实记录了沙箱中服务器绑定和 Chromium 启动受阻，同时给出已通过的契约测试、语法检查和 diff 检查；之后宿主在真实 Chromium 边界运行完整 npm run check，5 项均通过。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "先给出完成结果，再简洁列明行为、核心文件、已通过检查和沙箱未验证部分；范围、风险及验证来源清楚。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-terra",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "candidate": [
+      {
+        "id": "autonomous-live-runtime",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "设计文档明确了路由、身份/租户隔离、无脚本、语言格式、私有字段及既有 platform 契约。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "复用既有 platform 能力，以实例级 Map 和小型私有函数完成需求，未引入不相称的依赖或基建。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "服务端持有授权、缓存和安全投影；浏览器模块只处理表单交互状态，职责与权威边界清楚。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "路由、授权、缓存失效、页面、渐进增强和失败响应形成一致实现；服务器及浏览器测试均通过。"
+          },
+          {
+            "key": "runtime_delivery",
+            "score": 2,
+            "reason": "明确服务端渲染与浏览器增强边界，缓存按用户/租户/SKU 键控并按 validUntil 过期，购买后定向失效。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "服务端执行授权并固定 SKU；私有报价字段不进入 HTML；富文本经平台允许列表处理；缓存按身份隔离。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 1,
+            "reason": "覆盖身份、过期、授权、上游失败和缓存失效，也诚实说明超时结果未知；但服务端没有幂等键或其他跨请求重复购买保护。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "提供语义状态区、焦点样式、无脚本提交、禁用 viewer 操作及 JS 提交/失败恢复；真实浏览器测试覆盖关键路径。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "最终生成器检查和之后的主机验证均记录了服务器测试 4/4、Playwright 浏览器测试 3/3 通过；早期失败经后续修改和通过重跑修复。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "结果优先，简洁说明安全、交互和验证结果，并提供了包含范围与取舍的设计文档。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 15.2,
+        "case_failures": [
+          {
+            "rule": "已确认购买被后续报价失败掩盖，或原生与增强路径对确认结果不一致",
+            "reason": "原生 POST 成功后仅记录确认并 303 回报价页；随后的 GET 若 readQuote 失败会直接返回 quoteFailurePage，未消费或显示已记录的购买确认。增强路径则在成功 JSON 后立即显示“Purchase accepted.”，因此两条路径的确认结果不一致。"
+          }
+        ],
+        "verdict": "fail"
+      }
+    ]
+  }
+}

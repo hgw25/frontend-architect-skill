@@ -1,0 +1,47 @@
+diff --git a/README.md b/README.md
+index 04a9827..84e0172 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,11 @@ This is an existing frontend form submission capability. Its public async API is
+ Fields have unique string names, optional boolean disabled/required and an optional
+ sync or async `validate(value, values)` returning a string error or undefined.
+ Disabled fields are neither validated nor submitted. Unknown values are omitted.
++Fields may also define a synchronous `enabledWhen(values)` condition. A conditional
++field participates in required checks, custom validation and submission only when
++the condition returns `true`; disabled fields skip the condition entirely. Each
++submission evaluates conditions once against the same top-level value snapshot used
++by validators and the final payload.
+ Required emptiness is undefined, null or the empty string; zero, false, whitespace
+ and empty arrays are valid. Required errors are `Required` and skip that field's
+ custom validator. Custom errors retain their text. Await validation before sending
+diff --git a/src/process-form.js b/src/process-form.js
+index 5b23b0d..d3b80e5 100644
+--- a/src/process-form.js
++++ b/src/process-form.js
+@@ -1,18 +1,22 @@
+ /** Existing form submission entry point. */
+ export async function processForm(fields, values, send) {
+-  const eligible = fields.filter(field => !field.disabled);
++  const snapshot = Object.fromEntries(
++    Reflect.ownKeys(values).map(key => [key, values[key]]),
++  );
++  const eligible = fields.filter(field =>
++    !field.disabled && (!field.enabledWhen || field.enabledWhen(snapshot) === true));
+   const errors = {};
+   for (const field of eligible) {
+-    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
++    const value = Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined;
+     let error;
+     if (field.required && (value === undefined || value === null || value === '')) {
+       error = 'Required';
+     } else if (field.validate) {
+-      error = await field.validate(value, values);
++      error = await field.validate(value, snapshot);
+     }
+     if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });
+   }
+   if (Object.keys(errors).length) return { errors };
+   return send(Object.fromEntries(eligible.map(field => [field.name,
+-    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));
++    Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined])));
+ }

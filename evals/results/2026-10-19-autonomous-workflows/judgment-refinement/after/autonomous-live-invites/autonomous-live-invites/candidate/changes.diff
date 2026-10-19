@@ -1,0 +1,712 @@
+diff --git a/README.md b/README.md
+index 468b871..efa9676 100644
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,5 @@ Invitations 列表中的 Move earlier / Move later 只调整本页显示顺序
+ - `readOverview()`：GET `/api/overview`，返回 `{pending}`。
+ 
+ `npm run check` 使用 Chromium 和 HTTP 替身验证页面消费者的正常操作；不调用真实邮件服务。
++
++实现边界、异步策略与验证记录见 [团队邀请页技术设计](docs/team-invitations-design.md)。
+diff --git a/docs/team-invitations-design.md b/docs/team-invitations-design.md
+new file mode 100644
+index 0000000..7e6d929
+--- /dev/null
++++ b/docs/team-invitations-design.md
+@@ -0,0 +1,135 @@
++# Team invitations implementation design
++
++## Outcome and established contracts
++
++The page lets a user submit one email invitation, see the accepted invitation in
++the current list, reorder that list locally, and refresh the workspace overview.
++The existing native-ESM stack and `src/transport.mjs` are retained. A successful
++`sendInvitation(email)` response is authoritative for the invitation; the
++follow-on `readOverview()` is an independent projection and may fail without
++retracting or misreporting that accepted send.
++
++The public DOM contract remains: the Email and Team note fields, Send invitation
++and Refresh overview buttons, the `Invitations` list, `data-invite-id` rows, and
++the `data-testid="overview"` region. Native controls own their editable values so
++unrelated list and overview updates do not replace active input or selection.
++Dynamic send confirmations use a status region; send and overview failures use
++separately owned alert regions.
++
++## Functional sequence
++
++Implementation has three dependency-ordered steps:
++
++1. **Build stable page regions.** `src/app.mjs` creates the form, overview, list,
++   and note once, then exposes narrow update operations for each region. Complete
++   when initial data appears through the existing public DOM contract and drafts
++   remain mounted during other updates.
++2. **Implement local list commands.** `moveInvitation(id, delta)` updates the
++   display-order model and moves the existing row node; `appendInvitation(row)`
++   adds an accepted result. Boundary move buttons become unavailable. Complete
++   when moves make no requests and repeated keyboard activation stays on the same
++   logical button.
++3. **Implement independent asynchronous commands.** `submitInvitation()` guards
++   duplicate activation, snapshots the submitted email and edit revision,
++   publishes an accepted invitation before requesting overview synchronization,
++   and clears only an untouched submitted draft. `refreshOverview()` owns a
++   latest-request identity and its own pending/error state. Complete when success,
++   command failure, and successful-send/failed-refresh branches show honest,
++   accessible outcomes without disturbing later input.
++
++## Code contracts and ownership
++
++- `src/transport.mjs` (reused, unchanged) owns HTTP method, payload, status, and
++  JSON decoding for `sendInvitation(email)` and `readOverview()`.
++- `src/app.mjs` owns the page's in-memory invitation order and overview
++  projection. `createInvitationRow(invitation)` binds one stable DOM row to local
++  move commands; `updateMoveAvailability()` derives boundary button state.
++- `submitInvitation(event): Promise<void>` owns only the send lifecycle. Its
++  internal `sending` guard ensures one activation produces one POST. The Email
++  input remains editable; an incrementing edit revision distinguishes an
++  untouched submitted draft from later edits, including edit-away-and-back.
++- `refreshOverview(): Promise<void>` owns overview synchronization. A monotonically
++  increasing request identity allows only the newest read to publish data, error,
++  or pending cleanup. It never modifies invitation acknowledgement or send
++  feedback.
++- The DOM owns Email and Team note draft values and focus. No asynchronous
++  completion restores focus, so it cannot steal focus from later interaction.
++
++No generic store or request framework is introduced: the page has one lifetime,
++one write command, and one independently refreshable projection, so named local
++operations keep the policies visible with less indirection.
++
++## Technical architecture
++
++```text
++[Native controls / stable DOM]
++  form --submit--> submitInvitation() --email--> sendInvitation(email)
++  refresh button -> refreshOverview() ----------> readOverview()
++  move buttons --> moveInvitation(id, delta)
++                         |                 [src/transport.mjs]
++                         v                         |
++              [invitation order + row nodes]      v
++                         |                 [/api service boundary]
++                         v
++              updateMoveAvailability()
++
++submitInvitation() --accepted row--> appendInvitation()
++submitInvitation() --follow-on sync-> refreshOverview()
++refreshOverview() ----projection----> overview text / overview alert
++```
++
++Dependencies point from the page controller to the existing transport. DOM
++regions do not call each other; the send controller explicitly initiates the
++follow-on overview synchronization after acknowledgement.
++
++## Representative data flow
++
++```text
++Email input (draft value, edit revision)
++  -> submit event snapshots { email, revision }
++  -> duplicate guard + native form validity
++  -> sendInvitation(email) -> POST /api/invitations
++     -> failure: send alert; keep draft and list; enable submit
++     -> success: { invitation, receipt }
++        -> appendInvitation(invitation) -> visible row
++        -> send status includes accepted email
++        -> clear Email only when current revision == submitted revision
++        -> enable submit
++        -> refreshOverview() -> GET /api/overview
++           -> newest success: publish pending count
++           -> newest failure: keep prior count + overview alert + retry button
++           -> stale completion: publish nothing
++
++Move button -> moveInvitation(row id, +/-1)
++  -> reorder in-memory rows -> move the same DOM node -> update edge disabled states
++  -> focus remains on the same button; no transport call
++```
++
++## Verification and evolution
++
++Browser acceptance must verify the existing three consumer paths plus: repeated
++keyboard reorder without refocusing; a delayed send while Email and Team note are
++edited; duplicate submission suppression; send rejection; and accepted send with
++failed overview refresh. Static inspection must confirm transport calls remain at
++the two intended boundaries and all async feedback has an accessible live role.
++
++A realistic next change is adding invitation cancellation. Stable per-row nodes
++and the page-owned row/order operations provide a local seam for another row
++command, while server mutation and its acknowledgement can receive a separate
++controller without coupling it to overview errors or draft ownership.
++
++## Implementation evidence
++
++Implemented on 2026-10-19. The final code retains the contracts and ownership
++described above: `submitInvitation`, `refreshOverview`, `moveInvitation`,
++`createInvitationRow`, and `appendInvitation` are defined in `src/app.mjs` and
++called by the stable native controls described in both diagrams.
++
++- `node --check src/app.mjs` passed.
++- `git diff --check` passed.
++- `npm run check` passed all 7 Chromium tests: the three supplied acceptance
++  tests and four added boundary tests covering partial overview failure, edits
++  during a pending send, repeated keyboard reorder focus, and send rejection.
++- Final source inspection confirmed that list commands do not call transport,
++  send acknowledgement is published before the independent overview refresh,
++  and no asynchronous completion replaces the form or restores focus.
+diff --git a/src/app.mjs b/src/app.mjs
+index d744be2..840aefe 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,43 +1,220 @@
+ import { invitations, overview as initialOverview } from './data.mjs';
+-import { sendInvitation, readOverview } from './transport.mjs';
++import { readOverview, sendInvitation } from './transport.mjs';
++
+ const app = document.querySelector('#app');
+-let rows = [...invitations], overview = initialOverview, email = '', note = '', message = '', error = '', sending = false;
+-function element(tag, text) { const node = document.createElement(tag); if (text) node.textContent = text; return node; }
+-function draw() {
+-  app.replaceChildren(element('h1', 'Team invitations'));
+-  const form = element('form'), label = element('label', 'Email'), input = element('input');
+-  input.type = 'email'; input.required = true; input.value = email; input.name = 'email'; label.append(input);
+-  input.oninput = () => { email = input.value; };
+-  const submit = element('button', 'Send invitation'); submit.type = 'submit'; submit.disabled = sending; form.append(label, submit);
+-  const status = element('p', message); status.setAttribute('role', 'status'); app.append(form, status);
+-  if (error) { const alert = element('p', error); alert.setAttribute('role', 'alert'); app.append(alert); }
+-  const section = element('section'); section.className = 'overview'; section.append(element('h2', 'Overview'));
+-  const total = element('p', 'Pending: ' + overview.pending); total.dataset.testid = 'overview';
+-  const refresh = element('button', 'Refresh overview'); refresh.onclick = async () => {
+-    try { overview = await readOverview(); error = ''; draw(); } catch { error = 'Overview unavailable'; draw(); }
+-  }; section.append(total, refresh); app.append(section);
+-  const list = element('ol'); list.setAttribute('aria-label', 'Invitations');
+-  for (const row of rows) {
+-    const item = element('li'); item.dataset.inviteId = row.id; item.append(element('span', row.email));
+-    for (const [name, delta] of [['Move earlier', -1], ['Move later', 1]]) {
+-      const button = element('button', name); button.onclick = () => {
+-        const at = rows.indexOf(row), next = at + delta;
+-        if (next < 0 || next >= rows.length) return;
+-        [rows[at], rows[next]] = [rows[next], rows[at]]; draw();
+-      }; item.append(button);
++
++const state = {
++  rows: [...invitations],
++  overview: initialOverview,
++  sending: false,
++  overviewRequest: 0,
++};
++
++const rowElements = new Map();
++let emailRevision = 0;
++
++function element(tag, text) {
++  const node = document.createElement(tag);
++  if (text !== undefined) node.textContent = text;
++  return node;
++}
++
++function showFeedback(node, text) {
++  node.textContent = text;
++  node.hidden = !text;
++}
++
++const heading = element('h1', 'Team invitations');
++
++const form = element('form');
++const emailLabel = element('label', 'Email');
++const emailInput = element('input');
++emailInput.type = 'email';
++emailInput.name = 'email';
++emailInput.autocomplete = 'email';
++emailInput.required = true;
++emailInput.addEventListener('input', () => {
++  emailRevision += 1;
++});
++emailLabel.append(emailInput);
++
++const submitButton = element('button', 'Send invitation');
++submitButton.type = 'submit';
++form.append(emailLabel, submitButton);
++
++const sendStatus = element('p');
++sendStatus.className = 'feedback';
++sendStatus.setAttribute('role', 'status');
++sendStatus.hidden = true;
++
++const sendAlert = element('p');
++sendAlert.className = 'feedback error';
++sendAlert.setAttribute('role', 'alert');
++sendAlert.hidden = true;
++
++const overviewSection = element('section');
++overviewSection.className = 'overview';
++overviewSection.append(element('h2', 'Overview'));
++
++const overviewTotal = element('p');
++overviewTotal.dataset.testid = 'overview';
++
++const refreshButton = element('button', 'Refresh overview');
++refreshButton.type = 'button';
++
++const overviewAlert = element('p');
++overviewAlert.className = 'feedback error';
++overviewAlert.setAttribute('role', 'alert');
++overviewAlert.hidden = true;
++overviewSection.append(overviewTotal, refreshButton, overviewAlert);
++
++const invitationsHeading = element('h2', 'Invitations');
++const list = element('ol');
++list.setAttribute('aria-label', 'Invitations');
++
++const noteLabel = element('label', 'Team note');
++const note = element('textarea');
++note.name = 'team-note';
++noteLabel.append(note);
++
++app.append(
++  heading,
++  form,
++  sendStatus,
++  sendAlert,
++  overviewSection,
++  invitationsHeading,
++  list,
++  noteLabel,
++);
++
++function updateOverview() {
++  overviewTotal.textContent = `Pending: ${state.overview.pending}`;
++}
++
++function updateMoveAvailability() {
++  state.rows.forEach((row, index) => {
++    const controls = rowElements.get(row.id);
++    controls.earlier.disabled = index === 0;
++    controls.later.disabled = index === state.rows.length - 1;
++  });
++}
++
++function moveInvitation(id, delta) {
++  const currentIndex = state.rows.findIndex(row => row.id === id);
++  const nextIndex = currentIndex + delta;
++  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= state.rows.length) return;
++
++  const current = state.rows[currentIndex];
++  const neighbor = state.rows[nextIndex];
++  [state.rows[currentIndex], state.rows[nextIndex]] = [neighbor, current];
++
++  const currentItem = rowElements.get(current.id).item;
++  const neighborItem = rowElements.get(neighbor.id).item;
++  if (delta < 0) {
++    list.insertBefore(neighborItem, currentItem.nextSibling);
++  } else {
++    list.insertBefore(neighborItem, currentItem);
++  }
++  updateMoveAvailability();
++}
++
++function createInvitationRow(invitation) {
++  const item = element('li');
++  item.dataset.inviteId = invitation.id;
++
++  const details = element('span');
++  details.className = 'invite-details';
++  details.append(
++    element('span', invitation.email),
++    element('small', invitation.state),
++  );
++
++  const controls = element('span');
++  controls.className = 'row-actions';
++
++  const earlier = element('button', 'Move earlier');
++  earlier.type = 'button';
++  earlier.addEventListener('click', () => moveInvitation(invitation.id, -1));
++
++  const later = element('button', 'Move later');
++  later.type = 'button';
++  later.addEventListener('click', () => moveInvitation(invitation.id, 1));
++
++  controls.append(earlier, later);
++  item.append(details, controls);
++  rowElements.set(invitation.id, { item, earlier, later });
++  return item;
++}
++
++function appendInvitation(invitation) {
++  state.rows.push(invitation);
++  list.append(createInvitationRow(invitation));
++  updateMoveAvailability();
++}
++
++async function refreshOverview() {
++  const request = ++state.overviewRequest;
++  refreshButton.disabled = true;
++  overviewSection.setAttribute('aria-busy', 'true');
++  showFeedback(overviewAlert, '');
++
++  try {
++    const nextOverview = await readOverview();
++    if (request !== state.overviewRequest) return;
++    state.overview = nextOverview;
++    updateOverview();
++  } catch {
++    if (request !== state.overviewRequest) return;
++    showFeedback(
++      overviewAlert,
++      'Overview is temporarily unavailable. Invitation details are still available.',
++    );
++  } finally {
++    if (request === state.overviewRequest) {
++      refreshButton.disabled = false;
++      overviewSection.removeAttribute('aria-busy');
++    }
++  }
++}
++
++async function submitInvitation(event) {
++  event.preventDefault();
++  if (state.sending || !form.reportValidity()) return;
++
++  const submittedEmail = emailInput.value;
++  const submittedRevision = emailRevision;
++  state.sending = true;
++  submitButton.disabled = true;
++  showFeedback(sendAlert, '');
++  showFeedback(sendStatus, 'Sending invitation…');
++
++  try {
++    const result = await sendInvitation(submittedEmail);
++    appendInvitation(result.invitation);
++    showFeedback(
++      sendStatus,
++      `Invitation sent to ${result.invitation.email}. Receipt ${result.receipt.id}.`,
++    );
++
++    if (emailRevision === submittedRevision) {
++      emailInput.value = '';
++      emailRevision += 1;
+     }
+-    list.append(item);
++
++    void refreshOverview();
++  } catch {
++    showFeedback(sendStatus, '');
++    showFeedback(sendAlert, 'The invitation could not be sent. Please try again.');
++  } finally {
++    state.sending = false;
++    submitButton.disabled = false;
+   }
+-  app.append(list);
+-  const noteLabel = element('label', 'Team note'), textarea = element('textarea'); textarea.value = note;
+-  textarea.oninput = () => { note = textarea.value; }; noteLabel.append(textarea); app.append(noteLabel);
+-  form.onsubmit = async event => {
+-    event.preventDefault(); const submitted = email; sending = true; error = ''; draw();
+-    try {
+-      const result = await sendInvitation(submitted); rows.push(result.invitation);
+-      overview = await readOverview(); message = 'Invitation sent to ' + result.invitation.email; email = '';
+-    } catch { error = 'Invitation failed'; message = ''; }
+-    sending = false; draw(); app.querySelector('input').focus();
+-  };
+-}
+-draw();
++}
++
++form.addEventListener('submit', submitInvitation);
++refreshButton.addEventListener('click', refreshOverview);
++
++state.rows.forEach(row => list.append(createInvitationRow(row)));
++updateOverview();
++updateMoveAvailability();
+diff --git a/src/style.css b/src/style.css
+index c5bf553..76cbaeb 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -1 +1,196 @@
+-*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:#f5f6f8;color:#20242b;margin:0}main{max-width:780px;margin:40px auto;padding:24px;background:white;border-radius:12px}h1{margin-top:0}label{display:block;margin:12px 0}input,textarea,button{font:inherit;padding:8px}textarea{width:100%;min-height:70px}button{margin:4px;cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #476bd2;outline-offset:2px}ol{padding:0;list-style:none}li{padding:12px;border-bottom:1px solid #d8dce2;display:flex;gap:6px;align-items:center}li span{flex:1;overflow-wrap:anywhere}[role=alert]{color:#a61f1f}.overview{border:1px solid #ddd;padding:12px}
++:root {
++  color-scheme: light;
++  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++  color: #1c2430;
++  background: #f3f5f8;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  margin: 0;
++  min-width: 320px;
++}
++
++main {
++  width: min(780px, calc(100% - 32px));
++  margin: 40px auto;
++  padding: clamp(20px, 4vw, 36px);
++  background: #fff;
++  border: 1px solid #e2e6ec;
++  border-radius: 16px;
++  box-shadow: 0 16px 40px rgb(26 38 58 / 8%);
++}
++
++h1,
++h2 {
++  letter-spacing: -0.02em;
++}
++
++h1 {
++  margin: 0 0 24px;
++}
++
++h2 {
++  margin: 28px 0 12px;
++  font-size: 1.15rem;
++}
++
++label {
++  display: grid;
++  gap: 8px;
++  margin: 16px 0;
++  font-weight: 650;
++}
++
++input,
++textarea,
++button {
++  font: inherit;
++}
++
++input,
++textarea {
++  width: 100%;
++  padding: 10px 12px;
++  color: inherit;
++  background: #fff;
++  border: 1px solid #aeb7c4;
++  border-radius: 8px;
++}
++
++textarea {
++  min-height: 88px;
++  resize: vertical;
++}
++
++button {
++  min-height: 42px;
++  padding: 8px 13px;
++  color: #fff;
++  background: #315ec9;
++  border: 1px solid #315ec9;
++  border-radius: 8px;
++  cursor: pointer;
++}
++
++button:hover:not(:disabled) {
++  background: #244da9;
++}
++
++button:disabled {
++  cursor: not-allowed;
++  opacity: 0.48;
++}
++
++button:focus-visible,
++input:focus-visible,
++textarea:focus-visible {
++  outline: 3px solid #86a7ff;
++  outline-offset: 2px;
++}
++
++.feedback {
++  min-height: 24px;
++  margin: 10px 0;
++}
++
++.feedback[hidden] {
++  display: none;
++}
++
++.error {
++  color: #a01818;
++}
++
++.overview {
++  margin-top: 28px;
++  padding: 18px;
++  background: #f7f9fc;
++  border: 1px solid #dce2ea;
++  border-radius: 12px;
++}
++
++.overview h2 {
++  margin-top: 0;
++}
++
++ol {
++  margin: 0;
++  padding: 0;
++  overflow: hidden;
++  list-style: none;
++  border: 1px solid #dce2ea;
++  border-radius: 12px;
++}
++
++li {
++  display: flex;
++  gap: 16px;
++  align-items: center;
++  padding: 14px;
++  border-bottom: 1px solid #e5e9ef;
++}
++
++li:last-child {
++  border-bottom: 0;
++}
++
++.invite-details {
++  display: grid;
++  flex: 1;
++  gap: 3px;
++  min-width: 0;
++  overflow-wrap: anywhere;
++}
++
++.invite-details small {
++  color: #657083;
++  text-transform: capitalize;
++}
++
++.row-actions {
++  display: flex;
++  gap: 8px;
++}
++
++.row-actions button,
++.overview button {
++  color: #25324a;
++  background: #fff;
++  border-color: #aeb7c4;
++}
++
++.row-actions button:hover:not(:disabled),
++.overview button:hover:not(:disabled) {
++  background: #eef2f8;
++}
++
++@media (max-width: 600px) {
++  main {
++    width: 100%;
++    margin: 0;
++    border: 0;
++    border-radius: 0;
++    box-shadow: none;
++  }
++
++  li {
++    align-items: stretch;
++    flex-direction: column;
++  }
++
++  .row-actions button {
++    flex: 1;
++  }
++}
++
++@media (forced-colors: active) {
++  main,
++  .overview,
++  ol {
++    border: 1px solid CanvasText;
++  }
++}
+diff --git a/tests/invites.additional.spec.mjs b/tests/invites.additional.spec.mjs
+new file mode 100644
+index 0000000..735e510
+--- /dev/null
++++ b/tests/invites.additional.spec.mjs
+@@ -0,0 +1,89 @@
++import { expect, test } from '@playwright/test';
++
++const invitationRows = page =>
++  page.getByRole('list', { name: 'Invitations' }).locator('[data-invite-id]');
++
++test('an accepted invitation survives a failed overview refresh', async ({ page }) => {
++  await page.route('**/api/invitations', route => route.fulfill({
++    json: {
++      invitation: { id: 'new-2', email: 'grace@example.test', state: 'pending' },
++      receipt: { id: 'receipt-2', acceptedAt: 1730000000000 },
++    },
++  }));
++  await page.route('**/api/overview', route => route.fulfill({ status: 503 }));
++
++  await page.goto('/');
++  await page.getByRole('textbox', { name: 'Email', exact: true }).fill('grace@example.test');
++  await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
++
++  await expect(page.getByRole('status')).toContainText('grace@example.test');
++  await expect(page.locator('[data-invite-id="new-2"]')).toContainText('grace@example.test');
++  await expect(page.getByRole('alert')).toContainText('Overview is temporarily unavailable');
++  await expect(page.getByRole('button', { name: 'Refresh overview' })).toBeEnabled();
++});
++
++test('send completion preserves edits made while the request is pending', async ({ page }) => {
++  let finishRequest;
++  const requestCanFinish = new Promise(resolve => {
++    finishRequest = resolve;
++  });
++
++  await page.route('**/api/invitations', async route => {
++    const { email } = route.request().postDataJSON();
++    await requestCanFinish;
++    await route.fulfill({
++      json: {
++        invitation: { id: 'new-3', email, state: 'pending' },
++        receipt: { id: 'receipt-3', acceptedAt: 1730000000000 },
++      },
++    });
++  });
++  await page.route('**/api/overview', route => route.fulfill({ json: { pending: 5 } }));
++
++  await page.goto('/');
++  const email = page.getByRole('textbox', { name: 'Email', exact: true });
++  const note = page.getByRole('textbox', { name: 'Team note', exact: true });
++  await email.fill('ada@example.test');
++  await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
++  await email.fill('next@example.test');
++  await note.fill('Ask about timezone');
++  finishRequest();
++
++  await expect(page.getByRole('status')).toContainText('ada@example.test');
++  await expect(email).toHaveValue('next@example.test');
++  await expect(note).toHaveValue('Ask about timezone');
++  await expect(note).toBeFocused();
++});
++
++test('repeated keyboard moves keep focus on the same invitation action', async ({ page }) => {
++  await page.goto('/');
++  const moveLater = page
++    .locator('[data-invite-id="mia"]')
++    .getByRole('button', { name: 'Move later', exact: true });
++
++  await moveLater.focus();
++  await page.keyboard.press('Enter');
++  await expect(moveLater).toBeFocused();
++  await page.keyboard.press('Enter');
++
++  await expect(moveLater).toBeFocused();
++  expect(await invitationRows(page).evaluateAll(nodes => nodes.map(node => node.dataset.inviteId)))
++    .toEqual(['tom', 'zoe', 'mia', 'lee']);
++});
++
++test('a rejected send keeps drafts and offers a retry', async ({ page }) => {
++  await page.route('**/api/invitations', route => route.fulfill({ status: 500 }));
++  await page.goto('/');
++
++  const email = page.getByRole('textbox', { name: 'Email', exact: true });
++  const note = page.getByRole('textbox', { name: 'Team note', exact: true });
++  await email.fill('retry@example.test');
++  await note.fill('Keep this note');
++  await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
++
++  await expect(page.getByRole('alert')).toContainText('could not be sent');
++  await expect(email).toHaveValue('retry@example.test');
++  await expect(note).toHaveValue('Keep this note');
++  await expect(page.getByRole('button', { name: 'Send invitation', exact: true })).toBeEnabled();
++  await expect(invitationRows(page)).toHaveCount(4);
++});

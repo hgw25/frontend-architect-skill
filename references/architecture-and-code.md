@@ -13,6 +13,8 @@ for execution, placement, cache, or delivery boundaries.
 
 - [Understand before changing](#understand-before-changing)
 - [Preserve domain knowledge and decisions](#preserve-domain-knowledge-and-decisions)
+- [Turn requirements into an executable technical design](#turn-requirements-into-an-executable-technical-design)
+- [Match design lenses to behavior](#match-design-lenses-to-behavior)
 - [Construct a readable operation](#construct-a-readable-operation)
 - [Choose data representations](#choose-data-representations)
 - [Model data and state](#model-data-and-state)
@@ -68,7 +70,7 @@ three kinds of information distinct:
 | --- | --- |
 | Domain definition | What the concept means, identity and relationships, and ambiguous aliases worth distinguishing |
 | Consequential decision | Context, chosen alternative, reason and non-obvious consequences; link an earlier decision when replacing it |
-| Implementation plan | Acceptance conditions, affected contracts and implementation/verification steps |
+| Technical design | Requirement decomposition, ordered functional increments, supporting contracts, architecture and data-flow diagrams, implementation and verification; see the technical-design section below |
 
 A domain definition should let another maintainer distinguish such concepts as
 a seller profile, organization and signed-in user; their identifiers do not
@@ -89,6 +91,168 @@ Keep unresolved assumptions visibly unresolved. Update or supersede stale
 material when the confirmed contract changes, preserving useful rationale and
 project history conventions. Check one plausible later use: can a new maintainer
 find the definition or decision and apply it without the original conversation?
+
+## Turn requirements into an executable technical design
+
+Use this section for the design-bearing work identified in SKILL.md. The document
+connects requirement development with architecture and implementation. Derive
+boundaries and code contracts from the functional steps and acceptance; use those
+contracts to expose missing cases or dependencies in the decomposition. Revisit
+both when implementation or verification reveals a constraint. Each refinement
+must still serve the product outcome and its real consumers.
+
+Establish the initial design after inspecting the relevant system and
+before changing source, tests, configuration or generation templates. Inspection,
+reproduction and baseline checks can precede it. Do not substitute a chat outline
+or an after-the-fact description of finished code. Reuse a relevant owned document;
+otherwise add one under the project's documentation convention and link it from
+an existing discovery point when available. Missing documentation is a reason to
+write the design, not to skip it or wait for an initialization session.
+
+Apply the shared engineering standard while forming this design. Use the relevant
+decision guidance to compare plausible choices against actual consumers, existing
+capabilities, invariants and likely changes. For consequential choices, connect
+the requirement or constraint, chosen boundary/representation, concrete reason
+and a check or change scenario that can expose a poor choice. Put that reasoning
+beside the affected contract or step in the same document; naming principles
+does not demonstrate their application. A prescribed architecture, paradigm or
+extra layer needs a reason in this system.
+
+### Match design lenses to behavior
+
+Discover applicable ideas from the behavior and constraints, without requiring the
+user to name a method. This is a navigation map into existing decision guidance;
+read the relevant sections and use their tradeoffs and stopping conditions.
+
+| Requirement signal | Design lens and consequential decision | Guidance |
+| --- | --- | --- |
+| Features change independently or technical folders scatter one change | Colocation, information hiding and Feature-Sliced Design: choose owned feature boundaries, public APIs and dependency direction that fit this ecosystem | [Module grouping](module-boundaries.md#compare-the-two-grouping-strategies); [hide complexity](module-boundaries.md#hide-complexity-not-just-code) |
+| Screens share controls or visual patterns but differ in product rules | Atomic Design and composition: identify stable parts and wholes, shared policy and product ownership | [Component-system boundaries](interface-and-motion.md#choose-component-system-boundaries) |
+| Business rules mix with effects, identity or legal state transitions | Functional core/imperative shell, objects and reducers/state machines: choose representation per responsibility and lifecycle | [Paradigm choices](programming-paradigms.md#decision-matrix); [functional boundary](programming-paradigms.md#use-a-functional-core-and-imperative-shell-by-default) |
+| UI facts duplicate source data or effects copy derived values | Minimal state and synchronization boundaries: derive facts, keep genuine edit state, give effects an external owner | [State model](#model-data-and-state); [forms](#model-forms-and-navigation-state) |
+| Similar code or expected change suggests a shared abstraction | AHA and the wrong-abstraction lens: compare stable common semantics, caller convenience and change locality | [Abstraction timing](#abstract-at-the-right-time) |
+| Content, translations, zoom or available space vary | Intrinsic layout, inclusive interaction and progressive enhancement: use content constraints, native semantics and a supported baseline | [Layout constraints](interface-and-motion.md#design-layout-from-content-and-constraints); [resilient baseline](interface-and-motion.md#build-the-semantic-and-resilient-layer-first); [locale](interface-and-motion.md#control-styles-and-internationalized-content) |
+| Reordering, expansion or shared elements must preserve spatial continuity | Compare the lightest transition mechanism; use FLIP when measured geometry must map old to new layout | [Mechanism choice](interface-and-motion.md#choose-the-lightest-transition-mechanism); [First/Last/Invert/Play](interface-and-motion.md#apply-flip-deliberately) |
+| Input response, motion, loading, frames or memory are problematic | RAIL and update-to-display cost: localize work, invalidation, transfer, layout/paint or resource cost on the actual runtime | [Perceived response](interface-and-motion.md#protect-accessibility-and-performance); [rendering model](rendering-and-performance.md#model-the-path-from-update-to-display) |
+| Async results race, optimistic edits fail or resources outlive a view | Execution versus publication, ordering and acknowledgement: choose current-result or ordered-command policy, reconcile authority and own acquisition/release | [Async policy](async-and-lifecycles.md#choose-policy-from-the-operation); [reconciliation](async-and-lifecycles.md#reconcile-optimistic-state-with-acknowledgements); [resource ownership](async-and-lifecycles.md#own-acquisition-replacement-and-release) |
+| Data crosses environments or caches represent remote facts | Runtime placement and cache ownership: define serialization, scope, authority, freshness and invalidation | [Environment boundaries](runtime-and-delivery.md#map-environments-before-components); [cache owner](runtime-and-delivery.md#give-every-cache-an-owner) |
+| Untrusted content or privileged actions cross a boundary | Source-to-sink reasoning and server authorization: reuse established guarantees and protect the actual trust boundary | [Data path](security-and-trust.md#trace-data-from-source-to-sink); [authorization](security-and-trust.md#separate-presentation-from-authorization) |
+| A capability becomes a shared package, SDK or tool | Contract-first design and consumer evolution: define public types/artifacts, compatibility and verification at real consumers | [Infrastructure contract](frontend-infrastructure.md#design-the-contract-before-the-internals); [public artifact](frontend-infrastructure.md#verify-the-public-artifact) |
+
+Selecting a lens means applying its decision rules, not adding its name or folder
+template to the document. Preserve the original method's conditional scope: FLIP
+is appropriate only when its visual relationship and measurement needs exist;
+Atomic Design and Feature-Sliced Design do not mandate directory trees; RAIL
+does not prove performance or impose a universal frame budget. Other tasks may
+need other sections from the existing topic navigation.
+
+For a selected motion method, make the visual contract part of the functional
+steps: underlying business/DOM state, geometry or snapshot data, interruption,
+cleanup, reduced motion and real-runtime verification must have owners. Likewise,
+carry each other selected lens's material constraints into contracts and checks.
+Do not force every lens into a local edit or narrate a rejected-method checklist.
+
+### Connect the design deliverable
+
+Keep the following information connected, using the project's format rather than
+a mandatory heading template:
+
+1. **Requirement and facts.** State the intended outcome, scope, business rules,
+   acceptance conditions, existing capabilities and authoritative data/contracts.
+   Distinguish inspected facts, proposed changes and unresolved assumptions.
+   Establish which existing project/platform guarantees can be reused and which
+   real gaps need new code; retain relevant domain meanings and accepted decisions.
+2. **Functional decomposition and sequence.** State how many implementation steps
+   are needed and order them by dependency. Each step identifies the functionality
+   delivered, prerequisites, affected owners/files, supporting operations and a
+   concrete completion check. Split into coherent verifiable increments, not an
+   arbitrary quota or generic "analyze, code, test" tasks. Show how the steps cover
+   the whole requirement, including meaningful branches and recovery.
+3. **Supporting code contracts.** Map each product capability to the modules, types,
+   operations and classes that implement it; identify actual supporting symbols. Give
+   important names/locations, responsibilities, typed inputs/results or equivalent
+   signatures, callers/dependencies, state/effect ownership and relevant error or
+   cleanup semantics. Distinguish reused, changed and new contracts. Design classes
+   or interfaces where identity, lifecycle or a real substitution boundary warrants
+   them; pure functions and existing primitives may suffice. Do not invent an
+   abstract class per capability or enumerate trivial private helpers in advance.
+   Explain consequential module and paradigm choices through responsibility,
+   identity, lifecycle, invariants and change locality. Use the relevant
+   [module guidance](module-boundaries.md#contents) and
+   [paradigm matrix](programming-paradigms.md#decision-matrix) when those choices
+   need resolution. Apply runtime, trust, interaction/accessibility and measured
+   performance guidance where the requirement establishes those concerns.
+4. **Technical architecture diagram.** Show the concrete modules or components,
+   runtime/external boundaries, responsibilities and dependency or call direction.
+   Label significant interfaces/operations; a directory tree alone is insufficient.
+5. **Data-flow diagram.** Follow a representative input through named operations,
+   transformations, state/storage or transport to its returned or visible outcome.
+   Include return paths and consequential failure, cancellation or stale-result
+   branches. Label data and owners. An appropriately annotated sequence diagram
+   is suitable; duplicating the architecture graph without data movement is not.
+6. **Verification and evolution.** Tie each step and important rule to a decisive
+   check. Record applicable compatibility/migration/recovery and one realistic
+   follow-up change, without building speculative general mechanisms.
+   Assess the proposed contracts and, during development, real callers for
+   coherence, ownership, failure/recovery and maintenance cost. Resolve demonstrated
+   gaps in the requested deliverable; a list of planned tests or complete diagrams
+   is not evidence that these engineering properties hold.
+
+Both diagrams must be readable in the document and agree with its symbol and data
+contracts. Prefer the repository's supported format and existing renderer/parser.
+For a diagram DSL such as Mermaid, actually check its syntax before calling the
+design complete; merely disclosing that no renderer ran does not validate it.
+If no usable diagram tool is available, use self-contained, labelled plain-text
+diagrams with explicit arrows and branches rather than unverified DSL. Both views
+remain required, and a directory tree is still insufficient. Do not install a
+separate toolchain merely to draw a small design. Retain editable sources for any
+generated assets, verify references and distinguish syntax from visual validation.
+In Mermaid, quote node and edge labels containing punctuation such as function
+calls. A diagram that cannot parse is an incomplete deliverable.
+Use a small number of representative flows, expanding only for materially
+different behavior. Detail should enable
+another engineer to implement the next step without reconstructing the chat;
+length, diagram count beyond the two required views, and exhaustive pseudocode
+are not goals.
+
+Once the design is concrete enough to act, implement its ordered increments within
+existing authorization. A new consequential unknown can hold its dependent step
+while independent work continues; creating the document itself requires no approval.
+Update the same document when contracts or steps change, keeping planned checks
+distinct from executed results. For each increment, use its real callers and checks
+to test whether the designed boundary supports the required behavior; feed a
+necessary change back into the steps, contracts and diagrams before dependent
+work continues. Before delivery, walk the document's important operations to their
+actual definitions and representative callers. Locate each important implemented
+callable using symbol search or compiler navigation; resolve an absent definition
+before retaining its name/signature as current. Check name/location, parameters,
+result, effects and owned state; then follow the diagram's input, confirmation,
+failure and return arrows through that same code. Update the same document for
+renamed helpers, changed calling conventions or redistributed responsibilities,
+and reconcile step status with executed checks. This is a final cross-read of the
+delivered artifacts, not a recollection of the initial plan.
+
+Take implemented signatures from the final declarations rather than paraphrasing
+them from the design. Include injected services/context that callers must supply.
+When a responsibility remains inline, name its real enclosing owner/location
+instead of retaining a proposed helper that was never created.
+
+Use existing types, API/document generation or diagram checks where they reliably
+verify a contract, but do not expect name search or diagram parsing to prove
+semantic agreement. Mark conceptual labels and illustrative signatures as such;
+proposed work must remain distinguishable from implemented callable contracts.
+Do not inventory every private helper merely to make checking mechanical. Do not
+claim a planned runtime check passed or describe a superseded design as current.
+
+Design-only requests use this same requirement-to-architecture process with a
+document as the requested stopping point. Save it in the workspace and link it
+in the response; a chat-only proposal is not the completed artifact. If context is
+supplied as inline source or contracts and the workspace has no application files,
+use those inputs, label proposed paths and unsettled facts, and save the design
+without fabricating an existing repository or adding implementation skeletons.
+Do not silently start development.
+For settled local edits, retain the lightweight path in SKILL.md; do not create
+diagrams just to satisfy a workflow intended for design-bearing requirements.
 
 ## Construct a readable operation
 

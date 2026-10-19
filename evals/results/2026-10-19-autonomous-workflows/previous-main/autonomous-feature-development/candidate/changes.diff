@@ -1,0 +1,152 @@
+diff --git a/README.md b/README.md
+index 04a9827..5fe216f 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,11 @@ This is an existing frontend form submission capability. Its public async API is
+ Fields have unique string names, optional boolean disabled/required and an optional
+ sync or async `validate(value, values)` returning a string error or undefined.
+ Disabled fields are neither validated nor submitted. Unknown values are omitted.
++Fields may also define a synchronous `enabledWhen(values)` predicate. It is
++evaluated once per submission for each non-disabled field; a falsy result makes
++the field inactive, so it is neither validated nor submitted. Conditions,
++validators and payload construction share one top-level values snapshot captured
++at submission start. Disabled fields do not evaluate their condition.
+ Required emptiness is undefined, null or the empty string; zero, false, whitespace
+ and empty arrays are valid. Required errors are `Required` and skip that field's
+ custom validator. Custom errors retain their text. Await validation before sending
+diff --git a/docs/conditional-fields-design.md b/docs/conditional-fields-design.md
+new file mode 100644
+index 0000000..42b61a1
+--- /dev/null
++++ b/docs/conditional-fields-design.md
+@@ -0,0 +1,99 @@
++# Conditional field submission design
++
++## Requirement and established contracts
++
++`processForm(fields, values, send)` must support an optional synchronous
++`enabledWhen(values)` predicate on a field. On every submission, a field is active
++when it is not disabled and either has no predicate or its predicate returns a
++truthy value. Inactive fields are neither validated nor included in the payload.
++
++The existing required-value, custom-validation, error, transport, own-property,
++and rejection behavior remains unchanged. Conditions, validators, and payload
++construction use one shallow top-level snapshot captured at submission start so
++caller mutations during awaited validation cannot mix states. A disabled field
++does not run its condition. Predicate failures propagate unchanged, like validator
++and transport failures.
++
++## Implementation sequence
++
++The change has two dependency-ordered increments, both completed:
++
++1. **Resolve submission state and active fields.** In `src/process-form.js`, copy
++   `values` once and filter fields in schema order, checking `disabled` before
++   invoking `enabledWhen`. Completion: conditions run once per non-disabled field,
++   inactive fields leave no validation or payload effects, and all later work uses
++   the captured snapshot.
++2. **Preserve and document the public contract.** Reuse the existing validation
++   and payload flow over active fields, passing the snapshot to validators and
++   reading payload values from it; document `enabledWhen` in `README.md`.
++   Completion: both original and conditional-field acceptance tests pass.
++
++## Code contracts
++
++- `processForm(fields, values, send): Promise<unknown>` remains the sole public
++  operation and owns the submission snapshot, active-field resolution, ordered
++  validation, and the single transport call.
++- `field.enabledWhen(snapshot): unknown` is optional and synchronous. Its truthiness
++  controls participation for that submission; exceptions are not caught.
++- `field.validate(value, snapshot)` remains sync or async. It only runs for active
++  fields, after the required check, against the same snapshot used by conditions.
++- `send(payload)` remains responsible for transport. It runs once after successful
++  validation and receives only active schema fields as own properties.
++
++No persistent state, migration, cancellation, or recovery mechanism is introduced;
++rejections continue to be the caller's responsibility.
++
++## Technical architecture
++
++```mermaid
++flowchart LR
++  Caller["Form caller"] -->|"fields, values, send"| Process["processForm"]
++  Process --> Snapshot["Submission snapshot"]
++  Process --> Resolver["Active-field resolver"]
++  Snapshot --> Resolver
++  Resolver --> Validator["Required and custom validation"]
++  Snapshot --> Validator
++  Validator -->|"errors"| Caller
++  Validator -->|"valid active fields"| Payload["Payload construction"]
++  Snapshot --> Payload
++  Payload -->|"send(payload)"| Transport["Caller transport"]
++  Transport -->|"result or rejection"| Caller
++```
++
++## Data flow
++
++```mermaid
++sequenceDiagram
++  participant C as Caller
++  participant P as processForm
++  participant F as Field callbacks
++  participant S as send
++  C->>P: fields, mutable values, send
++  P->>P: capture shallow snapshot
++  loop each field in schema order
++    P->>P: skip when disabled
++    P->>F: enabledWhen(snapshot), when present
++    F-->>P: truthy, falsy, or throw
++  end
++  loop each active field
++    P->>F: validate(snapshot[name], snapshot)
++    F-->>P: error, success, or rejection
++  end
++  alt validation errors
++    P-->>C: { errors }
++  else valid
++    P->>P: build payload from active fields and snapshot
++    P->>S: payload
++    S-->>C: result or rejection
++  end
++```
++
++## Verification and evolution
++
++Executed `npm run check` successfully (13/13 tests). It covers inactive behavior, per-submission recalculation, disabled
++precedence, snapshot consistency under caller mutation, exception identity,
++prototype-like keys, and all original submission rules. A realistic follow-up is
++adding another condition type; active-field resolution is isolated as one phase,
++so that rule can be extended without changing validation or transport semantics.
++The Mermaid sources are retained here; this repository has no Mermaid parser, so
++their rendering is reviewed structurally but not tool-validated.
+diff --git a/src/process-form.js b/src/process-form.js
+index 5b23b0d..1138f66 100644
+--- a/src/process-form.js
++++ b/src/process-form.js
+@@ -1,18 +1,22 @@
+ /** Existing form submission entry point. */
+ export async function processForm(fields, values, send) {
+-  const eligible = fields.filter(field => !field.disabled);
++  const snapshot = { ...values };
++  const eligible = fields.filter(field => {
++    if (field.disabled) return false;
++    return field.enabledWhen === undefined || field.enabledWhen(snapshot);
++  });
+   const errors = {};
+   for (const field of eligible) {
+-    const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
++    const value = Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined;
+     let error;
+     if (field.required && (value === undefined || value === null || value === '')) {
+       error = 'Required';
+     } else if (field.validate) {
+-      error = await field.validate(value, values);
++      error = await field.validate(value, snapshot);
+     }
+     if (error) Object.defineProperty(errors, field.name, { value: error, enumerable: true });
+   }
+   if (Object.keys(errors).length) return { errors };
+   return send(Object.fromEntries(eligible.map(field => [field.name,
+-    Object.hasOwn(values, field.name) ? values[field.name] : undefined])));
++    Object.hasOwn(snapshot, field.name) ? snapshot[field.name] : undefined])));
+ }

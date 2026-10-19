@@ -1,0 +1,422 @@
+diff --git a/README.md b/README.md
+index cbfc76c..a06cee1 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,7 @@
+ # Team board
+ 
++实现与维护边界见 [卡片排序技术设计](docs/card-reordering-design.md)。
++
+ 实现当前项目的卡片排序。`src/data.mjs` 提供 80 张稳定 ID、不同内容长度的卡片，
+ `src/api.mjs` 已提供保存顺序的调用。页面使用原生 ESM，不更换技术栈。
+ 
+diff --git a/docs/card-reordering-design.md b/docs/card-reordering-design.md
+new file mode 100644
+index 0000000..3e13585
+--- /dev/null
++++ b/docs/card-reordering-design.md
+@@ -0,0 +1,132 @@
++# Card reordering technical design
++
++## Requirement and inspected facts
++
++The board contains 80 cards with stable IDs. Users must be able to move a card
++with its adjacent-move buttons or drag its handle onto another card. The visible
++order changes immediately, repeated input remains usable while cards are moving,
++and the newest order is eventually saved. A failed save stays visible and can be
++retried. Hiding the board, resizing, scrolling, and reduced-motion preferences
++must not leave visual work behind.
++
++The current application already owns the card data and `saveOrder(ids)` transport,
++but `draw()` replaces every node on each move, reads layout after every insertion,
++and starts unordered saves. The implementation will keep `order` as the only
++business-order fact. DOM order is its projection; animation geometry and save
++snapshots never become competing order stores.
++
++Acceptance is the existing browser suite: stable node identity and focus,
++intermediate spatial movement, interruption without a jump, pointer/button order
++parity, latest-save persistence with retry, lifecycle cleanup, and a static
++reduced-motion result.
++
++## Three dependency-ordered increments
++
++1. **Persistent semantic board.** `mountBoard()` creates/reuses one card node per
++   ID, and `applyOrder()` moves those nodes into `order`. Button and pointer
++   operations call one `commitOrder(nextOrder)` boundary. Complete when button
++   and drag operations produce the same DOM order and button focus follows the
++   moved card.
++2. **Interruptible spatial continuity.** `animateFrom(firstRects)` owns
++   FLIP geometry and Web Animations handles. Reads are batched before/after the
++   DOM write. New input measures the current visual positions, cancels old
++   animations, commits the new DOM order, and starts from those measured
++   positions. Hide and resize cancel; reduced motion skips animation. Complete
++   when repeated moves do not snap backward and no running animation survives
++   disposal.
++3. **Latest-intent persistence.** `requestSave()` snapshots the latest `order` and
++   advances a revision; `flushSave()` allows one write at a time and follows a
++   successful old write with the newest snapshot. Failure blocks automatic
++   retries, exposes an alert, and `retrySave()` submits the current newest
++   snapshot. Complete when delayed acknowledgements cannot change the board or
++   suppress a newer save, and failure/retry feedback is visible.
++
++## Code contracts and ownership
++
++- `order: string[]` in `src/app.mjs` is the sole mutable business order.
++- `commitOrder(nextOrder: string[]): void` validates no external input; callers
++  construct permutations from known card IDs. It measures, publishes `order`,
++  projects DOM order, animates if appropriate, and requests persistence.
++- `moveBy(id: string, delta: number): void` and
++  `moveAfter(id: string, targetId: string): void` are interaction-specific pure
++  order decisions followed by `commitOrder`.
++- `cardElements: Map<string, HTMLLIElement>` preserves identity and listeners.
++  `mountBoard()`/`unmountBoard()` own attachment; unmount cancels visual work.
++- `activeAnimations: Map<Element, Animation>` contains only presentation state.
++  Each replacement/cancel path removes its owned handle. The real DOM is already
++  final before an inversion plays.
++- The save owner keeps `desiredRevision`, `desiredSnapshot`, `saving`, and
++  `saveBlocked`. A response may advance acknowledgement state and feedback, but
++  never mutates `order`. Retry deliberately uses the current desired snapshot,
++  because every local reorder represents the same replace-order resource.
++
++## Technical architecture
++
++```text
++[Move buttons] -----\
++[Pointer handle] ----> moveBy / moveAfter
++                         |
++                         v
++                    commitOrder(next)
++                    /        |         \
++                   v         v          v
++          order (authority) applyOrder  requestSave
++                             |             |
++                    persistent <li>s       v
++                             |         flushSave
++                             v             |
++                    FLIP animation      saveOrder(ids)
++                    owner/cleanup          |
++                                          v
++                                    HTTP /api/order
++
++[Toggle / resize / reduced-motion] -> animation and mount lifecycle owner
++```
++
++## Representative data flow
++
++```text
++Enter or pointer-up
++  -> moveBy(id, delta) / moveAfter(id, targetId)
++  -> next ID permutation
++  -> measure current visual rectangles
++  -> cancel superseded animations
++  -> publish order + append existing nodes in that order
++  -> measure final rectangles
++  -> reduced motion? yes: static final DOM
++                     no: invert deltas -> play transforms to zero
++  -> requestSave copies newest IDs and revision
++  -> saving already? yes: retain newest snapshot for the next flush
++                    no: saveOrder(submitted snapshot)
++       -> success and newer revision exists: flush newest snapshot
++       -> success and current: expose Saved status
++       -> failure: expose alert + Retry save
++            -> retry: clear block -> submit current newest snapshot
++
++Hide/resize -> cancel all animation handles -> final DOM/disconnected board;
++pending save completion may update feedback only and never remount the board.
++```
++
++## Verification and evolution
++
++`npm run check` is the decisive real-Chromium check; its cost test records rather
++than invents a performance threshold. Code inspection additionally checks that
++all geometry reads are batched, no render path recreates cards, and every
++animation owner has cleanup. The HTTP route is test-substituted, so this does not
++claim production-service validation.
++
++A realistic follow-up is adding “move to column” or keyboard reorder shortcuts.
++Those inputs only need to produce a complete next-order permutation for
++`commitOrder`; animation and save policy remain unchanged. Cross-tab ordering
++would require a server version contract and is intentionally not implied by this
++client-only queue.
++
++### Verification record
++
++- `node --check src/app.mjs` and `node --check src/api.mjs`: passed.
++- `git diff --check`: passed.
++- `npm run check`: blocked before product assertions because this evaluation
++  sandbox rejects the configured server's `listen(127.0.0.1)` with `EPERM`.
++- A direct Playwright Chromium launch was also attempted and blocked by the host
++  sandbox's macOS Mach-port permission. The browser acceptance and recorded cost
++  therefore remain unexecuted here; they must be run in a normal local or CI host.
+diff --git a/src/app.mjs b/src/app.mjs
+index a238c98..086b27b 100644
+--- a/src/app.mjs
++++ b/src/app.mjs
+@@ -1,17 +1,245 @@
+ import { cards } from './data.mjs';
+ import { saveOrder } from './api.mjs';
+-const app=document.querySelector('#app');let order=cards.map(c=>c.id),visible=true;
+-function draw(){
+- app.innerHTML='<button id="toggle">'+(visible?'Hide board':'Show board')+'</button><p role="status"></p>';
+- app.querySelector('#toggle').onclick=()=>{visible=!visible;draw();};
+- if(!visible)return;
+- const list=document.createElement('ol');list.setAttribute('aria-label','Board');app.append(list);
+- for(const id of order){const card=cards.find(c=>c.id===id),li=document.createElement('li');li.dataset.cardId=id;
+- li.innerHTML='<h2>'+card.title+'</h2><p>'+card.body+'</p><button>Move up</button><button>Move down</button><button>Move card '+id+'</button>';
+- li.querySelectorAll('button')[0].onclick=()=>move(id,-1);li.querySelectorAll('button')[1].onclick=()=>move(id,1);list.append(li);
+- // The existing layout adjustment reads after each write.
+- li.style.minHeight=(60+(list.getBoundingClientRect().height%5))+'px';
+- }
+-}
+-function move(id,delta){const i=order.indexOf(id),j=i+delta;if(j<0||j>=order.length)return;[order[i],order[j]]=[order[j],order[i]];draw();saveOrder(order).then(()=>app.querySelector('[role=status]').textContent='Saved').catch(()=>{});}
+-draw();
++
++const app = document.querySelector('#app');
++const cardById = new Map(cards.map((card) => [card.id, card]));
++const cardElements = new Map();
++const activeAnimations = new Map();
++const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
++
++let order = cards.map((card) => card.id);
++let board = null;
++let visible = true;
++let drag = null;
++
++let desiredRevision = 0;
++let acknowledgedRevision = 0;
++let desiredSnapshot = order.slice();
++let saving = false;
++let saveBlocked = false;
++
++const toggle = document.createElement('button');
++const status = document.createElement('p');
++const saveError = document.createElement('div');
++const saveErrorText = document.createElement('span');
++const retryButton = document.createElement('button');
++
++toggle.id = 'toggle';
++status.setAttribute('role', 'status');
++saveError.setAttribute('role', 'alert');
++saveError.hidden = true;
++retryButton.type = 'button';
++retryButton.textContent = 'Retry save';
++saveError.append(saveErrorText, retryButton);
++app.append(toggle, status, saveError);
++
++function updateToggle() {
++  toggle.textContent = visible ? 'Hide board' : 'Show board';
++}
++
++function createButton(label, onClick) {
++  const button = document.createElement('button');
++  button.type = 'button';
++  button.textContent = label;
++  if (onClick) button.addEventListener('click', onClick);
++  return button;
++}
++
++function clearDropTarget() {
++  if (drag?.targetId) cardElements.get(drag.targetId)?.classList.remove('drop-target');
++}
++
++function finishDrag(event, shouldCommit) {
++  if (!drag || event.pointerId !== drag.pointerId) return;
++  const { id, targetId, handle } = drag;
++  clearDropTarget();
++  drag = null;
++  if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
++  if (shouldCommit && targetId && targetId !== id) moveAfter(id, targetId);
++}
++
++function createCardElement(card) {
++  const item = document.createElement('li');
++  const heading = document.createElement('h2');
++  const body = document.createElement('p');
++  const moveUp = createButton('Move up', () => moveBy(card.id, -1));
++  const moveDown = createButton('Move down', () => moveBy(card.id, 1));
++  const handle = createButton(`Move card ${card.id}`);
++
++  item.dataset.cardId = card.id;
++  heading.textContent = card.title;
++  body.textContent = card.body;
++  handle.className = 'drag-handle';
++
++  handle.addEventListener('pointerdown', (event) => {
++    if (event.button !== 0 || drag) return;
++    event.preventDefault();
++    handle.focus();
++    handle.setPointerCapture(event.pointerId);
++    drag = { id: card.id, pointerId: event.pointerId, targetId: null, handle };
++  });
++  handle.addEventListener('pointermove', (event) => {
++    if (!drag || event.pointerId !== drag.pointerId) return;
++    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-card-id]');
++    const targetId = target?.dataset.cardId;
++    if (targetId === drag.targetId) return;
++    clearDropTarget();
++    drag.targetId = targetId && targetId !== drag.id ? targetId : null;
++    if (drag.targetId) cardElements.get(drag.targetId)?.classList.add('drop-target');
++  });
++  handle.addEventListener('pointerup', (event) => finishDrag(event, true));
++  handle.addEventListener('pointercancel', (event) => finishDrag(event, false));
++
++  item.append(heading, body, moveUp, moveDown, handle);
++  item.moveUp = moveUp;
++  item.moveDown = moveDown;
++  return item;
++}
++
++for (const card of cards) cardElements.set(card.id, createCardElement(card));
++
++function applyOrder() {
++  if (!board) return;
++  board.append(...order.map((id) => cardElements.get(id)));
++  order.forEach((id, index) => {
++    const item = cardElements.get(id);
++    item.moveUp.disabled = index === 0;
++    item.moveDown.disabled = index === order.length - 1;
++  });
++}
++
++function mountBoard() {
++  if (board) return;
++  board = document.createElement('ol');
++  board.setAttribute('aria-label', 'Board');
++  app.append(board);
++  applyOrder();
++}
++
++function cancelAnimations() {
++  for (const animation of activeAnimations.values()) animation.cancel();
++  activeAnimations.clear();
++}
++
++function unmountBoard() {
++  if (!board) return;
++  cancelAnimations();
++  clearDropTarget();
++  drag = null;
++  board.remove();
++  board = null;
++}
++
++function measureCards() {
++  if (!board) return new Map();
++  return new Map(order.map((id) => [id, cardElements.get(id).getBoundingClientRect()]));
++}
++
++function animateFrom(firstRects) {
++  if (!board || reducedMotion.matches) return;
++  const lastRects = measureCards();
++
++  for (const id of order) {
++    const first = firstRects.get(id);
++    const last = lastRects.get(id);
++    if (!first || !last) continue;
++    const deltaX = first.left - last.left;
++    const deltaY = first.top - last.top;
++    if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) continue;
++
++    const element = cardElements.get(id);
++    const animation = element.animate(
++      [
++        { transform: `translate(${deltaX}px, ${deltaY}px)` },
++        { transform: 'translate(0, 0)' },
++      ],
++      { duration: 500, easing: 'cubic-bezier(.2, .8, .2, 1)' },
++    );
++    activeAnimations.set(element, animation);
++    const forget = () => {
++      if (activeAnimations.get(element) === animation) activeAnimations.delete(element);
++    };
++    animation.addEventListener('finish', forget, { once: true });
++    animation.addEventListener('cancel', forget, { once: true });
++  }
++}
++
++function commitOrder(nextOrder) {
++  const firstRects = measureCards();
++  cancelAnimations();
++  order = nextOrder;
++  applyOrder();
++  animateFrom(firstRects);
++  requestSave();
++}
++
++function moveBy(id, delta) {
++  const from = order.indexOf(id);
++  const to = from + delta;
++  if (from < 0 || to < 0 || to >= order.length) return;
++  const nextOrder = order.slice();
++  [nextOrder[from], nextOrder[to]] = [nextOrder[to], nextOrder[from]];
++  commitOrder(nextOrder);
++}
++
++function moveAfter(id, targetId) {
++  if (id === targetId || !cardById.has(id) || !cardById.has(targetId)) return;
++  const nextOrder = order.filter((cardId) => cardId !== id);
++  nextOrder.splice(nextOrder.indexOf(targetId) + 1, 0, id);
++  if (nextOrder.every((cardId, index) => cardId === order[index])) return;
++  commitOrder(nextOrder);
++}
++
++function showSaveError(error) {
++  status.textContent = '';
++  saveErrorText.textContent = `Save failed: ${error instanceof Error ? error.message : 'unavailable'}. `;
++  saveError.hidden = false;
++}
++
++async function flushSave() {
++  if (saving || saveBlocked || acknowledgedRevision === desiredRevision) return;
++  saving = true;
++  const submittedRevision = desiredRevision;
++  const submittedSnapshot = desiredSnapshot;
++  status.textContent = 'Saving';
++  saveError.hidden = true;
++
++  try {
++    await saveOrder(submittedSnapshot);
++    acknowledgedRevision = submittedRevision;
++    if (acknowledgedRevision === desiredRevision) status.textContent = 'Saved';
++  } catch (error) {
++    saveBlocked = true;
++    showSaveError(error);
++  } finally {
++    saving = false;
++    if (!saveBlocked && acknowledgedRevision !== desiredRevision) void flushSave();
++  }
++}
++
++function requestSave() {
++  desiredRevision += 1;
++  desiredSnapshot = order.slice();
++  saveBlocked = false;
++  void flushSave();
++}
++
++function retrySave() {
++  saveBlocked = false;
++  void flushSave();
++}
++
++toggle.addEventListener('click', () => {
++  visible = !visible;
++  updateToggle();
++  if (visible) mountBoard();
++  else unmountBoard();
++});
++retryButton.addEventListener('click', retrySave);
++window.addEventListener('resize', cancelAnimations);
++reducedMotion.addEventListener('change', (event) => {
++  if (event.matches) cancelAnimations();
++});
++
++updateToggle();
++mountBoard();
+diff --git a/src/style.css b/src/style.css
+index e8601ca..b28f5b0 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -1 +1 @@
+-body{font:16px system-ui;margin:1rem}ol{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}li{border:1px solid #777;padding:1rem;background:#fafafa}button{margin:.2rem;min-height:2rem}p{overflow-wrap:anywhere}
++body{font:16px system-ui;margin:1rem}ol{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}li{border:1px solid #777;padding:1rem;background:#fafafa}li.drop-target{outline:3px solid #2867c7;outline-offset:2px}button{margin:.2rem;min-height:2rem}.drag-handle{cursor:grab;touch-action:none}.drag-handle:active{cursor:grabbing}p{overflow-wrap:anywhere}

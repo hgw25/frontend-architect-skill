@@ -1,0 +1,294 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e649e3c..f44cba8 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -3,6 +3,12 @@
+ 本文件记录 Frontend Architect Skill 的可安装发布版本。Git tag 是发布内容的不可变标识，
+ `VERSION` 是仓库中的当前版本单一来源。
+ 
++## [Unreleased]
++
++- 需要设计的功能开发、职责重构、共享基建与迁移默认先写技术文档，明确实施步骤、每步功能和函数或类契约，并包含技术架构图与数据流转图；局部既定修改保持轻量路径，文档不增加审批门槛。
++- 增加仅提供需求与技能的条件字段和导出职责重构用例，核对文档先行、设计完整性与实际功能，保留局部修改和文档深度对照。
++- 定向对照保留原版和无技能组缺少先行设计、首轮图示语法错误及评分漏判；细化规则后重新生成，两项功能检查及四张图的解析通过。过程和限制见[需求开发流程验证](evals/results/2026-10-19-design-workflow/report.md)。
++
+ ## [0.5.0] - 2026-10-16
+ 
+ ### Changed
+diff --git a/README.md b/README.md
+index ad51c72..53422ec 100644
+--- a/README.md
++++ b/README.md
+@@ -208,12 +208,15 @@ Skill 按四个部分组织：入口中的核心判断体系和任务执行方
+ 状态或资源的所有者、实际执行位置和可发现错误的验证；新边界用有现实依据的变化
+ 检验，而不靠目录数量证明架构质量。证据变化时可以回到前面的决定重新调整。
+ 
+-执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。明确的小改动
+-直接实现，边界清楚的方案在对话中简述；只有需要跨阶段或协作保留的重要决定才落成
+-简短文档。文档不是默认审批门槛。
++执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。新建或改变
++业务流程、重新分配职责的重构、共享基建和迁移，默认先形成技术文档再改实现，无需
++用户额外提醒。文档明确拆成多少步、每步功能与依赖、支撑的类型及函数或类契约、
++技术架构图、数据流转图和逐步验收；实现中同步修订，交付时补回实际验证结果。
++文案、间距或沿用既有契约的局部接线仍可直接完成。文档不增加默认审批门槛。
++详见[需求到技术设计](references/architecture-and-code.md#turn-requirements-into-an-executable-technical-design)。
+ 
+ 领域概念和重要决策优先沉淀到项目已有说明：定义保存概念、身份和关系，决策记录保留
+-选择与理由，实施方案保存验收和后续步骤。已确认的修订及时更新原记录；未解决的
++选择与理由，技术设计保存功能拆分、代码契约、图示及验收。已确认的修订及时更新原记录；未解决的
+ 契约冲突保持明确，不猜测身份映射。按需创建有后续用途的简短记录，小改动无需先建
+ 词汇表、ADR 或初始化会话。详见[领域知识与决策指导](references/architecture-and-code.md#preserve-domain-knowledge-and-decisions)。
+ 
+diff --git a/SKILL.md b/SKILL.md
+index cb5294f..13276a1 100644
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -50,7 +50,8 @@ code, consumers and authoritative contracts. Model identities, minimal state,
+ transitions and effect owners, then connect a complete flow to a check that could
+ expose its failure. Shared rules must agree across the paths that implement them.
+ Revisit decisions when evidence changes; scale depth to uncertainty and impact.
+-These checkpoints need no document set or approval sequence.
++For work that needs design, turn these checkpoints into the technical document
++required below before changing implementation. Documentation adds no approval gate.
+ 
+ Follow the selected framework, router and repository conventions. Read relevant
+ existing domain definitions and decisions; visual similarity does not establish
+@@ -63,7 +64,7 @@ comments and documentation.
+ | Requested work | Execution and completion |
+ | --- | --- |
+ | Clear local edit | Implement directly within established behavior and boundaries; check the affected outcome |
+-| Feature | Resolve domain ambiguity and connect one complete flow early, then meaningful branches and recovery |
++| Feature | Write the technical design and ordered increments first; connect one complete flow early, then meaningful branches and recovery |
+ | Defect | Reproduce the symptom, distinguish hypotheses, fix its responsible boundary and repeat the decisive check |
+ | Refactor or simplification | Preserve intended contracts; remove mechanisms serving abandoned requirements while retaining real consumers; verify surviving behavior |
+ | Shared foundation | Establish consumers and a narrow public contract; complete applicable types, diagnostics, artifacts, compatibility and consumer checks |
+@@ -76,12 +77,25 @@ recovery, withdraw rejected experiments, and leave missing incident evidence
+ unresolved. When tests disagree with the application, inspect the harness and
+ real event/layout conditions before changing production code.
+ 
+-A settled local edit needs no design document. Explain a bounded choice briefly;
+-record a concise plan only when unsettled ownership, shared contracts, migration
+-or handoff needs it. As lasting domain meanings or consequential decisions settle,
+-update their existing owned records, preserving useful reasons and superseded
+-history. Missing documents do not block ordinary work; recording a decision does
+-not introduce an approval gate.
++### Design before implementation
++
++For new or changed business workflows, refactors that redistribute responsibilities,
++shared foundations and migrations, create or update a technical document before
++editing implementation, even when the user asks only for the feature. Read
++[technical design](references/architecture-and-code.md#turn-requirements-into-an-executable-technical-design).
++Decompose the requirement into an explicitly counted, dependency-ordered sequence;
++map each step's functions or classes to its functionality, contracts and acceptance.
++Include both a technical architecture diagram and a data-flow diagram. Keep this
++design aligned with implementation and verification through delivery.
++
++A settled local edit that only follows established behavior and boundaries needs
++no design document: for example a label, spacing token or existing filter binding.
++Do not use file count or the absence of ambiguity to exempt a new business flow.
++Investigation and read-only review need no implementation document unless requested;
++an unexplained defect needs causal evidence before a proposed redesign.
++Use the project's existing documentation location and relevant owned record; if
++none exists, create a discoverable document. Scale detail to the actual requirement,
++without waiting for document approval. Preserve useful decision reasons and history.
+ 
+ ## Read only the needed sections
+ 
+diff --git a/evals/cases.md b/evals/cases.md
+index 030f3aa..c738eeb 100644
+--- a/evals/cases.md
++++ b/evals/cases.md
+@@ -162,6 +162,15 @@ CI 校验用例结构、维度名称和必填字段，但不会伪装成模型
+ 
+ ## 从真实使用记录验证改进
+ 
++`requirement-only-conditional-fields` 和 `requirement-only-export-refactor` 只向生成代理
++提供业务或维护需求、原始代码与 Skill，不提示写技术文档、拆实施步骤或画图，也不提供
++参考方案。分别检查新增业务规则和职责重构是否主动先保存技术设计，再按步骤修改实现；
++从原始执行事件核对首次文档与首次源码/测试修改顺序，从实际产物核对步骤、代码契约、
++架构图和数据流图。两类图不能只靠出现 Mermaid 围栏或固定标题判定合格。
++用可用解析器核对实际图示语法；模型评分通过不能覆盖图示无法解析的失败。
++同时保留 `local-edit-without-domain-documents` 和 `proportional-design-documentation`
++检查局部修改的轻量路径；比较无 Skill、原指导和新指导时固定模型与配置。
++
+ 将真实失败转为脱敏、可独立复现的输入，不把私人对话、项目数据或答案写进 fixture。
+ 区分已确认加载 Skill 的任务与仅有相似问题的补充案例；记录其他技能、仓库规则、模型
+ 和后续人工纠正的影响，不能把最终代码质量全部归因于本 Skill。
+diff --git a/evals/cases.yaml b/evals/cases.yaml
+index 993c9b2..d1b4ff5 100644
+--- a/evals/cases.yaml
++++ b/evals/cases.yaml
+@@ -1,5 +1,62 @@
+ version: 1
+ cases:
++  - id: requirement-only-conditional-fields
++    title: 仅给条件字段业务需求时主动完成技术设计再实现
++    prompt: >-
++      给这个表单提交能力增加条件字段。字段可以声明同步的 enabledWhen(values)，只在
++      返回 true 时参与 required、自定义校验和提交；disabled 优先，禁用时条件回调也不运行。
++      每次提交开始时捕获一份顶层值快照，条件只求值一次，所有校验和最终 payload 使用
++      同一份快照，避免异步校验期间用户继续编辑影响本次提交。条件回调抛错要原样传递。
++      保留现有 processForm API、原有字段语义和零依赖约束，请完成实现。
++    artifact: ''
++    fixture: evals/fixtures/conditional-fields
++    protected_paths:
++      - package.json
++      - package-lock.json
++      - test/process-form.test.js
++      - test/conditional-fields.test.js
++    validation_commands:
++      - npm ci
++      - npm run check
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
++    must_observe:
++      - 未经额外提醒，在首次修改实现或测试前保存可独立阅读的技术文档
++      - 文档明确实施步骤总数、依赖顺序、每步具体功能及验收，并映射实际支撑的类型及函数或类契约
++      - 文档包含职责依赖的架构图和带数据及返回分支的数据流转图，图与代码契约一致
++      - 原行为与条件字段通过同一有效集合和快照完成校验及提交，最终文档与实际验证一致
++    fail_if:
++      - 首次修改实现或测试前没有保存技术设计文档，包括完全省略、只在聊天中描述或事后补写；本用例检验默认技能行为，原始需求未提醒写文档不构成豁免
++      - 技术文档缺少功能到代码契约的映射、可执行步骤或任一必要图示，或图示无法解析、仅为目录树与重复空泛框图
++      - 等待用户批准文档而未完成已授权实现
++      - 受保护检查失败或被修改，或为同步字段条件引入通用规则引擎与强制抽象类
++
++  - id: requirement-only-export-refactor
++    title: 仅给职责重构需求时主动设计完整实施路径
++    prompt: >-
++      重构这个前端选中项导出能力。工具栏和键盘入口现在分别了解了内部准备、检查、编码
++      和发送步骤，后续协议变化很容易漏改其中一个入口。让调用方只表达一次完整导出意图，
++      保持现有两个公开入口、返回值、提交顺序、一次发送和错误传递契约。现有测试已经
++      全部通过；请完成职责调整，不增加依赖，也不要引入可暂停工作流或通用插件系统。
++    artifact: ''
++    fixture: evals/fixtures/export-operation
++    protected_paths:
++      - README.md
++      - test/export.test.mjs
++    validation_commands:
++      - node --test test/export.test.mjs
++    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, verification_evidence, communication_quality]
++    must_observe:
++      - 首次修改实现或测试前保存技术文档，不依赖用户提示文档或图示
++      - 分解重构的功能步骤及依赖验收，列出公共入口和内部操作的输入输出、职责与调用方
++      - 架构图与数据流转图说明入口到完整操作及返回值和失败路径，交付时与实际代码一致
++      - 两个入口不再编排私有导出步骤，保留已有行为且不为文档制造类或多层转发
++    fail_if:
++      - 首次修改实现或测试前没有保存技术设计文档，包括完全省略或事后补写；本用例检验默认技能行为，原始需求未提醒写文档不构成豁免
++      - 设计缺少功能步骤与代码契约映射或任一必要图示，或必要图示无法解析
++      - 等待额外文档审批而停止已授权重构
++      - 仅移动或改名浅层步骤，两个消费者仍了解私有调用顺序
++      - 行为检查失败、受保护文件变化或引入无依据的抽象类与通用机制
++
+   - id: readiness-claims-match-exercised-evidence
+     title: 就绪与兼容结论不超过实际验证边界
+     prompt: >-
+@@ -1414,12 +1471,13 @@ cases:
+     must_observe:
+       - A 直接实施和适度验证，不因公共组件而要求设计文档
+       - B 可简短说明数据流和验证后实施，不强制持久化文档
+-      - C 因跨团队所有权和迁移决策需要可追溯方案，复用项目现有文档位置
++      - C 在改实现前需要技术文档，复用现有位置，拆出有依赖和验收的功能步骤，定义类型及函数或类契约，并包含架构图和数据流转图
+       - 区分需要澄清的业务决策与不必要的文档审批
+     fail_if:
+       - 所有任务都强制先建文档或等待用户批准
+       - 因共享文件或功能关键词机械决定文档深度
+       - C 不处理所有权歧义就直接实施迁移
++      - C 将技术文档缩减为仅记录取舍或聊天中的简短提纲，遗漏功能步骤、代码契约或两类图示要求
+   - id: field-eligibility-executable
+     title: 实现有效字段统一契约
+     prompt: >-
+diff --git a/references/architecture-and-code.md b/references/architecture-and-code.md
+index c1dfb7e..28c834d 100644
+--- a/references/architecture-and-code.md
++++ b/references/architecture-and-code.md
+@@ -13,6 +13,7 @@ for execution, placement, cache, or delivery boundaries.
+ 
+ - [Understand before changing](#understand-before-changing)
+ - [Preserve domain knowledge and decisions](#preserve-domain-knowledge-and-decisions)
++- [Turn requirements into an executable technical design](#turn-requirements-into-an-executable-technical-design)
+ - [Construct a readable operation](#construct-a-readable-operation)
+ - [Choose data representations](#choose-data-representations)
+ - [Model data and state](#model-data-and-state)
+@@ -68,7 +69,7 @@ three kinds of information distinct:
+ | --- | --- |
+ | Domain definition | What the concept means, identity and relationships, and ambiguous aliases worth distinguishing |
+ | Consequential decision | Context, chosen alternative, reason and non-obvious consequences; link an earlier decision when replacing it |
+-| Implementation plan | Acceptance conditions, affected contracts and implementation/verification steps |
++| Technical design | Requirement decomposition, ordered functional increments, supporting contracts, architecture and data-flow diagrams, implementation and verification; see the technical-design section below |
+ 
+ A domain definition should let another maintainer distinguish such concepts as
+ a seller profile, organization and signed-in user; their identifiers do not
+@@ -90,6 +91,74 @@ material when the confirmed contract changes, preserving useful rationale and
+ project history conventions. Check one plausible later use: can a new maintainer
+ find the definition or decision and apply it without the original conversation?
+ 
++## Turn requirements into an executable technical design
++
++Use this section for the design-bearing work identified in SKILL.md. The document
++is an implementation input: establish it after inspecting the relevant system and
++before changing source, tests, configuration or generation templates. Inspection,
++reproduction and baseline checks can precede it. Do not substitute a chat outline
++or an after-the-fact description of finished code. Reuse a relevant owned document;
++otherwise add one under the project's documentation convention and link it from
++an existing discovery point when available. Missing documentation is a reason to
++write the design, not to skip it or wait for an initialization session.
++
++Keep the following information connected, using the project's format rather than
++a mandatory heading template:
++
++1. **Requirement and facts.** State the intended outcome, scope, business rules,
++   acceptance conditions, existing capabilities and authoritative data/contracts.
++   Distinguish inspected facts, proposed changes and unresolved assumptions.
++2. **Functional decomposition and sequence.** State how many implementation steps
++   are needed and order them by dependency. Each step identifies the functionality
++   delivered, prerequisites, affected owners/files, supporting operations and a
++   concrete completion check. Split into coherent verifiable increments, not an
++   arbitrary quota or generic "analyze, code, test" tasks. Show how the steps cover
++   the whole requirement, including meaningful branches and recovery.
++3. **Supporting code contracts.** Map each product capability to the modules, types,
++   operations and classes that implement it; identify actual supporting symbols. Give
++   important names/locations, responsibilities, typed inputs/results or equivalent
++   signatures, callers/dependencies, state/effect ownership and relevant error or
++   cleanup semantics. Distinguish reused, changed and new contracts. Design classes
++   or interfaces where identity, lifecycle or a real substitution boundary warrants
++   them; pure functions and existing primitives may suffice. Do not invent an
++   abstract class per capability or enumerate trivial private helpers in advance.
++4. **Technical architecture diagram.** Show the concrete modules or components,
++   runtime/external boundaries, responsibilities and dependency or call direction.
++   Label significant interfaces/operations; a directory tree alone is insufficient.
++5. **Data-flow diagram.** Follow a representative input through named operations,
++   transformations, state/storage or transport to its returned or visible outcome.
++   Include return paths and consequential failure, cancellation or stale-result
++   branches. Label data and owners. An appropriately annotated sequence diagram
++   is suitable; duplicating the architecture graph without data movement is not.
++6. **Verification and evolution.** Tie each step and important rule to a decisive
++   check. Record applicable compatibility/migration/recovery and one realistic
++   follow-up change, without building speculative general mechanisms.
++
++Both diagrams must be readable in the document and agree with its symbol and data
++contracts. Prefer the repository's supported diagram format; Mermaid in Markdown
++is sufficient without a dedicated diagram tool. Retain editable sources for any
++generated assets and verify references. Check syntax with an available renderer or
++parser; report any unverified rendering. In Mermaid, quote node and edge labels
++containing punctuation such as function-call parentheses; use simple labels when
++syntax cannot be checked. A diagram that cannot parse is an incomplete deliverable.
++Use a small number of representative
++flows, expanding only for materially different behavior. Detail should enable
++another engineer to implement the next step without reconstructing the chat;
++length, diagram count beyond the two required views, and exhaustive pseudocode
++are not goals.
++
++Once the design is concrete enough to act, implement its ordered increments within
++existing authorization. A new consequential unknown can hold its dependent step
++while independent work continues; creating the document itself requires no approval.
++Update the same document when contracts or steps change, keeping planned checks
++distinct from executed results. At delivery reconcile diagrams, symbols and step
++status with the final code and actual evidence. Do not claim a planned runtime
++check passed, and do not describe a superseded design as the current implementation.
++
++For design-only requests, deliver the document without silently starting development.
++For settled local edits, retain the lightweight path in SKILL.md; do not create
++diagrams just to satisfy a workflow intended for design-bearing requirements.
++
+ ## Construct a readable operation
+ 
+ Start from an actual caller and a complete behavior. Keep the main path readable

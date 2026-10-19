@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "autonomous-feature-development",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "实现与文档清楚覆盖了条件字段的核心契约：同步/异步条件、每次提交计算一次、禁用优先、未启用字段不校验也不提交，以及一致的提交快照。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "改动集中且直接，使用一次快照和单次字段遍历实现需求，没有引入不必要的依赖或抽象。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "行为变更保留在既有 processForm 入口内，并同步更新公开契约文档，职责边界清晰。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "最终差异完整实现所述行为，保留异常传播、特殊自有键和不变性等原有契约；生成器与宿主最终检查均通过。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "证据覆盖了禁用字段短路、条件假值、异步条件、逐次提交重算、快照一致性、异常身份、原型样式键、required 边界及未知字段排除。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "npm run check 的 13 项测试在生成沙箱和宿主环境均全部通过，另有特殊非枚举键断言与 git diff --check 通过的证据。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付说明简洁准确，列明实现契约、修改文件、验证结果和未修改受保护测试文件，且与差异及宿主验证一致。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [],
+        "normalized_score": 16.0,
+        "case_failures": [
+          {
+            "rule": "首次修改实现前完全省略技术设计或事后补写，或缺少步骤、代码契约及两类可解析图示中的任一项",
+            "reason": "所给 RESPONSE、DIFF 和生成期自检只显示实现、契约文档更新及验证；没有首次修改前的技术设计证据，也未提供实现步骤及两类可解析图示。"
+          }
+        ],
+        "verdict": "fail"
+      },
+      {
+        "id": "autonomous-architecture-design",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "设计准确吸收了多文件、最多两个活动文件、逐文件进度、暂停/继续/取消/重试、仅页面生命周期恢复、服务端确认后成功以及复用 appApi 等全部关键契约，并明确指出 create 响应丢失这一不可由现有前端契约解决的边界。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "方案复杂度与问题匹配：采用页面级 manager、单文件状态机和窄 API 适配层，没有引入持久化、后台同步、新网络栈或通用任务平台；同时为并发数变化保留了小型明确扩展点。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "模块职责和依赖方向清楚，React 接入、任务调度、单文件状态机、后端适配和公开类型被合理分离；传输 DTO 与 appApi 差异被限制在适配层。"
+          },
+          {
+            "key": "paradigm_choice",
+            "score": 2,
+            "reason": "页面作用域 manager 配合订阅式 React 接入、显式状态机、AbortSignal 与 generation 双重竞态控制，适合异步上传与 React 生命周期，且避免依赖 effect 时序和全局状态。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "设计覆盖两槽并发、服务端确认进度、分片对账、complete 响应丢失后的 status 对账、旧异步回写、取消确认、非法服务端索引、零字节文件及卸载清理等核心正确性边界；不会在未取得服务端成功证据时报告完成。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "这是架构设计任务，文档给出了与风险对应的单元、集成和浏览器验收方案，包括可控 Promise、竞态、两槽不变量、对账和资源释放；现有产物还通过了 git diff --check。没有可执行 fixture 不构成计划型任务的缺陷。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付文档结构完整且可执行，核心决策、状态转换、伪代码、失败语义、生命周期、测试矩阵和实施顺序表达清晰，最终摘要与文档内容一致。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "宿主验证明确说明没有可执行 fixture，因此无法由现有证据验证未来实现是否真正满足该架构。",
+          "仓库为空树，除文档格式检查外，没有真实 appApi 签名、错误分类或 React 集成代码可供核验。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "autonomous-feature-development",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "The response and design document identify the relevant existing contracts, define conditional-field semantics, precedence, snapshot behavior, exception propagation, and preserved legacy behavior."
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "The implementation is a small, direct extension of the existing eligibility flow without introducing unnecessary abstractions or dependencies."
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "Eligibility remains owned by processForm alongside validation and payload construction, with a single per-submission snapshot and no new shared state."
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "The final implementation consistently uses the snapshot for conditions, validators, and payloads. Both the final generator rerun and host validation pass all 13 tests, and the earlier failure was repaired before delivery."
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "Evidence covers inactive fields, disabled precedence, once-per-submission evaluation, async mutation isolation, error identity, validation and transport behavior, unknown fields, and prototype-like field names."
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "Relevant automated tests pass in both the generator's final checks and the independent host run; git diff whitespace validation also passes."
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "The completion summary is concise, accurately describes behavior and verification, links changed artifacts, and explicitly reports the unexecuted Mermaid rendering check without overstating it."
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "No Mermaid rendering validation was executed because the repository had no configured renderer; only the diagram source is evidenced."
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      },
+      {
+        "id": "autonomous-architecture-design",
+        "verdict": "invalid",
+        "invalid_reasons": [
+          "Guidance read evidence is unknown or uses an older audit; rerun capture"
+        ]
+      }
+    ]
+  }
+}

@@ -16,6 +16,7 @@ from unittest.mock import patch
 import yaml
 import run_behavior_evals as runner
 import score_behavior_evals as scorer
+from test_support import passing_audit
 
 
 class CaptureScoringTests(unittest.TestCase):
@@ -157,7 +158,7 @@ print(json.dumps({'type':'turn.completed'}))
             def score(a, prompt, schema, output):
                 names = re.findall(r'^id: (.+)$', prompt, re.MULTILINE)
                 if schema.name == 'failure-schema.json':
-                    raw = {'audits':[{'id':name, 'triggered':[], 'routing_review':{'verdict':'not_required', 'reason':''}} for name in names]}
+                    raw = {'audits':[{**passing_audit(name), 'triggered':[], 'routing_review':{'verdict':'not_required', 'reason':''}} for name in names]}
                 else:
                     raw = {'evaluations':[{'id':name, 'dimensions':[{'key':'verification_evidence', 'score':2, 'reason':'captured checks'}], 'global_failures':[], 'evidence_limits':[]} for name in names]}
                 output.write_text(json.dumps(raw))

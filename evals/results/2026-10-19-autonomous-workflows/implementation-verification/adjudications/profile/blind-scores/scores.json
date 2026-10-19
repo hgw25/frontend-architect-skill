@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "conditions": {
+    "baseline": [
+      {
+        "id": "autonomous-live-profile",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 1,
+            "reason": "识别了保存失败、响应校验、乐观展示、草稿保留和重叠请求等关键约束，但没有证据说明现有 API 契约、资料属性更新方式或项目约定的调查结果。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "变更局限于现有表单、API 边界和测试清理配置，没有新增依赖或通用基建；以少量状态和请求序号处理实际竞态，复杂度与需求相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "API 模块负责 HTTP 状态和外部响应结构校验，组件负责乐观 UI、已确认状态、错误与请求顺序；输入、结果和副作用边界清楚。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实现包含完整调用链、运行时响应校验、失败回滚、错误展示和竞态处理；最终 TypeScript 检查及测试均通过，没有残留占位或最终失败。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "请求 ID 与最近确认资料共同处理重叠保存：旧失败不会覆盖新成功，较旧成功可在最新保存失败后成为回滚基线；失败草稿仍保留在输入状态中。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "在真实的服务端响应边界检查 HTTP 状态和数据形状，同时没有把客户端 UI 当作授权，也未引入秘密、共享用户缓存或多余防御层。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "保存时立即反馈，失败后恢复已确认展示、保留可重试草稿，并通过 role=\"alert\" 提供辅助技术可感知的错误；慢请求期间的核心体验由乐观更新覆盖。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "生成阶段在补齐测试隔离后重新运行并通过 npm run check；宿主随后也完成 npm ci、TypeScript 检查和 3 个 Vitest 测试，结果均为成功。中间失败均有后续修改和通过的重跑。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付说明结果优先，简明列出行为、修改文件、未改范围和实际验证结果；其就绪陈述与最终验证证据一致。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "未提供 ProfileForm.test.tsx 内容，因此无法确认三个既有测试分别覆盖哪些行为，尤其是所有重叠请求完成顺序。",
+          "未提供原始需求细则或服务端 API 文档，无法核验响应字段、认证及请求头是否还有未展示的契约要求。"
+        ],
+        "normalized_score": 15.11,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ],
+    "candidate": [
+      {
+        "id": "autonomous-live-profile",
+        "dimensions": [
+          {
+            "key": "requirements_context",
+            "score": 2,
+            "reason": "明确识别了现有公开入口、Profile 响应契约、乐观展示、草稿隔离、失败回退、并发乱序及项目检查命令等约束。"
+          },
+          {
+            "key": "solution_complexity",
+            "score": 2,
+            "reason": "比较了现有边界与引入表单库或共享请求框架的维护成本，选择局部 reducer 和既有 API helper，复杂度与并发协调需求相称。"
+          },
+          {
+            "key": "module_boundaries",
+            "score": 2,
+            "reason": "HTTP 状态及响应解码归 api.ts，草稿、提交身份和乐观协调归 ProfileForm；输入、结果和副作用边界清楚，未泄漏传输细节。"
+          },
+          {
+            "key": "implementation_integrity",
+            "score": 2,
+            "reason": "实现覆盖类型、调用方、成功与失败路径、错误呈现及测试配置；最终生成器检查和主机检查均通过类型检查与全部 7 条测试。"
+          },
+          {
+            "key": "correctness_boundary",
+            "score": 2,
+            "reason": "通过单调提交 ID 和确认基线处理并发成功、乱序响应、陈旧失败、最新失败回滚、草稿保留及重试，相关竞态有针对性测试。"
+          },
+          {
+            "key": "security_trust",
+            "score": 2,
+            "reason": "在真实的网络信任边界检查非成功状态和未知响应结构，内部 reducer 按已验证 Profile 契约工作；未引入客户端授权假象、秘密泄漏或重复防护。"
+          },
+          {
+            "key": "user_experience",
+            "score": 2,
+            "reason": "保留原生表单键盘语义，慢速保存期间立即展示提交快照，编辑草稿不干扰投影；失败后回退、保留重试内容并以 role=\"alert\" 呈现错误。"
+          },
+          {
+            "key": "verification_evidence",
+            "score": 2,
+            "reason": "记录了具体命令、环境阻塞、修复后的重跑和结果；最终 npm run check、7 条测试及 git diff --check 均有执行证据，主机复验也通过。"
+          },
+          {
+            "key": "communication_quality",
+            "score": 2,
+            "reason": "交付结论优先，清楚说明修改位置、并发与回退语义、设计取舍、验证结果和初始依赖阻塞，没有夸大到发布或真实浏览器验证。"
+          }
+        ],
+        "global_failures": [],
+        "evidence_limits": [
+          "测试通过 jsdom 和受控 fetch 覆盖组件及传输契约，未提供真实后端集成、真实浏览器或辅助技术验证证据。",
+          "主机 npm ci 报告一个高危依赖漏洞，但现有证据未说明其来源、可利用性或是否由本次变更新增。"
+        ],
+        "normalized_score": 16.0,
+        "case_failures": [],
+        "verdict": "target"
+      }
+    ]
+  }
+}

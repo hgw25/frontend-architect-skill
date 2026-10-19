@@ -39,6 +39,14 @@ Run project-prescribed checks. If the full suite is disproportionate or cannot
 run, execute the strongest relevant subset and state what remains unverified.
 Passing tools does not substitute for reasoning about missing behavior.
 
+Derive additional checks from the changed flow, not only the supplied test list.
+For each consequential boundary, ask which plausible completion or interruption
+would make the visible result false even though individual steps passed. Exercise
+that combination at the real consumer; reuse the existing harness or add a small
+focused check. Do not wait for the user or a later review to enumerate it. Inspect
+the actual failing result, repair its responsible owner and repeat that check
+before accepting the affected flow. Keep unrelated combinations out of scope.
+
 Use a real browser when claiming browser behavior: focus movement, keyboard
 event ordering, hydration, layout, scrolling, pointer interaction, and visual
 output are not proven by a DOM emulator alone. Select a browser matrix from the
@@ -132,12 +140,24 @@ hypotheses and continue independent authorized work without claiming a fix.
 ## Establish review scope and coverage
 
 For a requested review, establish two complementary views before drawing a
-conclusion: what the change is required to do, and what the changed code actually
-does. Keep this lightweight for a local edit; use the supplied request as its
-contract when sufficient. Do not edit the implementation unless requested.
+conclusion: whether the code satisfies the current product/repository contracts,
+and whether its actual design and implementation meet the shared engineering
+standard in SKILL.md. A plain "review this" requests both views; the user need not
+enumerate architecture, modularity, function quality or failure handling. Keep this
+lightweight for a local edit; use the supplied request as its contract when
+sufficient. Do not edit the implementation unless requested.
 
-- Establish the comparison baseline or supplied snapshot and inventory the
-  changed files and behaviors. Follow affected consumers and shared policies
+Infer the target before asking for a review checklist. Use a supplied PR, revision,
+snapshot or named module; otherwise inspect the current staged, unstaged and
+relevant untracked changes. A request to review a project or existing module covers its current code,
+including unchanged paths; the absence of a diff is not a reason to stop. For a
+large target, map entry points, ownership and dependency boundaries, inspect the
+important end-to-end paths and report concrete coverage limits. Ask about scope
+only when the target remains materially ambiguous after this discovery.
+
+- Establish the comparison baseline when reviewing changes; for current-code
+  review establish the in-scope system instead. Inventory its files and behaviors.
+  Follow affected consumers and shared policies
   beyond diff hunks when needed. Choose depth from change and risk; familiarity,
   authorship, or an earlier passing check is not a reason to skip changed behavior.
 - Identify authoritative requirements from the request, applicable spec and
@@ -147,7 +167,7 @@ contract when sufficient. Do not edit the implementation unless requested.
   and unresolved requirements. Cite the source for a claimed requirement mismatch;
   flag conflicting or unavailable requirements instead of inferring intent from
   the implementation. Continue checks that do not depend on the missing source.
-- Inspect changed behavior for correctness and maintainability independently of
+- Inspect in-scope behavior for correctness and maintainability independently of
   requirement matching. Trace shared rules through affected entry points and
   meaningful branches; include local controls and boundary states when a
   page-level check cannot expose their failures. Use the questions below and load
@@ -161,9 +181,28 @@ Keep this working coverage account in review notes or existing project artifacts
 a separate document, exhaustive report of passing items, or fixed team structure
 is not required. Respect an explicitly limited review scope and name its limits.
 
+Before classifying a defect, locate the responsible boundary and establish that
+the available evidence actually shows its violation. An extracted module with
+unprovided host bindings cannot prove that the host lacks an integration merely
+because there is no local caller. Report the specific missing caller/configuration
+as a verification gap unless a shown contract is independently broken. Conversely,
+missing host evidence does not excuse a demonstrated defect within the module.
+Apply the same distinction to proposed improvements: explain a concrete maintenance
+cost without presenting a possible future failure as an observed functional bug.
+
 ## Review architecture and implementation
 
-Review the changed system, not isolated clever lines. Ask:
+Review the system in scope, not isolated clever lines. Use the shared standard to
+select applicable checks yourself: real function bodies and call protocols,
+component/module ownership and dependency direction, data and state representation,
+appropriate functions or resource-owning objects, async/lifecycle policies, types,
+project/platform reuse and realistic evolution. Add runtime, trust, interaction,
+accessibility, locale and measured-performance checks where the inspected code
+establishes those concerns; do not require the user to request them separately.
+Existing tests and tooling help find defects but do not define the entire quality
+bar. Do not manufacture UI/runtime findings from a source-only fixture.
+
+Ask:
 
 - Does the implementation satisfy the stated outcome?
 - Is there a simpler platform or project-native capability?
@@ -187,7 +226,7 @@ Treat code clarity as the time required for a future maintainer to predict the
 effect of a change. Shorter code is not automatically clearer; more layers are
 not automatically more architectural.
 
-For code-quality claims, follow important changed operations through their real
+For code-quality claims, follow important in-scope operations through their real
 callers and callees. Use [readable operation construction](architecture-and-code.md#construct-a-readable-operation)
 when the function body or call contract is unclear. Ground a maintenance finding
 in the rule, ordering or internal detail that callers must understand, or a
@@ -246,6 +285,12 @@ Audit performance work against this evidence chain:
 4. Change the smallest responsible part.
 5. Repeat the same measurement and compare tradeoffs.
 
+Verify the baseline's code identity and timing: a first sample taken after source
+edits is not an original baseline. Recover the original in an isolated copy when
+needed, following the [measurement contract](rendering-and-performance.md#define-the-performance-contract).
+Require a comparison of the final corrected implementation; disclose unmeasured
+stages instead of inferring them from a cheaper intermediate operation.
+
 Check that the evidence matches the claimed runtime and user path. Do not accept
 render counts, one synthetic score, a simulator, or a microbenchmark as proof of
 production impact. Use the rendering or runtime reference only when the review
@@ -284,9 +329,12 @@ For code review:
 3. Cite the tightest relevant file and line when available.
 4. Distinguish correctness defects, evidenced requirement mismatches, and
    maintainability suggestions; do not count heuristics as confirmed bugs.
-5. Say explicitly when no actionable defect was found, while noting residual
-   testing or environment gaps. Summarize the reviewed scope, requirement sources,
-   and concrete unchecked behaviors; limit the conclusion to that evidence.
+5. Give a bounded conclusion for requirement compliance and engineering quality.
+   Correct behavior can coexist with a demonstrated maintenance problem; say
+   which standard is unmet and what real change or understanding cost it creates.
+   If no issue is evidenced, say so without inventing findings or treating a
+   passing sample as proof of the whole system's quality. Summarize scope,
+   requirement sources, actual checks and concrete unchecked behaviors.
 
 For completed implementation:
 

@@ -112,11 +112,30 @@ Use established accessible patterns for dialogs, menus, listboxes, tabs,
 tooltips, comboboxes, and disclosures. ARIA does not repair incorrect interaction
 behavior; prefer native semantics and verified patterns.
 
-For interactions that close, unmount or transfer focus, observe the result after
-native defaults and rendering have settled. Restoring focus in a callback can
-still be undone later in the same pointer sequence. Fix the responsible event
-or lifecycle boundary while preserving consumer cancellation; do not globally
-cancel pointer defaults to make a single check pass.
+Treat interaction continuity separately from visual identity. Stable keys or
+reused nodes do not establish that focus, text selection or scroll survived a
+move, replacement or reparenting. Prefer the framework/platform behavior that
+preserves them; where the mutation disrupts an active interaction, carry its
+logical target through that mutation and restore only the state it actually lost.
+Keep this with the owner changing the structure, not an animation-completion
+callback. If the target disappears, use the interaction's defined next target;
+do not steal focus from a user who moved elsewhere during asynchronous work.
+
+When replacing an editable control, its value and logical focus are only part
+of the interaction. Browser-owned selection, composition and scroll can be lost
+by reconstruction. Prefer preserving the native control; if replacement is
+necessary, identify and carry the state required for the user's current edit.
+Probe from an in-progress, non-default interaction state and continue that same
+interaction after asynchronous completion; a fill ending at the last character
+or a test that refocuses can hide a broken continuation.
+
+Verify through real keyboard use after native defaults and rendering settle:
+activate again without refocusing in the test and observe which control receives
+it. Include the static/reduced-motion path when applicable. A focused node's
+identity or one successful callback does not establish continued operability.
+Restoration can be undone later in the same pointer sequence; fix the responsible
+event or lifecycle boundary while preserving consumer cancellation, rather than
+globally cancelling pointer defaults.
 
 ## Use motion to explain change
 
@@ -185,7 +204,12 @@ Use FLIP when:
 - a simple CSS transition cannot express the relationship;
 - spatial continuity materially helps comprehension.
 
-Do not use FLIP by reflex. Before implementing it:
+Do not use FLIP by reflex. When this replaces a costly update/layout path, first obtain the
+[performance baseline](rendering-and-performance.md#define-the-performance-contract)
+for that path. Geometry batching explains the design; comparable original and
+final runtime samples establish the measured improvement.
+
+Before implementing it:
 
 - batch DOM reads and writes to avoid layout thrashing;
 - define what happens if input arrives mid-animation;

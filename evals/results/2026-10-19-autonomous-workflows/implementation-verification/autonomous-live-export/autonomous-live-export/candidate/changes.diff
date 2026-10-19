@@ -1,0 +1,226 @@
+diff --git a/README.md b/README.md
+index 5e095ad..6644b6b 100644
+--- a/README.md
++++ b/README.md
+@@ -4,6 +4,9 @@ This frontend capability has toolbar and keyboard entry points. Both export one
+ selection as one operation; no consumer needs a pausable preparation workflow.
+ The files in src are internal except for the two entry points below.
+ 
++The implementation and its design rationale are documented in
++[`docs/export-capability.md`](docs/export-capability.md).
++
+ Keep these public contracts:
+ 
+ - `handleToolbarExport(rows, write)` and `handleKeyboardExport(rows, write)`.
+@@ -17,4 +20,4 @@ Keep these public contracts:
+ - The submitted IDs remain stable while awaiting acceptance. A transport failure
+   rejects with the original error; it does not become a successful empty result.
+ 
+-Run `node --test test/export.test.mjs`.
++Run `node --test`.
+diff --git a/docs/export-capability.md b/docs/export-capability.md
+new file mode 100644
+index 0000000..f146c26
+--- /dev/null
++++ b/docs/export-capability.md
+@@ -0,0 +1,86 @@
++# Selection export capability
++
++## Requirement and current facts
++
++Toolbar clicks and the keyboard shortcut are two triggers for the same selection
++export. Both must preserve the public names documented in `README.md`, while the
++eligibility rule, payload protocol, transport behavior, and accepted result must
++change together.
++
++The rows are validated internal data. Export is all-or-nothing: an empty selection
++does not write, any non-ready row blocks the entire write, and a ready selection is
++snapshotted in order before the asynchronous transport starts. Transport failures
++remain rejected with their original error.
++
++The current staged `begin`/`classify`/`encode`/`dispatch` API exposes sequencing and
++mutable intermediate state even though no caller needs a pausable workflow. The
++shared boundary will therefore be one operation rather than a configurable pipeline.
++
++## Implementation sequence
++
++This change has two dependency-ordered steps:
++
++1. Add `exportSelection(rows, write)` as the single owner of decision, payload
++   construction, dispatch, and outcome. Completion: the consumer suite reaches the
++   operation through both aliases and covers empty, blocked, ready, failure, input
++   immutability, and pending-write stability.
++2. Preserve `handleToolbarExport` and `handleKeyboardExport` as named re-exports of
++   that operation and remove the staged implementation. Completion: an identity
++   check proves both entry points have one implementation, and the existing consumer
++   suite passes unchanged.
++
++## Code contracts and ownership
++
++- `src/export-selection.mjs` owns `exportSelection(rows, write)`. It reads `rows`,
++  snapshots IDs into a new array, calls `write` at most once, and returns a decision
++  or accepted result. It owns no persistent state and deliberately lets transport
++  errors reject.
++- `src/toolbar.mjs` and `src/keyboard.mjs` retain the existing public symbol names.
++  They add no policy or lifecycle: each is a named re-export of `exportSelection`.
++- `write(payload)` remains the trusted transport capability and receives exactly
++  `{ schema: 1, document_ids: ids }` for a ready selection.
++
++The concrete decision shapes remain `{ kind: 'empty' }`,
++`{ kind: 'blocked', ids }`, and `{ kind: 'sent', ids }`. The exported IDs are a
++snapshot, shared by the payload and result but not by the caller's mutable rows.
++
++## Technical architecture
++
++```text
++[Toolbar UI]  -- handleToolbarExport --\
++                                      > [exportSelection] -- write(payload) --> [Trusted transport]
++[Keyboard UI] -- handleKeyboardExport-/          |
++                                                  +-- outcome / original rejection --> caller
++```
++
++The two UI modules are compatibility-facing names. All selection and protocol
++knowledge is hidden behind the shared operation.
++
++## Data flow
++
++```text
++rows + write
++    |
++    v
++exportSelection -- no rows ------------------------------> { kind: 'empty' }
++    |
++    +-- collect non-ready IDs -- any ---------------------> { kind: 'blocked', ids }
++    |
++    +-- snapshot ready IDs --> payload --> await write
++                                      |         |
++                                      |         +-- rejects --> original error
++                                      |
++                                      +-- accepted ----------> { kind: 'sent', ids }
++```
++
++## Verification and evolution
++
++The existing entry-point suite is the consumer acceptance check. A separate shared
++capability test proves both names expose the same function and rechecks stable IDs
++while `write` is pending. `node --test` passes all 12 tests after implementation;
++`git diff --check` also passes.
++
++A realistic next change is a schema version or payload field update. It remains a
++single edit in `exportSelection`; neither trigger module changes. If toolbar and
++keyboard later acquire genuinely different product rules, each can wrap the shared
++operation explicitly instead of adding mode flags to this contract.
+diff --git a/src/export-selection.mjs b/src/export-selection.mjs
+new file mode 100644
+index 0000000..71a2d5e
+--- /dev/null
++++ b/src/export-selection.mjs
+@@ -0,0 +1,15 @@
++export async function exportSelection(rows, write) {
++  if (rows.length === 0) return { kind: 'empty' };
++
++  const blockedIds = rows
++    .filter((row) => row.status !== 'ready')
++    .map((row) => row.id);
++
++  if (blockedIds.length > 0) {
++    return { kind: 'blocked', ids: blockedIds };
++  }
++
++  const ids = rows.map((row) => row.id);
++  await write({ schema: 1, document_ids: ids });
++  return { kind: 'sent', ids };
++}
+diff --git a/src/export-steps.mjs b/src/export-steps.mjs
+deleted file mode 100644
+index 06dcb55..0000000
+--- a/src/export-steps.mjs
++++ /dev/null
+@@ -1,24 +0,0 @@
+-export function begin(rows, write) {
+-  return { rows, write, decision: undefined, payload: undefined };
+-}
+-
+-export function classify(context) {
+-  const blocked = context.rows.filter((row) => row.status !== 'ready');
+-  context.decision = context.rows.length === 0
+-    ? { kind: 'empty' }
+-    : blocked.length
+-      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }
+-      : { kind: 'ready', ids: context.rows.map((row) => row.id) };
+-}
+-
+-export function encode(context) {
+-  if (context.decision.kind === 'ready') {
+-    context.payload = { schema: 1, document_ids: context.decision.ids };
+-  }
+-}
+-
+-export async function dispatch(context) {
+-  if (context.decision.kind !== 'ready') return context.decision;
+-  await context.write(context.payload);
+-  return { kind: 'sent', ids: context.decision.ids };
+-}
+diff --git a/src/keyboard.mjs b/src/keyboard.mjs
+index c04db7c..e9bf259 100644
+--- a/src/keyboard.mjs
++++ b/src/keyboard.mjs
+@@ -1,8 +1 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
+-
+-export async function handleKeyboardExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
+-}
++export { exportSelection as handleKeyboardExport } from './export-selection.mjs';
+diff --git a/src/toolbar.mjs b/src/toolbar.mjs
+index 4ee21aa..fabc602 100644
+--- a/src/toolbar.mjs
++++ b/src/toolbar.mjs
+@@ -1,8 +1 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
+-
+-export async function handleToolbarExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
+-}
++export { exportSelection as handleToolbarExport } from './export-selection.mjs';
+diff --git a/test/export-selection.test.mjs b/test/export-selection.test.mjs
+new file mode 100644
+index 0000000..fb5c513
+--- /dev/null
++++ b/test/export-selection.test.mjs
+@@ -0,0 +1,29 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { exportSelection } from '../src/export-selection.mjs';
++import { handleToolbarExport } from '../src/toolbar.mjs';
++import { handleKeyboardExport } from '../src/keyboard.mjs';
++
++test('both entry points expose the shared export capability', () => {
++  assert.equal(handleToolbarExport, exportSelection);
++  assert.equal(handleKeyboardExport, exportSelection);
++});
++
++test('shared capability snapshots accepted IDs before transport settles', async () => {
++  let acceptWrite;
++  const writeAccepted = new Promise((resolve) => { acceptWrite = resolve; });
++  const rows = [{ id: 'first', status: 'ready' }];
++  let payload;
++
++  const outcome = exportSelection(rows, async (body) => {
++    payload = body;
++    await writeAccepted;
++  });
++
++  rows[0].id = 'changed';
++  rows[0].status = 'pending';
++  acceptWrite();
++
++  assert.deepEqual(await outcome, { kind: 'sent', ids: ['first'] });
++  assert.deepEqual(payload, { schema: 1, document_ids: ['first'] });
++});
