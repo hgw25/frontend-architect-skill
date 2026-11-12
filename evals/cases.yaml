@@ -1,15 +1,310 @@
 version: 1
 acceptance_profiles:
+  workflow_completion:
+    - 按用户授权的交付范围闭合整体工作流；完整开发完成需求与契约理解、功能及验收拆解、方案和代码契约判断、实现、行为验证与工程审查、成果对齐与交付。局部机制或轻量文档只调整深度，不能豁免阶段；小任务可简短合并动作。仅设计或仅审查按其范围闭合，不擅自开发，不强制阶段文件、标题、流水账或审批；按实际产物和执行证据判断，缺少叙述不等于动作缺失，无法观察的动作说明具体证据边界。
   designed_delivery:
-    - 对需设计的交付，实施前保存可发现的技术文档，包含明确计数且按依赖排序的功能步骤、每步支持代码契约与验收，以及可读且有效的技术架构图和数据流图；设计交付尊重只设计的边界。
-    - 重要契约从最终定义和代表调用方核对，保留实际参数、结果、职责和所有权；两类图示与真实数据路径一致，拟议或概念标签不得冒充已实现符号。
-    - 实现交付的原技术文档已回填实际完成范围、已执行检查和结果，与最终代码和原始执行记录一致；不能仅列验证计划或仅在聊天给出结果。条件和重要证据限制足以解释结论，不要求逐步打勾、固定字段、重复记录或无关验证。仅设计任务明确保留拟议验证，不要求运行不存在的应用。功能通过不替代工程质量核对。
+    - 按实际所有权、状态或并发机制、跨消费者契约及迁移变化选择准备深度；既有机制内的窄规则扩展允许简短理由及相关检查，不强制另建文档。需要持续设计的交付在实施前保存功能步骤、支持代码契约和验收；实质架构或数据流工作保留明确计数的依赖步骤及有效的架构图和数据流图；遵守明确的设计交付要求与只设计边界。
+    - 重要契约从最终定义和代表调用方核对，保留实际参数、结果、职责和所有权；所需图示与真实数据路径一致，拟议或概念标签不得冒充已实现符号；决定性服务语义有独立依据，新增文档或测试不能自行确认未决保证。
+    - 需要技术文档的实现交付已在原记录回填实际完成范围、检查和结果，并与最终代码和执行记录一致；不能仅列计划或只在聊天给出结果。轻量路径更新真实变更的契约即可，不要求额外状态表、重复图示或无关验证。仅设计任务明确保留拟议验证，不要求运行不存在的应用。功能通过不替代工程质量核对。
   measured_change:
     - 成本敏感改动保留原始实现的可比运行样本，在修改前取得或从原始快照重建；最终正确代码以相同代表条件复测，缺少原始基线本身属于未完成，不因避免改善声明而豁免。
     - 性能结论只覆盖实际运行时、数据、操作和偏好所证明的成本阶段，不能把布局计数、模拟层或中间实现等同最终交互或生产性能。
   public_consumer:
     - 公共产物由独立安装的真实消费者执行其主要能力和公开类型，适用的宿主开发更新、生产构建及错误契约有实际证据；仅导入成功、文件存在或 hook 形状不足以验收。
 cases:
+  - id: workflow-stages-and-local-depth
+    title: 整体工作流不被轻量实现豁免且不扩张授权
+    prompt: 只读评审下面四种处理方式，说明是否形成了所请求的交付闭环，以及实际需要保留或纠正的动作。不要替它们实现应用或补造运行结果。
+    artifact: |
+      A. 给已有订单 schema 增加一条条件必填规则。开发者决定“只改一行且不用独立设计文档，
+      所以不需要查看原字段契约、判断错误与提交路径，也不检查实际代码和调用方；改完只跑
+      已有自动测试即可宣布整个开发完成”。没有其他已完成动作的记录。
+      B. 同样的窄规则，开发者已核对用户条件和现有字段/空值契约，找到反馈与提交共用的
+      schema，选择在该所有者加条件谓词；检查修改、调用与副作用没有变化，原消费者验收
+      及新规则检查通过，明确报告结果和范围。没有单独设计、两图或六个阶段标题。
+      C. 实现检查发现原设计依赖的接口保证并不成立，另一个消费者也复现了失败。开发者
+      只把它写入“已知风险”，保持阶段全部完成并交付，因为其他增量的测试都通过了。
+      D. 用户明确只要上传模块的架构设计。方案、重要状态/资源/错误契约和验收设计已经
+      成形，准备做设计自审并交付；开发者认为“必须走完六阶段”，因此先写应用代码并
+      运行自己新增的服务，再允许交付设计。用户没有授权开发或这些外部操作。
+    applicable_dimensions: [requirements_context, solution_complexity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - A 的轻量文档条件不豁免需求契约理解、设计判断和实际工程质量检查，测试绿不能补掉被明确跳过的义务
+      - B 从实际动作与产物完成完整开发闭环，不按阶段标题、文档或文件数量否定它
+      - C 回到受影响的需求与设计决定，修复依赖实现并复验；保留已验证独立增量，失败成果不算完成
+      - D 按仅设计范围完成设计质量核对并交付，区分拟议应用检查，不强行开始实现或新增审批
+      - 区分明确省略、实际结果不足与仅缺阶段叙述，不把无法观察的动作编成已发生缺陷
+    fail_if:
+      - 允许 A 因一行或免文档而省略实质工作，或要求 B 提供六份阶段文件或额外审批
+      - C 只披露缺口仍称整体完成，或要求为局部失败推翻全部已验证独立工作
+      - D 被要求实际编码或执行未授权外部操作才能完成仅设计交付
+      - 以阶段标题出现数量代替实际行为、授权范围与证据判断
+
+  - id: narrow-business-rule-extension
+    acceptance_profiles: [workflow_completion]
+    title: 沿既有机制完成窄业务规则而不增加设计仪式
+    prompt: 把订单表单的企业税号必填规则做完，个人订单仍然选填，保留其他行为。
+    artifact: ''
+    fixture: evals/fixtures/business-rule-extension
+    protected_paths: [package.json, package-lock.json, test/order.test.js, test/tax-rule.test.js]
+    validation_commands: [npm ci, npm run check]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 发现现有条件必填和共同校验提交能力，在实际规则所有者完成业务变化
+      - 反馈与提交一致覆盖企业必填和个人选填，保留原有效值、载荷与异常契约
+      - 简短理由和相关检查足够，不因业务行为变化而强制独立设计与两种重复视图
+      - 运行原验收并保留受保护文件，依据真实消费者判断完整性
+    fail_if:
+      - 只改错误展示或只拦提交，仍存在校验与发送不一致
+      - 将该单规则包装成规则解释器、全局状态、DI 框架或通用工作流
+      - 在所有权和机制不变时强制单独技术设计、步骤契约目录及两种重复图示
+      - 修改受保护文件或放宽原有字段和异常契约，或验收失败
+
+  - id: business-scenario-implementation-choice
+    title: 方案选择由真实业务差异与已有能力决定
+    prompt: 给下面三个需求选择具体实现方案，说明复用哪里、实际补什么、如何验收及为什么这个边界合适。只给简洁判断，不实现应用。
+    artifact: |
+      A. 订单表单新增一个有条件的必填字段。现有表单 schema 已支持条件必填，校验、
+      提交与错误展示使用同一 schema；不改变状态所有权或请求协议。
+      B. 商品页与订单页看起来相似，设计系统控件、URL codec 与 query 客户端已可复用。
+      商品筛选要编辑草稿后 Apply，订单筛选要立即生效；两者错误与分页归属独立。
+      C. Angular 编辑页现在要同时打开两个独立文档会话，各自持有可释放的资源与草稿。
+      原有层级 injector 支持组件 provider 和释放；不能让关闭一个编辑器销毁另一个。
+      没有更多源码，不声称运行过应用。用户未要求模式目录、额外图示或通用框架。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, paradigm_choice, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - A 直接复用 schema 和提交检查，不为完整流程中一条规则引入新的引擎或强制设计文件
+      - B 共享稳定控件及已有能力，保留不同草稿提交语义与独立所有者而非统一成参数驱动巨型 Hook
+      - C 使用已有组件 provider 与真实编辑器寿命边界，并验证独立实例和释放，不写第二个容器
+      - 从实际业务行为及现有能力解释边界和需要的检查，不以模式数量或最少文件证明质量
+    fail_if:
+      - 根据相似外观或领域名强制建立通用页面工作流、注册表或新增基础框架
+      - 为追求简单而丢掉商品 Apply 语义、共享两个编辑器的可变会话或省略释放
+      - 只列模式和目录，没有真实调用、状态与消费者验收方向
+
+  - id: semantic-guarantees-before-ordering
+    title: 区分已承诺语义与实现自行补造的保证
+    prompt: 只读审查这两个保存方案，指出可以确认的行为、仍缺的依据和具体下一步；保留原有并发编辑要求，不修改服务契约。
+    artifact: |
+      A. 资料 API 仅规定返回 id/displayName 为 string、version 为 number，服务实现未提供。
+      页面允许保存重叠，失败要回到最新有效确认。方案用 response.version > confirmed.version
+      接受确认，并在新增文档中写“版本是服务器单调修订号”；新测试也按这个规则编写且全绿。
+      没有关于同版本是否代表相同资料、跨资源顺序或单调性的其他已接受说明。
+      B. 另一个独立服务的已接受契约明确规定 revision 在单资源内递增，相同 revision
+      代表同一不可变资料；现有客户端已验证成功体并隔离资源身份，消费者通过该客户端。
+      提案仍认为必须逐层增加相同 schema 校验，并等待用户再次确认版本语义才能继续。
+    applicable_dimensions: [requirements_context, solution_complexity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - A 的数值形状不证明排序与相等语义，新增说明与同假设测试不是独立服务证据
+      - 将 A 认定为需要核实的契约假设，给出符合已知类型的条件反例并区分真实服务是否允许
+      - 向实际来源核实决定性保证或保持依赖选择未决，继续不依赖它的工作，不静默撤销并发编辑要求
+      - B 复用已确认的排序和边界保障，不重复校验或索要已得到的确认
+    fail_if:
+      - A 仅凭字段名或测试绿把假设当事实，或只把大于改为大于等于就声称解决乱序确认
+      - 用虚构服务行为判定确定功能错误，或无依据新增重读请求、服务端能力或客户端冲突框架
+      - 对 B 仍全面阻塞或层层校验，或未经授权改变 A 的交互要求
+
+  - id: absolute-quality-and-skill-effect
+    title: 交付绝对质量与指导效果分别判断
+    prompt: 审查以下评测结论，说明哪些结论成立、哪些证据不足，以及应如何报告；不要重新计算或补造不存在的实验。
+    artifact: |
+      各次质量分满分 16，达标门槛为 13，但质量分不覆盖契约失败。
+      A. 同请求、项目、模型和配置的一对样本，无技能 4 分、有技能 8 分。维护者说
+      “有技能未达 13 分，所以技能没有改善”。两组各运行一次，没有复测。
+      B. 同条件两组均 16 分；维护者说“当前技能得满分，证明它带来显著收益”。
+      C. 修改前使用模型 X，修改后使用模型 Y；维护者把分差全部归因于修改指导。
+      D. 某交付质量均分很高，但独立消费者仍暴露确认成功后重复写入；报告称整体优秀且可发布。
+    applicable_dimensions: [requirements_context, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - A 当前交付未达质量门槛与该次配对改善信号可同时成立，单次结果不足以证明稳定收益
+      - B 的绝对高质量不证明增益，C 的不同配置无法隔离指导效果
+      - D 的实际契约失败不能由高均分或后文限制抵消
+      - 分别报告交付质量、契约与成对结果及范围，不把新旧都加载技能的版本比较叫无技能基线
+    fail_if:
+      - 用绝对低分断言没有改善，或单次高分断言技能有稳定显著收益
+      - 把不同模型的差异当作可归因的指导收益，或编造复测结果
+      - 保留 D 的整体可发布结论，或认为质量均分可以抵消实际消费者失败
+
+  - id: solid-behavior-and-proportion
+    title: 设计原则落实行为契约而非方法数量或类型形状
+    prompt: 只读评审以下三个改造建议，指出有证据的问题及具体修正方法，说明哪些结构可以保留和依据。
+    artifact: |
+      A. 项目 ReadWriteStorage 契约允许同一消费者直接 load/save/remove。新版只读适配器
+      仍声明实现全部接口，但 save/remove 总是抛 Unsupported；它还要求消费者在 load 前
+      新增 initialize 调用。原有契约没有这项前置条件，普通加载/保存页面继续依赖旧契约。
+      提案以“TypeScript 签名相同，已经满足可替换”为验收依据。
+      B. 一个编辑会话类拥有同一文档的状态、变更和释放，数个私有方法共同保持同一不变量；
+      公开操作没有混入 HTTP、路由或全局状态。提案只因“SRP 要求每类一个方法”而拆成
+      多个类和共享可变 context，让调用者依次 prepare/validate/commit/release。
+      C. 两个已存在的导出格式确实有不同编码算法，但资格检查和提交规则一致。提案认为
+      OCP 禁止修改任何旧代码，因此要一次建设支持任意未来格式的全局插件引擎。
+      没有更多应用源码，不能声称已运行编译或验收。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, paradigm_choice, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 以真实消费者的前置条件、能力和结果判断替换，不把相同签名当作 LSP 证明
+      - 按调用者需要调整能力契约与消费，避免给承诺写能力的消费者传入假实现
+      - 保留内聚编辑会话的多个方法与原有生命周期，指出拆分造成的时序协议泄漏
+      - 为已有格式采用合适策略或局部组合边界并保留共用规则，不强制未来插件框架
+    fail_if:
+      - 把总抛 Unsupported 或更强初始化前置条件视为行为兼容，或让调用方到处辨别具体实现
+      - 根据方法数强制拆类，或把任何条件分支和修改旧代码都判为 OCP 违规
+      - 只复述 SOLID 名称，没有当前方案的修正与消费者检查路径
+
+  - id: collaboration-patterns-fit-existing-capabilities
+    title: 选择有现实需要的协作模式而不批量建设框架
+    prompt: 为以下局部能力选择合适的已有实现方法，说明具体调用关系、检查及边界；只给简洁设计判断，不实现应用。
+    artifact: |
+      项目已有 TypeScript、表单库、SDK 适配层和事件订阅工具，不需要更换技术栈。
+      1. 同一“能否提交”规则要用于按钮状态、提交前检查和载荷筛选；各消费者需要不同文案。
+      2. 老 SDK 返回字段和错误形状不同，业务已经有稳定的调用接口，需要替换这个 SDK。
+      3. 一个编辑器命令由工具栏和快捷键触发，计划支持本地 undo/redo；另一个购买按钮会
+      向服务端创建订单，接口没有撤销能力。
+      4. 三个视图订阅同一数据源，离开其中一个视图时，其他两个必须继续接收更新。
+      5. 新页面只需延迟创建一个会话。提案把所有工厂函数都叫 GoF Abstract Factory，
+      并建议为以上能力统一引入抽象基类、全局 event bus 和可配置规则解释器。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, paradigm_choice, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 共用明确资格谓词或适当 Specification，文案按消费者表达，复用现有表单路径
+      - 在实际 SDK 边界适配协议和错误，以真实业务调用验证而非类型断言
+      - 区分命令调用与撤销能力，本地历史不等于撤销已经提交的服务端订单
+      - 订阅只释放当前消费者拥有的注册，工厂形态从真实创建需求选择
+      - 依据原始方法解释调用过程，不把函数、类或全局引擎当作模式成立的证明
+    fail_if:
+      - 无实际需要统一引入规则引擎或全局总线，或为每个模式强制建类层级
+      - 消费者离开关闭共享数据源，或声称任意服务端操作都能用本地 undo 撤销
+      - 把单个普通创建函数当作相关产品族 Abstract Factory，或只给名称没有实际落点
+
+  - id: domain-and-history-semantics
+    title: 领域、值语义与读写历史架构保持真实含义
+    prompt: 评审下面的架构说明，给出有来源的实际修正和验证方向，不实现应用或补造缺失服务契约。
+    artifact: |
+      商品目录和财务对“客户”有不同定义，API 只给各自的标识，没有两者之间的权威映射。
+      提案因字段都是 customerId 就在客户端强行合并并据此跳转；同时将每个页面文件夹
+      都命名为一个 bounded context。金额以 number 存储，却允许比较不同币种而忽略币种。
+      另一处资料页保存后返回回执，再读取列表。提案把它称为“严格 CQS 和完整 CQRS”，
+      要求丢弃回执以满足命令没有返回值，并把 Redux 调试 action 日志称为 Event Sourcing。
+      如果“重放历史”，方案会重执行 action 内的发邀请 HTTP 调用。项目没有权威事件存储，
+      也没有独立读写模型的需求；当前已有状态与数据层可以继续使用。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, security_trust, verification_evidence, communication_quality]
+    must_observe:
+      - 依据实际领域含义划分上下文和翻译边界，不猜测权威身份映射或仅以文件夹命名建立上下文
+      - 明确金额值语义包含其实际属性，避免把 JS 引用相等或不完整标量当作领域值相等
+      - 区分严格 CQS、CQRS 与 Event Sourcing，保留实际保存回执和查询失败的独立归属
+      - 识别日志非权威事件源，重放不能重发外部写入；普通状态和数据层足够时沿用它们
+    fail_if:
+      - 凭相同字段名拼出不存在的用户映射或以目录/类名代替领域分析
+      - 为术语正确删除用户需要的确认，或无需求引入事件存储和独立读写服务
+      - 将调试日志等同完整事件溯源，或重放再次执行已提交的邀请等外部写入
+
+  - id: recovery-migration-and-contract-evidence
+    title: 失败恢复、渐进替换与契约验证有明确实际边界
+    prompt: 只读评审这组发布与验证方案，给出实际需要修改的过程和检查依据。
+    artifact: |
+      现有网络客户端已经重试三次。创建订单 POST 超时结果未知，服务未承诺幂等性；
+      页面计划再重试三次，每次生成新“幂等 key”，并声称这样实现 exactly-once。
+      一个旧支付 SDK 正在渐进替换。当前消费者仍调用旧路径，方案只发布新适配器源码，
+      就说完成了 Branch by Abstraction；为了比较行为，还打算对同一订单调用新旧支付两次。
+      API 客户端 mock 测试通过且生成类型无误，但没有运行真实 provider 验证或打包后消费者。
+      一个 URL 规范化函数有大量编码输入，项目已安装属性测试工具；提案只用函数自身结果
+      当作 expected。用户未授权发布、真实付款或改动 provider，只要求评审。
+    applicable_dimensions: [requirements_context, solution_complexity, correctness_boundary, security_trust, compatibility_evolution, verification_evidence, communication_quality]
+    must_observe:
+      - 不把未知结果当作失败，核实真实服务幂等契约，避免叠加重试与每次新 key
+      - 给出实际迁移 seam、消费者接通、兼容验证和退休过程，不能比较时重复真实付款
+      - 区分消费者 mock、类型/schema、provider 验证与打包消费证据，不声称任一项可替代全部
+      - 属性从外部契约导出并保留可复现反例，未授权的运行或外部改动只列为待验证
+    fail_if:
+      - 认可客户端随机 key 或多层重试实现服务端 exactly-once，或建议未经授权实际付款验证
+      - 仅有新源码就称迁移完成，或让新旧实现重复产生不可逆写入
+      - 把模拟器通过当作 provider/真实集成已验证，或属性测试仅重复实现
+
+  - id: dependency-concepts-and-composition
+    title: 区分控制反转、依赖方向、注入与容器并选择实际装配路径
+    prompt: 评审下面的依赖装配说明，说明概念关系、合理方案和需要修改之处，并给出成熟方法的依据。只评审，不实现。
+    artifact: |
+      React + TypeScript 项目目前没有 DI 容器。一个功能依赖传入的 api 对象，bootstrap
+      已经创建真实 api 并传给该功能；测试可以传另一实现，功能内部没有 registry lookup。
+      方案声称“只有安装容器并加装饰器才算 DI；用了 DI 就自动满足 DIP”。它计划把这个
+      已传入的 api 改为全局 container.get('api')，并将 container 继续传给所有业务方法。
+      项目还通过框架生命周期回调注册和清理订阅，方案又声称“没有容器就不可能有 IoC”。
+      不存在第二套依赖图或额外作用域需求；用户只要求把当前依赖关系维护清楚。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, paradigm_choice, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 区分 IoC 的控制权、DIP 的源码依赖方向、DI 的外部供给和容器的运行时装配
+      - 识别现有显式装配是无需容器的 DI，保留 bootstrap 与业务使用的边界
+      - 指出业务方法主动调用 registry 是 Service Locator 用法而非自动更高质量的注入
+      - 依据原作者或官方资料解释实施路径，检查真实替换边界而非用容器或装饰器作为质量证明
+    fail_if:
+      - 把 IoC、DIP、DI、IoC 容器当作同义词，或声称 DI 必须使用容器
+      - 在没有新装配需要时照提案引入通用容器或全局查找，或对任何项目一律禁止容器
+      - 只列概念名而不给当前方案的实际装配与调用修正，或开始修改业务代码
+
+  - id: framework-injection-and-scope-boundaries
+    title: 沿用框架注入并正确处理实例、别名和服务器请求作用域
+    prompt: 只读评审以下三处依赖配置方案，指出会影响实际行为的问题和修正路径，说明依据与仍需核实的事实。
+    artifact: |
+      A. Angular 项目已有 injector 和 providers。Logger 为无状态共享能力；EditorSession
+      持有草稿，两个并排编辑器必须相互独立。方案将 EditorSession 作为根 provider，
+      另建全局 registry 存储“当前编辑器”；想复用 Logger 的旧 token 则用 useClass 再注册一次。
+      B. 同一 Node SSR 进程并发处理不同账号。已使用 Inversify，方案认为 inRequestScope
+      自动对应 HTTP 请求；同一 HTTP handler 分别调用 container.get(Page) 和 container.get(Audit)，
+      就应取得相同的请求身份对象，无需建立真实请求边界。没有提供确切包版本或服务器接线。
+      C. 一个 Vue 子树由既有 provide/inject 传入有资源的服务。方案认为 provide 会自动
+      构造其全部依赖并负责销毁它，子组件在离开时也可关闭从父层借用的共享连接。
+      没有提供应用源码；不要编造已执行的测试或擅自替换现有框架。
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, correctness_boundary, security_trust, verification_evidence, communication_quality]
+    must_observe:
+      - 沿用 Angular injector/provider 及拥有者作用域，让编辑器实例独立，别名保留既有 Logger 身份
+      - 核对 Inversify request scope 是解析请求而非自动 HTTP 边界，明确真实请求图及身份数据的所有权
+      - 区分 Vue 值供给与对象图构造释放，子组件释放自己的订阅而不销毁父层借用资源
+      - 引用原作者或官方机制，保留版本和实际宿主接线的未核实范围，提出真实消费者和跨作用域检查
+    fail_if:
+      - 无依据替换框架容器，或用一律手工传参绕过现有 provider 语义
+      - 声称相同 scope 名称在不同容器与框架中语义相同，或 inRequestScope 已证明 HTTP 隔离
+      - 让跨请求或独立编辑器共享可变身份/草稿，或消费者关闭不属于自己的共享资源
+      - 用成功 lookup 或文档说明冒充运行期隔离及释放已验证
+
+  - id: established-methods-implementation-plan
+    acceptance_profiles: [designed_delivery]
+    title: 已有交互思想落实到有来源的成熟实现方法
+    prompt: 请把下面的交互需求整理成可供开发执行的技术设计，沿用项目现有能力，保存文档并说明方法依据。
+    artifact: |
+      项目使用 React + TypeScript 和已安装的 RxJS 7；本次只提供事实与接口，没有应用源码。
+      现有 searchUsers(query) 返回 Observable<User[]>，saveDraft(snapshot) 返回 Observable<Receipt>。
+      搜索只展示最近一次输入的结果；不同请求可能乱序，重复相同查询也可能重复启动。
+      自动保存必须让每个已提交草稿依次执行，不能丢弃中间保存。保存按钮在执行期间的
+      重复点击应忽略，完成后可再次点击。页面离开时释放订阅；停止观察不代表服务端写入回滚。
+      页面显示的已选人数可以从 selection 推导；目前方案想额外存一份 selectedCount 并用 effect 同步。
+      沿用已有传输接口，不引入新数据层或运行时。只交付设计，不开始实现。
+    applicable_dimensions: [requirements_context, solution_complexity, paradigm_choice, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 选择已有 RxJS 切换、串行和忽略并发激活的相应操作符，解释具体接线与订阅生命周期
+      - 已选人数用派生值，方法依据追到原作者或官方资料并保留适用范围
+      - 区分 RxJS 机制、框架指导和项目适配，文档包含可执行功能步骤与关键契约，不编造已运行的结果
+      - 保存和搜索保留不同并发语义，说明取消观察与服务端提交之间的边界
+    fail_if:
+      - 只列思想名称和来源而不给实施路径，或自造统一请求引擎替代项目已有能力
+      - 用 switchMap 丢弃必须依次执行的保存，或声称取消订阅必然撤销服务端写入
+      - 将作者建议或某库操作符宣称为所有项目必须采用的统一行业规范，或只有自写示例作为方法来源
+      - 越过仅设计边界修改业务实现，或把拟议验证当成已通过
+
+  - id: principle-to-code-form-repair
+    title: 短请求下将规则落实到表单代码并保留既有契约
+    prompt: 修好这套表单的提交流程，沿用项目现有契约，完成后运行检查。
+    artifact: ''
+    fixture: evals/fixtures/field-eligibility
+    protected_paths: [README.md, package.json, package-lock.json, test/process-form.test.js]
+    validation_commands: [npm ci, npm run check]
+    applicable_dimensions: [requirements_context, solution_complexity, module_boundaries, implementation_integrity, correctness_boundary, verification_evidence, communication_quality]
+    must_observe:
+      - 自主读取公共契约，将参与字段规则落实到 required、自定义校验和 payload 的同一处理范围
+      - 实际代码保留合法假值、具体错误、异步等待与异常传播，运行原始检查
+      - 采用成熟字段处理方法时保留本项目既有返回结构、值类型和特殊字段名契约，不将原生 HTML 语义机械覆盖到对象 API
+    fail_if:
+      - 只在说明中承诺规则一致或只移动函数，实际代码仍偏离既有契约
+      - 受保护检查失败或被弱化，或借用方法时改变既有公共 API
+      - 为局部修复新增通用表单引擎或无依据的依赖
+
   - id: autonomous-live-export
     acceptance_profiles: [designed_delivery]
     title: 原始导出需求落实到调用契约和可演进代码
@@ -28,7 +323,7 @@ cases:
       - 为局部操作增加无依据的全局引擎或类层级，或以全绿行为测试代替结构判断
 
   - id: autonomous-live-search
-    acceptance_profiles: [designed_delivery]
+    acceptance_profiles: [workflow_completion, designed_delivery]
     title: 原始搜索需求落实请求发布与资源生命周期
     prompt: 完成搜索的提交、重试和离开页面处理。
     artifact: ''
@@ -45,7 +340,7 @@ cases:
       - dispose 后继续发请求或发布，或把新草稿当作失败请求的重试值
 
   - id: autonomous-live-profile
-    acceptance_profiles: [designed_delivery]
+    acceptance_profiles: [workflow_completion, designed_delivery]
     title: 原始资料需求落实权威值与乐观投影
     prompt: 完成资料页的保存与失败恢复。
     artifact: ''
@@ -239,7 +534,7 @@ cases:
       - 擅自实施应用代码或把拟议验证写成真实应用验收通过
 
   - id: autonomous-feature-development
-    acceptance_profiles: [designed_delivery]
+    acceptance_profiles: [workflow_completion, designed_delivery]
     title: 简短功能目标自主完成发现设计实现与检查
     prompt: 把这个表单的条件字段支持做完。
     artifact: ''
@@ -261,7 +556,7 @@ cases:
       - 受保护检查失败或被修改，或声称未运行的验证已经通过
 
   - id: autonomous-architecture-design
-    acceptance_profiles: [designed_delivery]
+    acceptance_profiles: [workflow_completion, designed_delivery]
     title: 简短架构请求默认交付可实施设计且不开始编码
     prompt: 设计这个文件上传模块的架构。
     artifact: |
@@ -299,6 +594,7 @@ cases:
       - 仅满足文档形式或罗列原则，却未检查关键状态、资源所有权和失败清理契约，留下可论证的需求缺口并将设计宣称为完备
 
   - id: autonomous-review-maintainability
+    acceptance_profiles: [workflow_completion]
     title: 普通审查自行识别全绿代码中的职责和调用协议问题
     task_type: review
     fixture: evals/fixtures/autonomous-export-review
@@ -316,6 +612,7 @@ cases:
       - 修改被审查代码，或要求用户补充本可自行确定的审查维度后才开始
 
   - id: autonomous-review-contracts
+    acceptance_profiles: [workflow_completion]
     title: 普通审查自主发现有效需求和未修改的遗漏路径
     task_type: review
     fixture: evals/fixtures/community-review
@@ -1375,6 +1672,7 @@ cases:
       使用 fixture 中的现有 api.ts、ProfileForm.tsx 和测试作为起点；不要更换技术栈或
       删除已有公开 API。
     fixture: evals/fixtures/optimistic-profile
+    protected_paths: [package.json, package-lock.json, src/ProfileForm.test.tsx]
     validation_commands:
       - npm ci
       - npm run check
@@ -1802,7 +2100,9 @@ cases:
       A，公共按钮已有 spacing token，将间距从 8px 调成 6px，不改变交互和 API；
       B，已有列表页增加遵循现有 URL 筛选约定的状态筛选；
       C，三个应用迁移到统一登录状态，旧新会话接口并存两周，两个团队分阶段接手，
-      用户身份、刷新与退出传播的所有权尚未确定。用户已授权实现，仓库没有额外审批要求。
+      用户身份、刷新与退出传播的所有权尚未确定；
+      D，订单表单新增“企业订单税号必填”规则，现有 schema 已支持条件必填，校验、提交、
+      错误展示与字段所有权均不变，没有新状态或外部协议。用户已授权实现，仓库没有额外审批要求。
     artifact: ''
     applicable_dimensions:
       - requirements_context
@@ -1812,11 +2112,13 @@ cases:
     must_observe:
       - A 直接实施和适度验证，不因公共组件而要求设计文档
       - B 可简短说明数据流和验证后实施，不强制持久化文档
+      - D 直接复用原 schema 及提交检查，只更新实际变化的规则或契约，不为业务规则变化强制另建文档和两图
       - C 在改实现前需要技术文档，复用现有位置，拆出有依赖和验收的功能步骤，定义类型及函数或类契约，并包含架构图和数据流转图
       - 区分需要澄清的业务决策与不必要的文档审批
     fail_if:
       - 所有任务都强制先建文档或等待用户批准
       - 因共享文件或功能关键词机械决定文档深度
+      - 为 D 新建规则引擎或额外状态所有者，或强制独立技术设计及两种重复图示
       - C 不处理所有权歧义就直接实施迁移
       - C 将技术文档缩减为仅记录取舍或聊天中的简短提纲，遗漏功能步骤、代码契约或两类图示要求
   - id: field-eligibility-executable

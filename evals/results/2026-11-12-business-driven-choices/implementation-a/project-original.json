@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "files": {
+    "README.md": {
+      "sha256": "64790abb5cca21d35c9761c9fb62eea446763d339723ac541dda659c7ff9a2cc",
+      "size": 1372,
+      "text": "# Order form rules\n\nThis existing headless order form uses the project's `forms.js` capability.\n`validateOrder(draft)` supplies field feedback; `submitOrder(draft, send)` validates\nthe same fields, sends once on success and propagates transport rejection.\nRun `npm run check`; no dependencies, rendered application or external service exist.\n\nThe supported customer types are `personal` and `business`. Existing fields are\ncustomerType, companyName, taxId and note. customerType is required; companyName is\nrequired for business orders. The new product requirement makes taxId required\nfor business orders while keeping it optional for personal orders. There is no\nnew tax-ID format rule. Required emptiness remains undefined, null or ''; whitespace\nkeeps its existing meaning. Switching to personal must remove the business-only\nrequired errors. All four owned fields, including optional values, still go into\nthe payload; unknown fields do not. Validation errors are `{ errors }` with the\nmessage `Required`; successful submission returns `{ sent: true }`.\n\nThe existing form engine already supports boolean or draft-dependent required\nrules and owns error/payload processing. Preserve these public operations and\ntheir rejection behavior, source draft and supported field contract. Existing\nmanifests and test files are acceptance inputs; add separate tests if useful.\n"
+    },
+    "package-lock.json": {
+      "sha256": "2d061a7fd209e4f61186791b1561794d4f6af0f8f9ed67e6fe5615226a3cdd22",
+      "size": 171,
+      "text": "{\n  \"name\": \"business-rule-extension-eval\",\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {\n      \"name\": \"business-rule-extension-eval\"\n    }\n  }\n}\n"
+    },
+    "package.json": {
+      "sha256": "403b8e8d543bfa1947542ed4350641f1301a46fded17d12d78f54f43bd734222",
+      "size": 131,
+      "text": "{\n  \"name\": \"business-rule-extension-eval\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"check\": \"node --test\"\n  }\n}\n"
+    },
+    "src/forms.js": {
+      "sha256": "a73debe071110ff97d9fccc92f46b17235675f84cb15c03d1099e6f9fe755534",
+      "size": 661,
+      "text": "export function validateFields(fields, draft) {\n  return Object.fromEntries(fields.flatMap(field => {\n    const required = typeof field.required === 'function'\n      ? field.required(draft)\n      : field.required;\n    const value = draft[field.name];\n    return required && (value === undefined || value === null || value === '')\n      ? [[field.name, 'Required']]\n      : [];\n  }));\n}\n\nexport async function submitFields(fields, draft, send) {\n  const errors = validateFields(fields, draft);\n  if (Object.keys(errors).length) return { errors };\n  await send(Object.fromEntries(fields.map(field => [field.name, draft[field.name]])));\n  return { sent: true };\n}\n"
+    },
+    "src/order-form.js": {
+      "sha256": "a6c16c63bc5ca6021830b76c68d3b05fe813eb767bf3174a6f1ae4b3d4a4939b",
+      "size": 418,
+      "text": "import { submitFields, validateFields } from './forms.js';\n\nconst fields = [\n  { name: 'customerType', required: true },\n  { name: 'companyName', required: draft => draft.customerType === 'business' },\n  { name: 'taxId' },\n  { name: 'note' },\n];\n\nexport function validateOrder(draft) {\n  return validateFields(fields, draft);\n}\n\nexport function submitOrder(draft, send) {\n  return submitFields(fields, draft, send);\n}\n"
+    },
+    "test/order.test.js": {
+      "sha256": "5f7d328aecf6b6f56eb2d2ea4d45b5d50a609da57a5810d48fe9171567b2560e",
+      "size": 1424,
+      "text": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { validateOrder, submitOrder } from '../src/order-form.js';\n\ntest('personal orders keep optional fields and the owned payload shape', async () => {\n  const draft = { customerType: 'personal', companyName: '', taxId: '', note: 'Hi', extra: 'omit' };\n  const payloads = [];\n  assert.deepEqual(validateOrder(draft), {});\n  assert.deepEqual(await submitOrder(draft, async payload => payloads.push(payload)), { sent: true });\n  assert.deepEqual(payloads, [{ customerType: 'personal', companyName: '', taxId: '', note: 'Hi' }]);\n  assert.equal(draft.extra, 'omit');\n});\n\ntest('existing business company-name validation still prevents sending', async () => {\n  const draft = { customerType: 'business', companyName: '', taxId: 'T1', note: '' };\n  assert.deepEqual(validateOrder(draft), { companyName: 'Required' });\n  assert.deepEqual(await submitOrder(draft, () => assert.fail('must not send')), {\n    errors: { companyName: 'Required' },\n  });\n});\n\ntest('successful writes retain transport rejection and source draft', async () => {\n  const draft = { customerType: 'business', companyName: 'Acme', taxId: 'T1', note: '' };\n  const original = structuredClone(draft);\n  const failure = new Error('offline');\n  await assert.rejects(submitOrder(draft, async () => { throw failure; }), error => error === failure);\n  assert.deepEqual(draft, original);\n});\n"
+    },
+    "test/tax-rule.test.js": {
+      "sha256": "20cf6a2b5d53aad0b0e89fb19100f91e5fb72e7c60d754f3b2c344132cf5de1d",
+      "size": 1581,
+      "text": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { validateOrder, submitOrder } from '../src/order-form.js';\n\ntest('business tax-ID required feedback and command admission agree for all existing empty values', async () => {\n  for (const taxId of [undefined, null, '']) {\n    const draft = { customerType: 'business', companyName: 'Acme', taxId, note: '' };\n    const before = structuredClone(draft);\n    assert.deepEqual(validateOrder(draft), { taxId: 'Required' });\n    assert.deepEqual(await submitOrder(draft, () => assert.fail('must not send')), {\n      errors: { taxId: 'Required' },\n    });\n    assert.deepEqual(draft, before);\n  }\n});\n\ntest('switching customer type reevaluates the existing conditional rules', async () => {\n  const draft = { customerType: 'business', companyName: '', taxId: '', note: '' };\n  assert.deepEqual(validateOrder(draft), { companyName: 'Required', taxId: 'Required' });\n  draft.customerType = 'personal';\n  assert.deepEqual(validateOrder(draft), {});\n  const payloads = [];\n  assert.deepEqual(await submitOrder(draft, async payload => payloads.push(payload)), { sent: true });\n  assert.equal(payloads.length, 1);\n  assert.deepEqual(payloads[0], draft);\n});\n\ntest('the rule adds no tax-ID formatting restriction or payload rewrite', async () => {\n  const draft = { customerType: 'business', companyName: 'Acme', taxId: ' ', note: '' };\n  const payloads = [];\n  assert.deepEqual(validateOrder(draft), {});\n  await submitOrder(draft, async payload => payloads.push(payload));\n  assert.deepEqual(payloads, [draft]);\n});\n"
+    }
+  }
+}

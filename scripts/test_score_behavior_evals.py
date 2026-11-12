@@ -285,6 +285,9 @@ class ScoringWorkflowTests(unittest.TestCase):
             (folder/'events.jsonl').write_text(json.dumps({'type':'item.completed', 'item':{'type':'command_execution', 'command':'cat .frontend-architect/SKILL.md', 'exit_code':0, 'aggregated_output':'skill content'}}) + '\n' + json.dumps({'type':'turn.completed'}))
             self.records.append({
                 'id': name, 'workspace': str(self.root/name), 'mode': 'candidate', 'generation': {'exit_code': 0}, 'validations': [],
+                'guidance_checks':[{'expected_sha256':{'SKILL.md':'fixture-guidance-digest'},
+                                    'before_sha256':{'SKILL.md':'fixture-guidance-digest'},
+                                    'after_sha256':{'SKILL.md':'fixture-guidance-digest'}}],
                 'reference_routing': {'local_skill_read': True, 'isolation_ok': True,
                     'skill_isolation_ok': True, 'read_audit_status': 'recognized',
                     'files': [], 'skill_paths': [], 'breadth_review_required': False},
@@ -297,10 +300,17 @@ class ScoringWorkflowTests(unittest.TestCase):
             batch_size=4, timeout_seconds=5, force=False)
 
     def capture_record(self, record):
+        record['generation'].setdefault('duration_seconds',0)
         events = (self.results/record['id']/record['mode']/'events.jsonl').read_text()
         record['events_sha256'] = hashlib.sha256(events.encode()).hexdigest()
         record['reference_routing'] = scorer.analyze_reference_reads(events, Path(record['workspace']))
         record['capture_contract'] = scorer.capture_contract(self.cases[record['id']], self.root)
+        check = record['guidance_checks'][0]
+        folder = self.results/record['id']/record['mode']
+        path = folder/'attempts/0/guidance-integrity.json'
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_text(json.dumps(check))
+        record['attempt_artifacts'] = {'attempts/0/guidance-integrity.json':hashlib.sha256(path.read_bytes()).hexdigest()}
         if self.cases[record['id']].get('fixture'):
             from eval_evidence import save_snapshot
             fixture = self.root/self.cases[record['id']]['fixture']
@@ -314,12 +324,19 @@ class ScoringWorkflowTests(unittest.TestCase):
                 record[f'project_{label}_sha256'] = save_snapshot(
                     self.results/record['id']/record['mode']/f'project-{label}.json',
                     {'version':1,'files':files})
+        attempt = {key:copy.deepcopy(record.get(key)) for key in
+                   ('generation','validations','project_final_sha256','guidance_checks')}
+        record['attempts'] = [attempt]
+        result_path = folder/'attempts/0/attempt-result.json'
+        result_path.write_text(json.dumps(attempt))
+        record['attempt_artifacts']['attempts/0/attempt-result.json'] = hashlib.sha256(result_path.read_bytes()).hexdigest()
 
     def save_cases(self) -> None:
         (self.root/'evals/cases.yaml').write_text(yaml.safe_dump({'cases': list(self.cases.values())}))
 
     def save_manifest(self) -> None:
-        (self.results/'manifest.json').write_text(json.dumps({'cases': self.records}))
+        (self.results/'manifest.json').write_text(json.dumps({'guidance_integrity_version':1,
+            'guidance_sha256':{'SKILL.md':'fixture-guidance-digest'},'cases': self.records}))
 
     def fake_score(self, args, prompt, schema, output):
         names = re.findall(r'^id: (.+)$', prompt, re.MULTILINE)
@@ -415,9 +432,11 @@ class ScoringWorkflowTests(unittest.TestCase):
                 self.records[0]['validations'] = [{'command':c, 'exit_code':0} for c in commands]
                 for i in range(len(commands)):
                     (self.results/f'first-case/candidate/validation-{i+1}.log').write_text('passed')
+                self.capture_record(self.records[0])
                 self.save_manifest()
                 self.assertEqual(self.invoke()[2][0]['verdict'], expected)
         self.records[0]['validations'] = [{'command':'check-one', 'exit_code':1}]
+        self.capture_record(self.records[0])
         self.save_manifest()
         self.assertEqual(self.invoke()[2][0]['verdict'], 'fail')
 
@@ -457,18 +476,21 @@ class ScoringWorkflowTests(unittest.TestCase):
         self.save_cases()
         self.assertEqual(self.invoke()[1], 2)
 
-    def test_validation_changes_regrade_and_failure_overrides_model_score(self) -> None:
+    def test_new_validation_captures_regrade_and_failure_overrides_model_score(self) -> None:
         self.cases['first-case']['validation_commands'] = ['behavior test']
         self.save_cases()
-        self.capture_record(self.records[0])
         self.records[0]['validations'] = [{'command': 'behavior test', 'exit_code': 0}]
         log = self.results/'first-case/candidate/validation-1.log'
         log.write_text('passed')
+        self.capture_record(self.records[0])
         self.save_manifest()
         self.invoke()
         log.write_text('new validation evidence')
+        self.capture_record(self.records[0])
+        self.save_manifest()
         self.assertEqual(self.invoke()[1], 2)
         self.records[0]['validations'][0]['exit_code'] = 1
+        self.capture_record(self.records[0])
         self.save_manifest()
         code, calls, scores = self.invoke()
         self.assertEqual((code, calls), (1, 2))
@@ -566,6 +588,60 @@ class ScoringWorkflowTests(unittest.TestCase):
         code, calls, scores = self.invoke()
         self.assertEqual((code, calls), (1, 0))
         self.assertEqual(scores[0]['verdict'], 'invalid')
+
+    def test_old_capture_without_guidance_identity_does_not_reuse_scores(self):
+        self.assertEqual(self.invoke()[0],0)
+        self.records[0].pop('guidance_checks')
+        self.save_manifest()
+        code,calls,scores = self.invoke()
+        self.assertEqual((code,calls),(1,0))
+        self.assertEqual(scores[0]['verdict'],'invalid')
+        self.assertTrue(any('guidance integrity' in e for e in scores[0]['invalid_reasons']))
+
+    def test_changed_manifest_guidance_does_not_reuse_scores(self):
+        self.assertEqual(self.invoke()[0],0)
+        path = self.results/'manifest.json'
+        manifest = json.loads(path.read_text())
+        manifest['guidance_sha256'].clear()
+        path.write_text(json.dumps(manifest))
+        code,calls,scores = self.invoke()
+        self.assertEqual((code,calls),(1,0))
+        self.assertEqual(scores[0]['verdict'],'invalid')
+        self.assertTrue(any('guidance' in e.lower() for e in scores[0]['invalid_reasons']))
+
+    def test_frozen_acceptance_bytes_are_checked_before_reusing_scores(self):
+        case = self.cases['first-case']
+        case['acceptance_checks'] = [{'name':'independent', 'command':'python checks/oracle.py',
+                                     'files':{'checks/oracle.py':'oracle.py'}}]
+        content = b'assert True\n'
+        (self.root/'oracle.py').write_bytes(content)
+        self.save_cases()
+        record = self.records[0]
+        record['validations'] = [{'command':'acceptance: independent: python checks/oracle.py',
+                                 'exit_code':0, 'duration_seconds':0}]
+        folder = self.results/'first-case/candidate'
+        (folder/'validation-1.log').write_text('Independent consumer passed')
+        frozen = folder/'acceptance-inputs/oracle.py'
+        frozen.parent.mkdir()
+        digest = hashlib.sha256(content).hexdigest()
+        record['input_artifacts'] = {'acceptance-inputs/oracle.py':digest}
+        self.capture_record(record)
+        self.save_manifest()
+        for mutation in ('changed','missing','outside'):
+            with self.subTest(mutation=mutation):
+                frozen.unlink(missing_ok=True)
+                frozen.write_bytes(content)
+                self.assertEqual(self.invoke()[0],0)
+                if mutation == 'changed':
+                    frozen.write_text('raise RuntimeError("changed")\n')
+                else:
+                    frozen.unlink()
+                    if mutation == 'outside':
+                        frozen.symlink_to(self.root/'oracle.py')
+                code,calls,scores = self.invoke()
+                self.assertEqual((code,calls),(1,0))
+                self.assertEqual(scores[0]['verdict'],'invalid')
+                self.assertTrue(any('acceptance input' in e.lower() for e in scores[0]['invalid_reasons']))
 
     def test_protected_harness_failure_is_invalid(self) -> None:
         self.records[0]['validations'] = [{'command': 'verify protected evaluation harness', 'exit_code': 1}]

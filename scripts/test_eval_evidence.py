@@ -36,7 +36,7 @@ class ProjectEvidenceTests(unittest.TestCase):
             with patch.object(runner,'codex_command', side_effect=lambda a,w,o:[sys.executable,str(generator),str(o)]):
                 result = runner.capture_attempt(argparse.Namespace(timeout_seconds=10),
                     {'validation_commands':[shlex.quote(sys.executable)+' '+shlex.quote(str(build))]},
-                    workspace,'HEAD',root/'record','Task')
+                    workspace,'HEAD',root/'record','Task',expected_guidance={})
             self.assertEqual(result['validations'][0]['exit_code'],0)
             snapshot = json.loads((root/'record/project-final.json').read_text())
             self.assertEqual(snapshot['files']['public.js']['text'], 'export const value = 1')

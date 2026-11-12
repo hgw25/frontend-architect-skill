@@ -9,6 +9,7 @@ claim. An ordinary proportionate check does not require loading this reference.
 - [Verify risk, not ceremony](#verify-risk-not-ceremony)
 - [Keep test organization predictable](#keep-test-organization-predictable)
 - [Test observable contracts](#test-observable-contracts)
+- [Choose contract or property checks when useful](#choose-contract-or-property-checks-when-useful)
 - [Distinguish cause from recovery](#distinguish-cause-from-recovery)
 - [Establish review scope and coverage](#establish-review-scope-and-coverage)
 - [Review architecture and implementation](#review-architecture-and-implementation)
@@ -20,6 +21,15 @@ claim. An ordinary proportionate check does not require loading this reference.
 - [Influences](#influences)
 
 ## Verify risk, not ceremony
+
+Use the [overall workflow](../SKILL.md#follow-the-development-workflow) to close the
+requested delivery. Lightweight documentation does not waive requirement/contract
+discovery, a reasoned design choice, engineering inspection or relevant checks.
+Assess those obligations from actual artifacts, callers and executed evidence;
+do not demand phase headings, separate stage reports or narration of private
+reasoning. Missing narration does not prove a missing action, and naming a phase
+does not prove its required outcome. Keep an unobservable action as a specific
+evidence limit rather than inventing a failure or a pass.
 
 Choose checks based on what could fail:
 
@@ -102,6 +112,15 @@ Avoid tests coupled to private state, internal component names, incidental DOM
 structure, lifecycle calls, or implementation-only helpers unless those details
 are themselves contractual.
 
+Check the source of a consequential test expectation as well as its assertions.
+An accepted contract or responsible provider can establish ordering, identity,
+retry and confirmation semantics; an implementation's new test only demonstrates
+the chosen rule. If both assume an undocumented guarantee, their agreement is
+not independent evidence. Inspect the relevant source or existing provider check,
+retain an unresolved material assumption, and exercise a counterexample allowed
+by the known contract. Do not invent arbitrary invalid inputs or build another
+contract-testing system when the existing integration can settle the question.
+
 Prioritize:
 
 1. A failure that would materially harm the user or business.
@@ -117,6 +136,26 @@ conditions and passes after the fix when a safe comparison is feasible. Do not
 weaken the check to match the implementation. If the harness is wrong, correct
 it while retaining the original acceptance condition and explain the evidence.
 Distinguish tests actually selected by a command from the intended subset.
+
+## Choose contract or property checks when useful
+
+**Consumer-driven contract testing.** The
+[Pact procedure](https://docs.pact.io/getting_started/how_pact_works)
+records the consumer's actual request/message expectations and verifies them
+against the provider in the relevant state. Use the project's existing contract
+tooling for independently evolving integrations; consumer mocks alone do not
+establish that the provider satisfies them. Generated types/schema checks cover
+different properties. Keep actual authorization, runtime interaction and important
+cross-operation behavior under their appropriate integration checks.
+
+**Property-based testing.** The [fast-check guide](https://fast-check.dev/docs/introduction/getting-started/)
+uses generated inputs and assertions about invariants, with reproducible/shrunk
+failures. Use an existing runner/library for a broad input space such as a parser,
+normalizer or domain transition. Define the property from the external contract,
+not by restating the implementation; preserve the failing seed or minimized input.
+A canonical parse/serialize law can be useful where exact input round-trip is
+not the contract. A few explicit examples may suffice for simple behavior; neither
+method requires adding a new service or dependency to every task.
 
 ## Distinguish cause from recovery
 
@@ -242,6 +281,11 @@ must change, rules are copied, or consumers need internal details. File counts
 alone are not a verdict. Fix concrete boundary problems before claiming the
 structure is maintainable. Independent handoff can strengthen the evidence;
 functional success alone does not prove architecture quality or skill improvement.
+Also check that any design preparation matches the actual boundary, state and
+contract changes. A narrow rule extension using settled mechanisms need not gain
+a standalone document or two copied views; substantial architecture/data-flow
+work still needs its actual contracts and both views. Do not penalize a correct
+lightweight path or accept an unresolved guarantee because a design is complete.
 
 ## Review interfaces
 

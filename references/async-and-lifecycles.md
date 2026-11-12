@@ -22,6 +22,28 @@ Do not apply latest-wins cancellation to an ordered save queue, or serialize all
 searches when only the latest result matters. Debouncing reduces frequency; it
 does not establish any of these correctness guarantees.
 
+## Bound retries by semantics and budget
+
+[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#name-idempotent-methods)
+defines idempotency in terms of the intended server effect, not identical response
+text. Establish whether the operation can safely repeat before retrying. For a
+supported idempotency-key contract, reuse the same operation identity and submitted
+input across attempts; generating a fresh key per attempt defeats deduplication.
+A client-only key or disabled button does not create a server guarantee.
+
+The AWS [timeouts, retries and jitter guidance](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/)
+describes bounded backoff and spreading retries to avoid synchronized load. Reuse
+the existing client's policy: classify retryable failures, set attempt and total
+time budgets, apply supported backoff/jitter and server retry guidance, and stop
+on owner cancellation. Account for retries already performed by lower layers.
+Do not repeat an unsafe or unknown-outcome write merely because it timed out;
+use its existing reconciliation contract.
+
+Check attempt count, retained input/identity, delay limits and cancellation with
+controllable transport and clocks. Confirm the final consumer still distinguishes
+confirmed, rejected and unknown outcomes. This does not require a new resilience
+framework or browser-level retry of every failed request.
+
 ## Separate execution from publication
 
 For a latest-result operation, the owner needs a stable input snapshot, a request
@@ -40,6 +62,9 @@ Also cover A completing while B is still pending. Cancellation may save work;
 identity/version checking determines whether completion is still relevant.
 Use the data layer's query key and lifecycle if it already expresses this.
 Do not add a parallel request counter, local loading flag and cache behind it.
+For the established framework cleanup mechanisms and RxJS concurrency operators,
+see [effects and concurrency](implementation-patterns.md#effects-and-concurrency).
+Use the mechanism matching this project's policy instead of a new request engine.
 
 An operation's identity can include resource, user/tenant, query and generation.
 A response for the old account or route must not become current merely because
@@ -88,6 +113,10 @@ that their final feedback agrees. Exercise the combination of successful command
 and failed follow-on work, as well as command rejection; tests of each operation
 in isolation miss that boundary. Reuse existing mutation/query states and error
 presentation before adding new state machinery.
+Use the data layer's documented query/mutation lifecycle; see
+[remote-data methods](implementation-patterns.md#remote-data-and-mutation-lifecycle).
+Its pending/error and callback semantics must be checked against the actual
+version; a generic callback name does not establish the confirmation boundary.
 
 ## Reconcile optimistic state with acknowledgements
 
@@ -98,10 +127,16 @@ Keep these meanings distinct when optimistic behavior exists:
 - the projection currently shown to the user.
 
 If save A is confirmed while save B is pending and B then fails, rollback must
-reflect the newest valid acknowledgement, not an old closure snapshot. Define
-whether server responses can be ordered by version; client request order alone
-does not establish server commit order. When the contract cannot support safe
-optimism, use pending feedback and authoritative refresh instead.
+reflect the newest valid acknowledgement, not an old closure snapshot. Establish
+the service's actual ordering and equality guarantees before comparing revisions;
+a numeric field named `version` is not that guarantee, and client request order
+does not establish server commit order. HTTP entity tags are
+[opaque validators](https://www.rfc-editor.org/rfc/rfc9110.html#name-etag), for example,
+not values to rank locally. Do not infer a different service's semantics from them.
+Use the [contract-evidence guidance](architecture-and-code.md#understand-before-changing)
+when a necessary guarantee is missing. If the product permits pending feedback
+and authoritative refresh instead of unsafe optimism, reuse that path; do not
+silently drop required concurrent editing or confirmation behavior.
 
 Rollback is a new decision against current state, not unconditional restoration
 of everything captured before `await`. It must not undo another successful edit,

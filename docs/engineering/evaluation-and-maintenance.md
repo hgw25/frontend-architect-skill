@@ -31,7 +31,7 @@
 | 所有者 | 契约及数据流 |
 | --- | --- |
 | `scripts/eval_evidence.py` | `project_snapshot(workspace: Path) -> dict[str, Any]` 读取项目实际文件；`save_snapshot(path, snapshot) -> str` 返回文件摘要；`snapshot_errors(path, digest, expected_files=None) -> list[str]` 验证完整性与原始契约；`project_context(case_dir) -> str` 提供正文和未变化引用 |
-| `scripts/run_behavior_evals.py` | `capture_attempt(args, case, workspace, baseline, directory, prompt)` 执行生成和宿主检查后保存最终快照；`run_acceptance_checks(case, workspace, timeout) -> list[dict[str, Any]]` 在副本执行独立消费者；`acceptance_source(case, source, root) -> bytes` 优先使用已冻结支持文件 |
+| `scripts/run_behavior_evals.py` | `capture_attempt(args, case, workspace, baseline, directory, prompt, *, expected_guidance)` 核对实际指导身份，执行生成和宿主检查后保存最终快照；`run_acceptance_checks(case, workspace, timeout) -> list[dict[str, Any]]` 在副本执行独立消费者；`acceptance_source(case, source, root) -> bytes` 优先使用已冻结支持文件 |
 | `scripts/score_behavior_evals.py` | 两阶段都消费冻结原始/最终项目上下文；`validate_failure_audits` 校验完整的契约审查和逐项验收，`finalize_evaluations` 保留质量分但以必要成果和实际消费者结果决定达标 |
 | `evals/cases.yaml` | 共用验收 profiles 和案例的适用引用；仅第二阶段看到，既不提供实现答案，也不自动扩大所有任务范围 |
 | 两个 flags fixture 的 `scripts/check-package.mjs` | 从已安装包的公共入口执行实际宿主消费，临时消费者自行清理；不导入工作区源码 |
@@ -105,3 +105,51 @@ README -> 独立维护技能 -> 官方下载器 -> 暂存不可变版本
 缺基线及仅计划文档、伪造签名、空 hook 和空公开声明均被相应检查拒绝；真实对齐文档及
 健康包通过。早期校准误判和容量中断保留，不作为改善证据，不以字段数量作为质量标准。
 没有运行全部 71 项模型行为场景，也不据此证明远端发布或每次自主交付都无遗漏。
+
+## 2026-11-12 采集身份与冻结验收输入修复
+
+整体复审确认三个 P2 缺口：实际指导副本变化未核验、保存的独立验收输入只比较摘要
+字段，以及旧资料用例允许改写检查入口。用户已授权修复。此次修工具和已有案例，
+不增加全局开发提示、不改历史评分、不升级或发布技能。
+
+按三个有依赖的增量实施，先保存本设计和失败回归，再改实现；以下按当前定义回填。
+
+1. **指导副本身份。** `capture_delivery` 接收该条件的预期指导摘要；每个
+   `capture_attempt` 保存生成前、宿主检查结束后的实际文件集合与摘要。`capture_errors` 拒绝
+   缺失或失配的证据，错误样本不进入宿主反馈修复。baseline 预期没有指导，candidate
+   预期与选定 skill_root 的冻结摘要一致。每轮检查单独归档，不依赖评分时临时工作区
+   仍存在，不让后来修复抹去前轮失配。评分核对轮次记录、汇总字段、归档原件和
+   manifest 冻结身份一致；评分读取的顶层复制工件也沿用既有 attempt 工件摘要核验，
+   避免原件受保护而实际评分副本被改动的缺口。每轮 `attempt-result.json` 通过原有
+   `write_manifest` 保存真实生成/验证结果并纳入相同摘要链，评分与轮次元数据逐一比对；
+   `generation_summary` 由采集和评分共用，最终验证须与最后一轮结果一致，避免只改
+   manifest 的 exit code 掩盖实际失败。
+2. **冻结验收输入。** `captured_evidence_errors` 沿用既有 attempt 工件核验方式，
+   检查 acceptance-inputs 的文件存在性、路径归属和实际字节摘要，同时保留记录之间
+   的身份比对。缺失/变化在调用评分模型及复用分数缓存前变成 invalid。
+3. **旧用例入口及正常路径。** 旧资料用例显式保护已有检查入口、锁文件及核心测试；
+   允许修改产品源码、补独立测试和既有测试隔离配置。复跑三个已保存的反例和正常
+   capture→score/宿主反馈路径，确认合理产品改动没有被禁止。
+
+```text
+冻结指导摘要 -> 隔离副本 -> 每轮 before 身份 -> 生成 -> 宿主检查 -> after 身份
+                                      |                                  |
+                                      +----------- 捕获一致性 ------------+
+                                                       |
+                                  失配 -> invalid，保留原轮，不发修复提示
+                                  一致 -> 冻结产物 -> 评分或唯一反馈修复轮
+
+保存 acceptance-inputs 的字节 + 摘要
+ -> 评分前核对实际工件 -> 既有有效性 gate -> 两阶段评分/缓存
+                            | 失败
+                            +-> invalid，不调用评分模型
+```
+
+一个现实后续变化是清理临时生成工作区后，继续评分已归档产物：应依赖保存的每轮身份
+证据，不能要求活目录还在。末态摘要不证明中途修改后恢复的行为，也不替代已有阅读
+审计；没有这些新证据的旧采集保留原协议，不能补造为新协议通过。
+
+三个增量及独立复核发现的同类归档缺口已实现。126 项确定性回归通过；真实资料页
+对照在原保护文件摘要不变时通过类型检查和 15 项测试，命令绕过被提前拒绝。
+正反例、独立复核、源码摘要、实际校验和未验证边界见
+[本轮修复记录](../../evals/results/2026-11-12-evidence-integrity/report.md)。

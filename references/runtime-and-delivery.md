@@ -123,6 +123,27 @@ universal line or file limit, but separate preparatory refactoring, contract
 changes, and feature behavior when independent review or rollback would be
 materially safer.
 
+## Migrate through an established seam
+
+Fowler's [Strangler Fig](https://martinfowler.com/bliki/StranglerFigApplication.html)
+replaces a legacy capability incrementally: choose a useful slice, route that
+slice to its replacement, preserve required integration and expand after real
+consumer evidence. Use this where routing/page/capability boundaries allow
+coexistence; retain an explicit retirement and recovery path.
+
+[Branch by Abstraction](https://martinfowler.com/bliki/BranchByAbstraction.html)
+puts the current supplier behind a consumer-facing seam, moves callers onto it,
+adds the new supplier, verifies it and switches consumers progressively. Keep the
+system working throughout. Remove the old implementation and migration-only seam
+when no supported consumer needs them; a permanent facade can stay if it owns a
+continuing responsibility.
+
+Select the seam from the actual change, not the prestige of the pattern. Verify
+compatibility, state/URL/data transitions and rollback through real consumers.
+Comparisons must not execute destructive writes twice. Deployment rollback cannot
+automatically undo externally committed effects or incompatible persisted data;
+use the project's supported compatibility and recovery procedure.
+
 ## Lessons from production codebases
 
 Use these projects as evidence and counterexamples, not templates:

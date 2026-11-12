@@ -1,0 +1,11 @@
+只读评审以下三处依赖配置方案，指出会影响实际行为的问题和修正路径，说明依据与仍需核实的事实。
+
+A. Angular 项目已有 injector 和 providers。Logger 为无状态共享能力；EditorSession
+持有草稿，两个并排编辑器必须相互独立。方案将 EditorSession 作为根 provider，
+另建全局 registry 存储“当前编辑器”；想复用 Logger 的旧 token 则用 useClass 再注册一次。
+B. 同一 Node SSR 进程并发处理不同账号。已使用 Inversify，方案认为 inRequestScope
+自动对应 HTTP 请求；同一 HTTP handler 分别调用 container.get(Page) 和 container.get(Audit)，
+就应取得相同的请求身份对象，无需建立真实请求边界。没有提供确切包版本或服务器接线。
+C. 一个 Vue 子树由既有 provide/inject 传入有资源的服务。方案认为 provide 会自动
+构造其全部依赖并负责销毁它，子组件在离开时也可关闭从父层借用的共享连接。
+没有提供应用源码；不要编造已执行的测试或擅自替换现有框架。

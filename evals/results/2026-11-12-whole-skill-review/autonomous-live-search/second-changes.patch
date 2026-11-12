@@ -1,0 +1,164 @@
+diff --git a/README.md b/README.md
+index 8dc235f..9ce5b40 100644
+--- a/README.md
++++ b/README.md
+@@ -9,3 +9,5 @@ The returned object exposes setDraft(string), submit(): Promise<void>, retry():
+ fetchUsers(query) returns Promise<Array<{ user_id: string, display_name: string }>>. The only UI item shape is { id: string, label: string }; translate DTOs before publishing state. Inputs satisfy this DTO contract; no schema library is needed. Most recently STARTED request owns all result, error and status updates, whether older requests succeed or fail. The injected fetchUsers function accepts only query; it has no abort capability. Request failures become status error with error.message (or String(error) for other thrown values), and submit/retry settle without throwing.
+ 
+ retry repeats the most recently submitted query even if draft changed; before any submission it is a no-op. dispose invalidates all pending work and freezes public state at that moment; future methods are no-ops and must not start requests. Snapshots must not allow mutation of live state. This is a headless capability with no UI framework or subscriptions.
++
++reset(): void clears draft/submitted/items/error and returns status to idle. It invalidates all earlier pending requests while preserving the same live controller for new submissions. Until the next nonblank submission, retry is a no-op. After dispose, reset is also a no-op.
+diff --git a/docs/search-lifecycle.md b/docs/search-lifecycle.md
+index c0250ab..5da1af0 100644
+--- a/docs/search-lifecycle.md
++++ b/docs/search-lifecycle.md
+@@ -12,8 +12,9 @@ The instance closure owns draft, submitted query, request identity and disposal.
+ Draft editing is independent of requests. Each nonblank submit, including an
+ identical query, starts a distinct request. Retry uses the latest submitted query,
+ never the draft. Start preserves the last successful items and clears the error.
+-Only the latest started request may publish success or failure. Disposal freezes
+-the state immediately, including a currently loading status, and prevents future
++Only the latest started request, if not invalidated by reset, may publish success
++or failure. Disposal freezes the state immediately, including a currently loading
++status, and prevents future
+ commands or completions from changing it.
+ 
+ ## Three dependency-ordered increments
+@@ -42,6 +43,32 @@ Each increment relies on the previous contracts. All three are verified through
+ the existing read-only `test/search.test.js` and independent focused tests in
+ `checks/search-lifecycle.test.js`; actual results are recorded below.
+ 
++## Second-turn increment: reset
++
++One additive implementation step is complete, dependent on the existing request
++ownership checks: public `reset(): void` belongs to the same `createSearch(fetchUsers)`
++instance. A live reset increments `latestRequestId` before replacing state with
++the empty initial shape. Old success and catch paths then fail their existing
++identity check, even when no new request is started. Do not reset the counter to
++zero: a following submission must never reuse an older pending request's ID.
++Clear submitted input so `retry()` remains a no-op until the next nonblank submit.
++Guard reset with `disposed` so it cannot revive an instance or erase frozen state.
++
++A private pure `createInitialState()` allocates the five initial fields and a
++fresh items array for both construction and reset. It keeps adding a future public
++state field consistent across the two entry points. This is a small shared state
++contract, without a replacement controller, new instance lifetime or request
++engine. Existing runSearch, submit, retry and disposal ownership remain in place.
++
++Acceptance is the read-only `test/stage-two.test.js` together with all first-turn
++checks. Added focused public behavior checks cover old failure while a new request is
++loading (including the same query across reset) and reset from an error state.
++The same checks verify that retry with an edited draft after reset does not
++start a request, that repeated resets remain usable, and prior snapshots stay
++independent. Baseline: 17 first-turn tests passed; all 3 new acceptance tests failed
++because `reset` was absent. The increment now passes all first- and second-turn
++checks; final evidence is recorded below.
++
+ ## Supporting operations
+ 
+ | Operation | Contract and owner |
+@@ -52,6 +79,8 @@ the existing read-only `test/search.test.js` and independent focused tests in
+ | `retry()` | Public `() => Promise<void>`. Repeats latest submitted input, delegates once. |
+ | `setDraft(value)` | Public `(string) => void`. Updates only draft while live. |
+ | `getState()` | Public snapshot with exactly `draft`, `submitted`, `status`, `items`, `error`; nested items are independent. |
++| `reset()` | Additive public `() => void`. While live, invalidates prior requests and restores initial state; preserves the instance and injected transport. After disposal, no-op. |
++| `createInitialState()` | Private module function in `src/search.js`, `() => initial state`. Allocates fresh empty state for construction and reset. |
+ | `dispose()` | Public `() => void`. Freezes the instance and invalidates pending publication; cannot cancel transport execution. |
+ 
+ The existing closure and injected service already provide the right ownership
+@@ -67,11 +96,12 @@ contract, so this layer does not add repeated schema validation.
+ ```text
+ Page / caller (owns instance lifetime)
+    | createSearch(fetchUsers)
+-   | setDraft / submit / retry / getState / dispose
++   | setDraft / submit / retry / getState / reset / dispose
+    v
+ src/search.js: createSearch instance closure
+    +-- state: draft, submitted, status, items, error
+-   +-- lifetime: disposed; ordering: latest request ID
++   +-- lifetime: disposed; ordering: latestRequestId
++   +-- reset(): advance ID + createInitialState(); keep instance live
+    +-- runSearch(query): execution + guarded publication
+          | fetchUsers(query) only
+          v
+@@ -109,11 +139,18 @@ retry()  -> capture state.submitted ------------------^
+                  command fulfills -> getState()
+                  returns independent snapshot to caller
+ 
++reset() -> disposed? --yes--> no-op
++              | no
++         advance latestRequestId -> createInitialState() -> empty snapshot
++              |                       |
++         old completions ignored      retry() no-op until new submit()
++                                      submit() reuses same live instance
++
+ dispose() -> disposed=true -> future writes/transport calls blocked;
+                             pending transport continues but cannot publish
+ ```
+ 
+-## Verification and evolution
++## First-turn verification and evolution
+ 
+ Baseline `npm run check` was run before implementation: all 8 existing tests failed.
+ Final `npm run check` passes all 17 tests (12 top-level tests, including 5 nested
+@@ -145,3 +182,33 @@ Only the mapping in `runSearch` changes; consumers still receive `{ id, label }`
+ If transport later adds cancellation, it can be owned by this same request
+ lifecycle without weakening identity checks. That unsupported extension is not
+ implemented now.
++
++## Second-turn verification
++
++Final `npm run check` passes all 22 tests (17 top-level tests and 5 nested
++failure-value cases), including every first-turn check, the 3 read-only reset
++acceptance tests and 2 new tests in `checks/search-reset.test.js`. Together these
++exercise invalidated success/error, a new request retaining loading after old
++success/error, reset from success/error, no retry target after reset, same-query
++reuse, repeated reset, snapshot independence and reset after disposal.
++
++`node --check src/search.js`, `node --check checks/search-reset.test.js` and
++`git diff --check` pass. SHA-256 values for package files and both read-only test
++files match this turn's baseline. `git diff --exit-code eval-stage-one --
++package.json package-lock.json test/search.test.js .frontend-architect/` passes.
++The new tests run through the existing package script without configuration changes.
++
++Final symbol/caller review locates `createInitialState()` at module scope and
++`reset()` inside `createSearch`'s returned object. Reset checks `disposed`, advances
++the same `latestRequestId` used by both completion paths, and replaces state with
++a fresh initial object. The `createSearch(fetchUsers)` injection and existing
++public operations remain unchanged. Both diagrams were checked against these
++definitions and the success/failure/no-op caller checks. The realistic follow-up
++of adding a state field now has one initialization contract to update, without
++recreating the controller or changing the async ownership boundary.
++
++Raw baseline, final checks and protected-file hashes are stored beside the
++workspace in
++`frontend-architect-autonomous-live-search-candidate-i4ey7432-stage-two-validation.log`.
++Browser integration remains outside this headless repository; no new runtime
++limitations were introduced.
+diff --git a/src/search.js b/src/search.js
+index 1301536..9732dad 100644
+--- a/src/search.js
++++ b/src/search.js
+@@ -1,5 +1,9 @@
++function createInitialState() {
++  return { draft: '', submitted: '', status: 'idle', items: [], error: null };
++}
++
+ export function createSearch(fetchUsers) {
+-  let state = { draft: '', submitted: '', status: 'idle', items: [], error: null };
++  let state = createInitialState();
+   let latestRequestId = 0;
+   let disposed = false;
+ 
+@@ -36,6 +40,11 @@ export function createSearch(fetchUsers) {
+     submit() { return runSearch(state.draft.trim()); },
+     retry() { return runSearch(state.submitted); },
+     getState() { return structuredClone(state); },
++    reset() {
++      if (disposed) return;
++      ++latestRequestId;
++      state = createInitialState();
++    },
+     dispose() { disposed = true; },
+   };
+ }

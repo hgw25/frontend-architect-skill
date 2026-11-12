@@ -1,0 +1,343 @@
+diff --git a/README.md b/README.md
+index d97a3a9..8dc235f 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,7 @@
+ # Directory search
+ 
++Implementation design and verification: [Search lifecycle](docs/search-lifecycle.md).
++
+ Repair `src/search.js` with its public `createSearch(fetchUsers)` export. No dependencies; run `npm run check`. Preserve package.json and test/.
+ 
+ The returned object exposes setDraft(string), submit(): Promise<void>, retry(): Promise<void>, getState(), dispose(). getState returns an independent snapshot with exactly draft, submitted, status, items, error. Initial values: '', '', 'idle', [], null. Status is idle/loading/success/error. Draft editing never starts a request or changes submitted/results. submit trims and captures the current draft; each submit is a new request, including the same query. Blank submit is a no-op. A request begins with status loading, error null, and preserves last successful items while loading and on error.
+diff --git a/checks/search-lifecycle.test.js b/checks/search-lifecycle.test.js
+new file mode 100644
+index 0000000..95ddf0c
+--- /dev/null
++++ b/checks/search-lifecycle.test.js
+@@ -0,0 +1,114 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { createSearch } from '../src/search.js';
++
++function deferredSearch() {
++  const requests = [];
++  const search = createSearch(query => new Promise((resolve, reject) => {
++    requests.push({ query, resolve, reject });
++  }));
++  return { search, requests };
++}
++
++test('blank submission does not supersede pending work or change the retry target', async () => {
++  const { search, requests } = deferredSearch();
++  search.setDraft(' Ada ');
++  const pending = search.submit();
++  search.setDraft('   ');
++  const beforeBlank = search.getState();
++
++  assert.equal(await search.submit(), undefined);
++  assert.equal(requests.length, 1);
++  assert.deepEqual(search.getState(), beforeBlank);
++
++  const ada = { user_id: '1', display_name: 'Ada' };
++  requests[0].resolve([ada]);
++  await pending;
++  assert.equal(search.getState().status, 'success');
++
++  const retry = search.retry();
++  assert.equal(requests[1].query, 'Ada');
++  assert.deepEqual(search.getState(), {
++    draft: '   ', submitted: 'Ada', status: 'loading',
++    items: [{ id: '1', label: 'Ada' }], error: null,
++  });
++  requests[1].resolve([]);
++  await retry;
++  assert.deepEqual(search.getState().items, []);
++});
++
++test('synchronous transport failures become public errors and fulfill the command', async t => {
++  const cases = [
++    [new Error('unavailable'), 'unavailable'],
++    ['offline', 'offline'],
++    [null, 'null'],
++    [undefined, 'undefined'],
++    [17, '17'],
++  ];
++
++  for (const [failure, message] of cases) {
++    await t.test(message, async () => {
++      const calls = [];
++      const search = createSearch((...args) => {
++        calls.push(args);
++        throw failure;
++      });
++      search.setDraft(' Ada ');
++      assert.equal(await search.submit(), undefined);
++      assert.deepEqual(calls, [['Ada']]);
++      assert.deepEqual(search.getState(), {
++        draft: ' Ada ', submitted: 'Ada', status: 'error', items: [], error: message,
++      });
++    });
++  }
++});
++
++test('retry supersedes an in-flight request while preserving an unsent draft', async () => {
++  const { search, requests } = deferredSearch();
++  search.setDraft('submitted');
++  const first = search.submit();
++  search.setDraft('unsent');
++  const retry = search.retry();
++  assert.deepEqual(requests.map(request => request.query), ['submitted', 'submitted']);
++
++  requests[0].reject(new Error('superseded failure'));
++  await first;
++  assert.deepEqual(search.getState(), {
++    draft: 'unsent', submitted: 'submitted', status: 'loading', items: [], error: null,
++  });
++
++  requests[1].resolve([{ user_id: '2', display_name: 'Current' }]);
++  await retry;
++  assert.deepEqual(search.getState(), {
++    draft: 'unsent', submitted: 'submitted', status: 'success',
++    items: [{ id: '2', label: 'Current' }], error: null,
++  });
++});
++
++test('transport aliases and snapshots cannot mutate retained results after disposal', async () => {
++  const users = [{ user_id: '1', display_name: 'Ada' }];
++  let calls = 0;
++  const search = createSearch(async () => {
++    calls += 1;
++    return users;
++  });
++  search.setDraft('Ada');
++  await search.submit();
++  search.dispose();
++  const frozen = search.getState();
++
++  users[0].display_name = 'Changed DTO';
++  users.push({ user_id: '2', display_name: 'Other' });
++  const snapshot = search.getState();
++  snapshot.items[0].label = 'Changed snapshot';
++  snapshot.items.push({ id: '3', label: 'Injected' });
++  snapshot.submitted = 'Changed query';
++  search.setDraft('Bob');
++  await search.submit();
++  await search.retry();
++  search.dispose();
++
++  assert.equal(calls, 1);
++  assert.deepEqual(search.getState(), frozen);
++  assert.deepEqual(frozen.items, [{ id: '1', label: 'Ada' }]);
++});
+diff --git a/docs/search-lifecycle.md b/docs/search-lifecycle.md
+new file mode 100644
+index 0000000..c0250ab
+--- /dev/null
++++ b/docs/search-lifecycle.md
+@@ -0,0 +1,147 @@
++# Search lifecycle
++
++## Scope and contracts
++
++The existing README defines a headless JavaScript capability, not a rendered
++page. Keep `createSearch(fetchUsers)` and its five public state fields. A page
++owner calls `dispose()` on leave; no router or browser listener belongs here.
++`fetchUsers(query)` accepts only a query and cannot abort. No dependencies or
++transport retry policy are needed.
++
++The instance closure owns draft, submitted query, request identity and disposal.
++Draft editing is independent of requests. Each nonblank submit, including an
++identical query, starts a distinct request. Retry uses the latest submitted query,
++never the draft. Start preserves the last successful items and clears the error.
++Only the latest started request may publish success or failure. Disposal freezes
++the state immediately, including a currently loading status, and prevents future
++commands or completions from changing it.
++
++## Three dependency-ordered increments
++
++1. **Complete: submission and data boundary.** `createSearch` in `src/search.js`
++   `submit()` captures the trimmed draft and calls the private `runSearch(query)`.
++   Blank input changes nothing. Translate each `{ user_id, display_name }` DTO to
++   `{ id, label }` before publishing. Retain `structuredClone` for independent
++   `getState()` snapshots. Check initial state, draft independence, retained items,
++   DTO conversion and snapshot mutation through the public API.
++2. **Complete: request ownership and recovery.** `runSearch(query)` allocates a monotonically
++   increasing request ID before calling injected `fetchUsers(query)`. Both success
++   and catch compare that ID with the latest ID before writing state. There is no
++   `finally` state reset. Catch exposes `Error.message` or `String(error)` and
++   fulfills the command promise. `retry()` calls the same operation with
++   `state.submitted`; an empty submitted query is a no-op. Check both settlement
++   orders, repeated queries, synchronous failures and retry after draft edits.
++3. **Complete: owner release.** `dispose()` marks the instance disposed, idempotently.
++   `runSearch` skips new work before changing state or calling transport, and
++   both completion paths also check disposal. `setDraft` observes the same owner
++   lifetime. Check pending success/failure and later methods against an unchanged
++   public snapshot. Check blank submission during another pending request so that
++   a no-op cannot invalidate real work.
++
++Each increment relies on the previous contracts. All three are verified through
++the existing read-only `test/search.test.js` and independent focused tests in
++`checks/search-lifecycle.test.js`; actual results are recorded below.
++
++## Supporting operations
++
++| Operation | Contract and owner |
++| --- | --- |
++| `createSearch(fetchUsers)` | Existing exported factory. Injected `(query: string) => Promise<Array<{ user_id: string, display_name: string }>>`; returns one independently owned capability. |
++| `runSearch(query)` | Private async operation, `string => Promise<void>`. Owns request identity, loading transition, transport call, DTO conversion and current-request success/error publication. Blank or disposed instances do nothing. |
++| `submit()` | Public `() => Promise<void>`. Captures the trimmed draft, delegates once. |
++| `retry()` | Public `() => Promise<void>`. Repeats latest submitted input, delegates once. |
++| `setDraft(value)` | Public `(string) => void`. Updates only draft while live. |
++| `getState()` | Public snapshot with exactly `draft`, `submitted`, `status`, `items`, `error`; nested items are independent. |
++| `dispose()` | Public `() => void`. Freezes the instance and invalidates pending publication; cannot cancel transport execution. |
++
++The existing closure and injected service already provide the right ownership
++and substitution boundary. A single private request operation keeps retry and
++submit consistent; a framework, cache, reducer, general request engine or abort
++adapter would add unsupported semantics. A request ID rather than query equality
++distinguishes repeated submissions of the same text. Converting DTOs at publication
++keeps transport field changes out of consumers. Inputs already satisfy the DTO
++contract, so this layer does not add repeated schema validation.
++
++## Technical architecture
++
++```text
++Page / caller (owns instance lifetime)
++   | createSearch(fetchUsers)
++   | setDraft / submit / retry / getState / dispose
++   v
++src/search.js: createSearch instance closure
++   +-- state: draft, submitted, status, items, error
++   +-- lifetime: disposed; ordering: latest request ID
++   +-- runSearch(query): execution + guarded publication
++         | fetchUsers(query) only
++         v
++Injected transport boundary (Promise<DTO[]>, no abort API)
++         | resolve DTO[] / reject unknown
++         v
++runSearch: current and live? -> map DTO / expose error -> state
++                            -> otherwise discard completion
++```
++
++## Data flow
++
++```text
++setDraft(" Ada ") -> state.draft
++submit() -> trim/capture "Ada" -> runSearch("Ada")
++retry()  -> capture state.submitted ------------------^
++                           |
++                  blank or disposed? --yes--> fulfilled no-op
++                           | no
++                  allocate ID; submitted=query;
++                  status=loading; error=null; retain items
++                           |
++                    fetchUsers(query)
++                      /           \
++                DTO[]              thrown value
++                  |                     |
++           live AND latest ID?    live AND latest ID?
++             /          \           /          \
++           yes           no       yes           no
++            |             |        |             |
++  map DTO -> UI items    ignore  message/String   ignore
++  status=success                 status=error
++            \______________________/_____________/
++                           |
++                 command fulfills -> getState()
++                 returns independent snapshot to caller
++
++dispose() -> disposed=true -> future writes/transport calls blocked;
++                            pending transport continues but cannot publish
++```
++
++## Verification and evolution
++
++Baseline `npm run check` was run before implementation: all 8 existing tests failed.
++Final `npm run check` passes all 17 tests (12 top-level tests, including 5 nested
++failure-value cases). Increment 1 is covered by the existing draft/DTO snapshot
++test and the added blank-pending and alias-isolation tests. Increment 2 is covered
++by the existing four out-of-order completion tests and retry test, plus added
++synchronous-failure and pending-retry tests. Increment 3 is covered by the existing
++pending-disposal test and added successful-state disposal test.
++
++`node --check src/search.js`, `node --check checks/search-lifecycle.test.js` and
++`git diff --check` pass. `git diff --exit-code -- package.json package-lock.json
++test/ .frontend-architect/` confirms protected files are unchanged. The unmodified
++package script discovers the new tests automatically. Reproduce with Node 22 and
++`npm run check`; no install step or external service is required.
++
++Final review located each operation in `src/search.js` and followed its public
++test callers: submit and retry capture different input sources but share request
++policy; both completion paths guard instance lifetime and request identity;
++disposal has no state write; DTO mapping and snapshot cloning break mutable aliases.
++Both plain-text diagrams were cross-read against these final declarations and
++branches. No browser/navigation integration is claimed: this repository has no
++rendered page, and callers retain responsibility for invoking `dispose()` on leave.
++
++Raw baseline and final command output is stored beside the workspace as
++`frontend-architect-autonomous-live-search-candidate-i4ey7432-validation.log`.
++
++A realistic next change is an API renaming `display_name` to another DTO field.
++Only the mapping in `runSearch` changes; consumers still receive `{ id, label }`.
++If transport later adds cancellation, it can be owned by this same request
++lifecycle without weakening identity checks. That unsupported extension is not
++implemented now.
+diff --git a/src/search.js b/src/search.js
+index 97267aa..1301536 100644
+--- a/src/search.js
++++ b/src/search.js
+@@ -1,22 +1,41 @@
+ export function createSearch(fetchUsers) {
+   let state = { draft: '', submitted: '', status: 'idle', items: [], error: null };
+-  async function submit() {
+-    state.submitted = state.draft.trim();
+-    state.status = 'loading'; state.error = null;
++  let latestRequestId = 0;
++  let disposed = false;
++
++  async function runSearch(query) {
++    if (disposed || !query) return;
++
++    const requestId = ++latestRequestId;
++    state = { ...state, submitted: query, status: 'loading', error: null };
++
+     try {
+-      state.items = await fetchUsers(state.submitted);
+-      state.status = 'success';
++      const users = await fetchUsers(query);
++      if (disposed || requestId !== latestRequestId) return;
++
++      state = {
++        ...state,
++        items: users.map(({ user_id, display_name }) => ({ id: user_id, label: display_name })),
++        status: 'success',
++      };
+     } catch (error) {
+-      state.error = error.message; state.status = 'error';
+-    } finally {
+-      if (state.status === 'loading') state.status = 'idle';
++      if (disposed || requestId !== latestRequestId) return;
++
++      state = {
++        ...state,
++        error: error instanceof Error ? error.message : String(error),
++        status: 'error',
++      };
+     }
+   }
++
+   return {
+-    setDraft(value) { state.draft = value; },
+-    submit,
+-    retry: submit,
++    setDraft(value) {
++      if (!disposed) state = { ...state, draft: value };
++    },
++    submit() { return runSearch(state.draft.trim()); },
++    retry() { return runSearch(state.submitted); },
+     getState() { return structuredClone(state); },
+-    dispose() {},
++    dispose() { disposed = true; },
+   };
+ }

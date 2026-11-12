@@ -1,0 +1,434 @@
+diff --git a/README.md b/README.md
+index 3540fff..d17fd9c 100644
+--- a/README.md
++++ b/README.md
+@@ -9,3 +9,6 @@ confirmed fallback if the newer save fails. Draft editing is not itself a save.
+ The API returns a profile with string id/displayName and numeric version. Failed
+ HTTP responses and invalid successful bodies are failures, with an accessible error.
+ Keep the existing public form and API entry points. Run npm run check.
++
++The save-state contract and verification notes are in
++[Profile save and failure recovery](docs/profile-saving.md).
+diff --git a/docs/profile-saving.md b/docs/profile-saving.md
+new file mode 100644
+index 0000000..66102a7
+--- /dev/null
++++ b/docs/profile-saving.md
+@@ -0,0 +1,110 @@
++# Profile save and failure recovery
++
++## Contract and decision
++
++`README.md` defines a concurrent, optimistic edit flow. The draft is editable without
++saving. Each submit snapshots that draft, immediately publishes the submitted name,
++and calls the existing PATCH endpoint. An older response must not replace the latest
++submitted name. A rejected latest save displays the confirmed fallback and the
++accessible message `Save failed. Please retry.`; the draft remains available to edit
++or submit again. Successful responses can normalize the submitted name.
++
++The API boundary must reject unsuccessful HTTP responses, invalid JSON, and bodies
++without string `id`/`displayName` and numeric `version`. The public `Profile` type,
++`updateProfile(displayName: string): Promise<Profile>` and
++`ProfileForm({ profile }: { profile: Profile })` entry points stay intact.
++
++Use local submission identities for UI precedence. An acknowledged save updates
++the fallback only if it is a later submission than the previously acknowledged
++save. This preserves newer accepted user intent against delayed older responses.
++This is a client presentation policy, not a statement about server commit order.
++The repository gives no monotonicity contract for `version`; preserve and validate
++it, but do not rank versions. There is no refresh/conflict endpoint in scope, so
++cross-client or server write ordering cannot be guaranteed here.
++
++The existing React state and fetch entry points are sufficient. Use a local pure
++reducer for atomic acknowledgement/failure transitions and a ref only for allocating
++request identities. The draft remains ordinary input state. A general cache, request
++engine, cancellation policy, dependency container or state-machine library adds no
++needed capability. In particular, do not cancel accepted older saves: they may
++become the latest available confirmed fallback.
++
++## Implementation sequence (2 completed steps)
++
++1. Strengthen `src/api.ts` at the transport trust boundary. `updateProfile` owns
++   PATCH construction, HTTP status checking and response decoding. It resolves only
++   with a validated `Profile`, otherwise rejects. Check HTTP failure, invalid JSON,
++   invalid field types and a valid normalized response through the actual form.
++2. Complete `src/ProfileForm.tsx`. `handleSubmit(event: FormEvent)` snapshots the
++   draft, dispatches `submitted`, executes `updateProfile`, and dispatches either
++   `confirmed` or `failed`. `reduceSave(state: SaveState, event: SaveEvent): SaveState`
++   owns the latest submission and highest acknowledged submission. The component
++   derives current name and alert from that state. Check pending optimism, draft
++   preservation, success normalization, overlapping results in both arrival orders,
++   rollback to an earlier accepted save and retry via the existing Save button.
++
++## State and flow
++
++State consists of the confirmed profile with its submission ID, plus the latest
++submission (`pending`, `confirmed` or `failed`) with its captured name and ID. On
++submit, only latest intent changes. Every success may advance the confirmed
++fallback; only success for the latest submission ends its pending state. Failure
++changes visible status only when it belongs to the latest submission. Current name
++is the latest captured name while pending, and the confirmed fallback otherwise.
++Late success for an earlier request after latest failure may still advance the
++fallback. Late success/error after newer success must leave that success visible.
++No async response mutates the draft.
++
++Architecture (plain text, runtime/dependency arrows):
++
++```text
++React ProfileForm
++  ├─ owns draft + request identity allocation
++  ├─ dispatches SaveEvent ──> local reduceSave ──> SaveState ──> name/alert
++  └─ calls updateProfile(name) ──> fetch PATCH /api/profile [server boundary]
++                                  └─ validates status + body ──> Profile / rejection
++```
++
++Data flow (including overlap):
++
++```text
++edit draft ──> submit A ──> publish A + PATCH A
++edit draft ──> submit B ──> publish B + PATCH B
++                         A confirmed ──> advance fallback; keep pending B visible
++                         B rejected  ──> publish current fallback + alert
++                         B confirmed ──> advance fallback; publish returned B
++                         stale A failure/success after B confirmed ──> keep B
++retry Save ──> new submission of retained/editable draft ──> clear alert + PATCH
++```
++
++React owns view lifetime; completion only dispatches to that mounted form instance.
++No shared store, subscriptions, background retry or external resource is introduced.
++No performance change or browser-layout claim is intended.
++
++## Verification and maintenance
++
++Run the existing `npm run check` unchanged and add separate consumer regressions.
++The original tests omit explicit React Testing Library cleanup and this repository
++does not enable Vitest globals, so automatic cleanup is inactive. A shared
++`src/testSetup.ts`, registered by `vitest.config.ts`, performs `afterEach(cleanup)`
++without editing the protected tests or adding test-only behavior to the form.
++Raw baseline/final command output is kept in the workspace's sibling
++`frontend-architect-autonomous-live-profile-candidate-42bbov1a-validation.log`.
++Executed on 2026-11-12: `npm run check` passes TypeScript and all 15 tests across
++the existing and additional consumer test files. The first attempt could not find
++`tsc`; `npm ci` installed the exact locked dependencies. The next run exposed the
++cleanup issue above; the final unchanged check command passes after adding shared
++test cleanup. Protected `package.json`, `package-lock.json` and the original test
++have unchanged SHA-256 hashes. Checks run in jsdom with controlled fetch promises;
++no live server, real-browser layout or server write-order guarantee was exercised.
++
++Final code/record cross-check: `reduceSave` is private in `ProfileForm.tsx` and
++receives the documented `SaveState`/`SaveEvent`; `handleSubmit` is owned inline by
++`ProfileForm` and calls the existing `updateProfile`. The derived `visibleName` and
++`role="alert"` consume reducer state, and API decoding completes before any
++`confirmed` event. These definitions and callers implement both flow diagrams.
++
++A realistic next change is adding a second editable field. Keep its draft in the
++form and submit the complete profile snapshot; acknowledgement ordering stays in
++the reducer. The private reducer separates that transition policy from transport
++decoding and input rendering without creating a universal form controller.
+diff --git a/src/ProfileForm.recovery.test.tsx b/src/ProfileForm.recovery.test.tsx
+new file mode 100644
+index 0000000..f093683
+--- /dev/null
++++ b/src/ProfileForm.recovery.test.tsx
+@@ -0,0 +1,156 @@
++// @vitest-environment jsdom
++
++import '@testing-library/jest-dom/vitest'
++import { act, cleanup, render, screen } from '@testing-library/react'
++import userEvent from '@testing-library/user-event'
++import { afterEach, expect, test, vi } from 'vitest'
++
++import { ProfileForm } from './ProfileForm'
++
++afterEach(() => {
++  vi.unstubAllGlobals()
++})
++
++function profileResponse(displayName: string, version = 2) {
++  return new Response(JSON.stringify({ id: 'p1', displayName, version }), {
++    status: 200,
++    headers: { 'content-type': 'application/json' },
++  })
++}
++
++function deferredRequests() {
++  const requests: Array<{
++    resolve: (response: Response) => void
++    reject: (error: Error) => void
++  }> = []
++  const fetch = vi.fn(
++    () =>
++      new Promise<Response>((resolve, reject) => {
++        requests.push({ resolve, reject })
++      }),
++  )
++  vi.stubGlobal('fetch', fetch)
++  return { requests, fetch }
++}
++
++function renderProfile() {
++  render(<ProfileForm profile={{ id: 'p1', displayName: 'Ada', version: 1 }} />)
++  const user = userEvent.setup()
++  const input = screen.getByLabelText('Display name')
++  return {
++    user,
++    input,
++    async submit(name: string) {
++      await user.clear(input)
++      await user.type(input, name)
++      await user.click(screen.getByRole('button', { name: 'Save' }))
++    },
++  }
++}
++
++test('editing alone does not publish or save; success displays the returned name and preserves a newer draft', async () => {
++  const { requests, fetch } = deferredRequests()
++  const { user, input, submit } = renderProfile()
++
++  await user.clear(input)
++  await user.type(input, 'Grace')
++  expect(fetch).not.toHaveBeenCalled()
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
++
++  await submit('Grace')
++  expect(fetch).toHaveBeenCalledWith('/api/profile', {
++    method: 'PATCH',
++    headers: { 'content-type': 'application/json' },
++    body: JSON.stringify({ displayName: 'Grace' }),
++  })
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Grace')
++  await user.clear(input)
++  await user.type(input, 'Lin')
++  await act(async () => requests[0].resolve(profileResponse('Grace Hopper')))
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Grace Hopper')
++  expect(input).toHaveValue('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++})
++
++test.each([
++  ['HTTP rejection with an otherwise valid body', () => new Response(JSON.stringify({ id: 'p1', displayName: 'Grace', version: 2 }), { status: 503 })],
++  ['invalid JSON', () => new Response('{invalid', { status: 200 })],
++  ['null body', () => new Response('null', { status: 200 })],
++  ['missing id', () => new Response(JSON.stringify({ displayName: 'Grace', version: 2 }), { status: 200 })],
++  ['invalid name', () => new Response(JSON.stringify({ id: 'p1', displayName: 42, version: 2 }), { status: 200 })],
++  ['invalid version', () => new Response(JSON.stringify({ id: 'p1', displayName: 'Grace', version: '2' }), { status: 200 })],
++] as const)('recovers from %s and retries the retained draft', async (_case, failureResponse) => {
++  const fetch = vi.fn()
++    .mockResolvedValueOnce(failureResponse())
++    .mockResolvedValueOnce(profileResponse('Grace'))
++  vi.stubGlobal('fetch', fetch)
++  const { input, submit, user } = renderProfile()
++
++  await submit('Grace')
++  expect(await screen.findByRole('alert')).toHaveTextContent('Save failed. Please retry.')
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
++  expect(input).toHaveValue('Grace')
++
++  await user.click(screen.getByRole('button', { name: 'Save' }))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Grace')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++  expect(fetch).toHaveBeenCalledTimes(2)
++})
++
++test.each(['success', 'failure'] as const)('a stale %s cannot replace a newer accepted save', async (result) => {
++  const { requests } = deferredRequests()
++  const { submit } = renderProfile()
++  await submit('Grace')
++  await submit('Lin')
++  // Deliberately non-monotonic versions: no ordering guarantee is documented.
++  await act(async () => requests[1].resolve(profileResponse('Lin', 2)))
++  await act(async () => {
++    if (result === 'success') requests[0].resolve(profileResponse('Grace', 100))
++    else requests[0].reject(new Error('older request failed'))
++  })
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++
++  await submit('Katherine')
++  await act(async () => requests[2].reject(new Error('newest request failed')))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.getByRole('alert')).toHaveTextContent('Save failed. Please retry.')
++})
++
++test('an older acknowledgement arriving after the latest failure advances the fallback without losing the draft', async () => {
++  const { requests } = deferredRequests()
++  const { input, submit } = renderProfile()
++  await submit('Grace')
++  await submit('Lin')
++  await act(async () => requests[1].reject(new Error('network unavailable')))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Ada')
++  await act(async () => requests[0].resolve(profileResponse('Grace')))
++
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Grace')
++  expect(screen.getByRole('alert')).toHaveTextContent('Save failed. Please retry.')
++  expect(input).toHaveValue('Lin')
++})
++
++test('a stale failure leaves the newest optimistic name visible', async () => {
++  const { requests } = deferredRequests()
++  const { submit } = renderProfile()
++  await submit('Grace')
++  await submit('Lin')
++  await act(async () => requests[0].reject(new Error('older request failed')))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++  await act(async () => requests[1].resolve(profileResponse('Lin')))
++})
++
++test('settlement after unmount cannot publish into a replacement form', async () => {
++  const { requests } = deferredRequests()
++  const { submit } = renderProfile()
++  await submit('Grace')
++  cleanup()
++  render(<ProfileForm profile={{ id: 'p2', displayName: 'Lin', version: 1 }} />)
++  await act(async () => requests[0].resolve(profileResponse('Grace')))
++  expect(screen.getByLabelText('Current profile name')).toHaveTextContent('Lin')
++  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++})
+diff --git a/src/ProfileForm.tsx b/src/ProfileForm.tsx
+index d50631b..e903d3c 100644
+--- a/src/ProfileForm.tsx
++++ b/src/ProfileForm.tsx
+@@ -1,15 +1,74 @@
+-import { type FormEvent, useState } from 'react'
++import { type FormEvent, useReducer, useRef, useState } from 'react'
+ 
+ import { type Profile, updateProfile } from './api'
+ 
++type Submission = {
++  id: number
++  displayName: string
++  status: 'pending' | 'confirmed' | 'failed'
++}
++
++type SaveState = {
++  confirmed: { submissionId: number; profile: Profile }
++  latest: Submission | null
++}
++
++type SaveEvent =
++  | { type: 'submitted'; id: number; displayName: string }
++  | { type: 'confirmed'; id: number; profile: Profile }
++  | { type: 'failed'; id: number }
++
++function reduceSave(state: SaveState, event: SaveEvent): SaveState {
++  if (event.type === 'submitted') {
++    return {
++      ...state,
++      latest: { id: event.id, displayName: event.displayName, status: 'pending' },
++    }
++  }
++
++  if (event.type === 'confirmed') {
++    return {
++      // Submission order protects newer accepted intent; version is opaque here.
++      confirmed:
++        event.id > state.confirmed.submissionId
++          ? { submissionId: event.id, profile: event.profile }
++          : state.confirmed,
++      latest:
++        state.latest?.id === event.id
++          ? { ...state.latest, status: 'confirmed' }
++          : state.latest,
++    }
++  }
++
++  return state.latest?.id === event.id
++    ? { ...state, latest: { ...state.latest, status: 'failed' } }
++    : state
++}
++
+ export function ProfileForm({ profile }: { profile: Profile }) {
+   const [displayName, setDisplayName] = useState(profile.displayName)
+-  const [visibleName, setVisibleName] = useState(profile.displayName)
++  const [save, dispatch] = useReducer(reduceSave, {
++    confirmed: { submissionId: 0, profile },
++    latest: null,
++  })
++  const submissionId = useRef(0)
++  const visibleName =
++    save.latest?.status === 'pending'
++      ? save.latest.displayName
++      : save.confirmed.profile.displayName
+ 
+   async function handleSubmit(event: FormEvent) {
+     event.preventDefault()
+-    setVisibleName(displayName)
+-    await updateProfile(displayName)
++    const id = ++submissionId.current
++    const submittedName = displayName
++    dispatch({ type: 'submitted', id, displayName: submittedName })
++
++    try {
++      const confirmedProfile = await updateProfile(submittedName)
++      dispatch({ type: 'confirmed', id, profile: confirmedProfile })
++    } catch {
++      dispatch({ type: 'failed', id })
++    }
+   }
+ 
+   return (
+@@ -23,6 +82,9 @@ export function ProfileForm({ profile }: { profile: Profile }) {
+         />
+       </label>
+       <button>Save</button>
++      {save.latest?.status === 'failed' && (
++        <p role="alert">Save failed. Please retry.</p>
++      )}
+     </form>
+   )
+ }
+diff --git a/src/api.ts b/src/api.ts
+index 48317dc..8ceafee 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -11,5 +11,23 @@ export async function updateProfile(displayName: string): Promise<Profile> {
+     body: JSON.stringify({ displayName }),
+   })
+ 
+-  return response.json() as Promise<Profile>
++  if (!response.ok) {
++    throw new Error(`Profile update failed (${response.status})`)
++  }
++
++  const body: unknown = await response.json()
++  if (
++    typeof body !== 'object' ||
++    body === null ||
++    !('id' in body) ||
++    typeof body.id !== 'string' ||
++    !('displayName' in body) ||
++    typeof body.displayName !== 'string' ||
++    !('version' in body) ||
++    typeof body.version !== 'number'
++  ) {
++    throw new Error('Invalid profile response')
++  }
++
++  return { id: body.id, displayName: body.displayName, version: body.version }
+ }
+diff --git a/src/testSetup.ts b/src/testSetup.ts
+new file mode 100644
+index 0000000..384ea29
+--- /dev/null
++++ b/src/testSetup.ts
+@@ -0,0 +1,4 @@
++import { cleanup } from '@testing-library/react'
++import { afterEach } from 'vitest'
++
++afterEach(cleanup)
+diff --git a/vitest.config.ts b/vitest.config.ts
+new file mode 100644
+index 0000000..f2645a0
+--- /dev/null
++++ b/vitest.config.ts
+@@ -0,0 +1,7 @@
++import { defineConfig } from 'vitest/config'
++
++export default defineConfig({
++  test: {
++    setupFiles: ['./src/testSetup.ts'],
++  },
++})

@@ -96,6 +96,12 @@ regressions, but keep assertions for behavior that must never drift.
 - Provide diagnostics that identify the consumer action and corrective step
   without exposing credentials or personal data.
 
+For host-supplied capabilities or multiple service instances, use the
+[dependency composition guidance](dependency-composition.md#use-the-frameworks-actual-mechanism).
+Specify host/library construction and release ownership, runtime tokens where
+needed, and supported scopes; a public package should not silently require its
+consumer to adopt an unrelated global container.
+
 ## Build tools, plugins, lint rules, and generators
 
 Tooling runs inside another system and must respect its lifecycle and contracts.

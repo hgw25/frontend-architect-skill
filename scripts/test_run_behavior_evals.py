@@ -64,6 +64,27 @@ class BuildPromptTests(unittest.TestCase):
 
 
 class ProtectedPathTests(unittest.TestCase):
+    def test_profile_check_entry_is_protected_without_freezing_product_changes(self):
+        import shutil
+        import run_behavior_evals as runner
+        case = runner.load_cases(['optimistic-profile-update'])[0]
+        workspace = initialize_workspace(case, 'candidate')
+        self.addCleanup(shutil.rmtree, workspace)
+        (workspace/'src/api.ts').write_text('// legitimate product change\n')
+        (workspace/'src/extra.test.ts').write_text('// additional coverage\n')
+        result = validate_protected_paths(case,workspace)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['exit_code'],0)
+        package = workspace/'package.json'
+        data = json.loads(package.read_text())
+        data['scripts']['check'] = 'node --version'
+        package.write_text(json.dumps(data))
+        with patch.object(runner,'run_command') as commands:
+            results = validate_fixture(case,workspace,5)
+        commands.assert_not_called()
+        self.assertEqual(results[0]['exit_code'],1)
+        self.assertIn('package.json',results[0]['stdout'])
+
     def test_candidate_has_its_local_maintenance_source_and_baseline_has_no_guidance(self):
         import shutil
         import run_behavior_evals

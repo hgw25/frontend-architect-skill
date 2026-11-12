@@ -1,0 +1,51 @@
+--- original/test/export.test.mjs
++++ initial/test/export.test.mjs
+@@ -9,14 +9,25 @@
+     assert.deepEqual(outcome, { kind: 'empty' });
+   });
+   test(name + ': ineligible selection is all-or-nothing', async () => {
+-    const rows = [{ id: 'a', status: 'ready' }, { id: 'b', status: 'pending' }];
++    const rows = Object.freeze([
++      Object.freeze({ id: 'a', status: 'ready' }),
++      Object.freeze({ id: 'c', status: 'pending' }),
++      Object.freeze({ id: 'b', status: 'failed' }),
++    ]);
+     const outcome = await exportSelection(rows, () => assert.fail('Unexpected partial write'));
+-    assert.deepEqual(outcome, { kind: 'blocked', ids: ['b'] });
+-    assert.deepEqual(rows, [{ id: 'a', status: 'ready' }, { id: 'b', status: 'pending' }]);
++    assert.deepEqual(outcome, { kind: 'blocked', ids: ['c', 'b'] });
++    assert.deepEqual(rows, [
++      { id: 'a', status: 'ready' },
++      { id: 'c', status: 'pending' },
++      { id: 'b', status: 'failed' },
++    ]);
+   });
+   test(name + ': ready selection writes the owned protocol once in selection order', async () => {
+     const calls = [];
+-    const rows = [{ id: 'b', status: 'ready' }, { id: 'a', status: 'ready' }];
++    const rows = Object.freeze([
++      Object.freeze({ id: 'b', status: 'ready' }),
++      Object.freeze({ id: 'a', status: 'ready' }),
++    ]);
+     const outcome = await exportSelection(rows, async (body) => { calls.push(body); });
+     assert.deepEqual(calls, [{ schema: 1, document_ids: ['b', 'a'] }]);
+     assert.deepEqual(outcome, { kind: 'sent', ids: ['b', 'a'] });
+@@ -26,6 +37,18 @@
+     const failure = new Error('Storage unavailable');
+     await assert.rejects(exportSelection([{ id: 'a', status: 'ready' }], async () => { throw failure; }),
+       (error) => error === failure);
++  });
++  test(name + ': sent is returned only after transport acceptance', async () => {
++    let accept;
++    const acceptance = new Promise((resolve) => { accept = resolve; });
++    let settled = false;
++    const outcome = exportSelection([{ id: 'a', status: 'ready' }], () => acceptance)
++      .then((result) => { settled = true; return result; });
++
++    await new Promise((resolve) => setImmediate(resolve));
++    assert.equal(settled, false);
++    accept();
++    assert.deepEqual(await outcome, { kind: 'sent', ids: ['a'] });
+   });
+   test(name + ': accepted intent does not drift during a pending write', async () => {
+     let release;

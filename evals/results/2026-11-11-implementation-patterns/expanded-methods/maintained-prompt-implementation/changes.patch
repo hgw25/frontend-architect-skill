@@ -1,0 +1,302 @@
+diff --git a/README.md b/README.md
+index 5e095ad..5e8c6db 100644
+--- a/README.md
++++ b/README.md
+@@ -18,3 +18,10 @@ Keep these public contracts:
+   rejects with the original error; it does not become a successful empty result.
+ 
+ Run `node --test test/export.test.mjs`.
++
++Both entry modules re-export `exportSelection(rows, write)` from
++`src/export-selection.mjs`. That operation owns the eligibility decision,
++selection snapshot, wire payload and acceptance result. See the
++[selection export design](docs/selection-export.md) for contracts and maintenance
++decisions. Run the full checks with
++`node --test test/export.test.mjs test/export-regression.test.mjs`.
+diff --git a/docs/selection-export.md b/docs/selection-export.md
+new file mode 100644
+index 0000000..e1a0492
+--- /dev/null
++++ b/docs/selection-export.md
+@@ -0,0 +1,128 @@
++# Selection export design
++
++## Scope and existing guarantees
++
++Unify toolbar and keyboard export behind one complete operation, preserving the
++public contracts in [README](../README.md). Rows are validated internal values;
++`write` is the trusted transport and borrows its payload without mutation. No
++consumer needs a separately pausable preparation phase. The original ten tests
++pass before implementation.
++
++The original `begin` / `classify` / `encode` / `dispatch` protocol made both
++callers own a sequence and share mutable intermediate state. It was replaced with
++one async operation that owns that sequence. The module has no persistent state,
++resource lifecycle, service identity or interchangeable policies to model.
++
++## Two dependency-ordered increments
++
++1. **Own the complete export operation.** Add `exportSelection(rows, write)` in
++   `src/export-selection.mjs`. It returns empty for no selection, collects every
++   ineligible ID before any write, snapshots eligible IDs in selection order,
++   submits the schema-1 payload exactly once, then returns sent after acceptance.
++   Check: exercise blocked, accepted and failed outcomes directly, and confirm
++   that pending transport does not resolve or drift with selection edits. Full
++   branch acceptance follows through both public entries in increment 2.
++2. **Route both public entries to that operation.** Re-export the operation under
++   the existing names in `src/toolbar.mjs` and `src/keyboard.mjs`; remove the
++   internal step protocol. Existing consumers keep the same imports and async
++   behavior. Check: run the unchanged public-entry suite and additional consumer
++   regressions for multiple blocked rows, pending selection changes, and
++   synchronous transport exceptions. Link this design from the README.
++
++Both increments are complete. Increment 1 passed four focused shared-operation
++regressions. Increment 2 passed the full 22-test consumer/shared suite and final
++definition/caller cross-read.
++
++## Code contract and ownership
++
++The following contracts were cross-checked against the final declaration and
++re-export statements; no separate entry-point wrapper functions remain:
++
++| Location / operation | Inputs | Outcome and effects | Callers |
++| --- | --- | --- | --- |
++| `src/export-selection.mjs`: `export async function exportSelection(rows, write)` | `rows`: read-only sequence of `{ id, status }`; `write(payload)`: existing transport accepting `{ schema: 1, document_ids: ids }` | Promise of `{ kind: 'empty' }`, `{ kind: 'blocked', ids }`, or `{ kind: 'sent', ids }`; zero or one write; transport errors reject unchanged | Both public entry modules |
++| `src/toolbar.mjs`: `handleToolbarExport` | Same `(rows, write)` | Re-export of `exportSelection`; original public name preserved | Toolbar and its tests |
++| `src/keyboard.mjs`: `handleKeyboardExport` | Same `(rows, write)` | Re-export of `exportSelection`; original public name preserved | Keyboard and its tests |
++
++The operation derives all decision data before awaiting `write`. It owns the ID
++array, so later edits to caller-owned rows or the selection array cannot alter the
++pending payload or returned intent. The trusted transport's non-mutation contract
++permits sharing that snapshot between the payload and result; freezing or cloning
++again would add no boundary protection required here. There is no retry, catch,
++success fallback, partial write or mutable workflow context. Eligibility, payload
++encoding and confirmation remain visible in execution order in one short function.
++
++## Technical architecture
++
++```text
++Toolbar consumer  -> src/toolbar.mjs: handleToolbarExport ---+
++                                                           |
++Keyboard consumer -> src/keyboard.mjs: handleKeyboardExport -+
++                                                           |
++                       both re-export the same operation    v
++             src/export-selection.mjs: exportSelection(rows, write)
++                  owns eligibility, ID snapshot, schema and result
++                                       |
++                                       v
++                    injected write(payload): trusted transport
++                                       |
++                         acceptance or original rejection
++                                       v
++                         caller's returned Promise
++```
++
++## Data flow
++
++```text
++caller rows + write -> public entry -> exportSelection
++  |
++  +-- rows.length === 0 ------------------------------> { kind: 'empty' }
++  |
++  +-- collect IDs of rows whose status !== 'ready'
++         |
++         +-- any blocked IDs ------------------------> { kind: 'blocked', ids }
++         |
++         +-- all ready -> copy IDs in selection order
++                                |
++                                v
++                     write({ schema: 1, document_ids: ids }) once
++                                |
++                                +-- pending: snapshot retained; Promise pending
++                                +-- rejection/throw -> caller rejects same error
++                                +-- acceptance -----> { kind: 'sent', ids }
++```
++
++Both diagrams use labelled plain text and require no diagram toolchain. Empty and
++blocked branches never reach the transport.
++
++## Maintenance and verification
++
++A likely follow-up is a schema change or eligibility change: edit the one owning
++operation and exercise both public entries with the same consumer tests. A third
++entry can re-export this operation without learning a preparation protocol. Keep
++the trusted transport injected rather than importing UI state or adding a registry.
++The intended public behavior stays unchanged, and the removed module is internal.
++
++Executed on Node v22.22.2:
++
++- Baseline `node --test test/export.test.mjs`: 10/10 passed.
++- Increment 1 `node --test --test-name-pattern=shared: test/export-regression.test.mjs`:
++  4/4 passed.
++- Final `node --test test/export.test.mjs test/export-regression.test.mjs`:
++  22/22 passed. The original suite covers empty, all-or-nothing eligibility,
++  payload schema/order/single write, async rejection identity and pending row
++  edits for both public entries. Additional regressions cover all blocked IDs,
++  frozen input, whole-selection changes and pending settlement, and synchronous
++  transport error identity through both entries and the shared operation.
++- `node --check` passed for all three source modules and the new test module.
++- Located the final shared declaration, both public aliases, and their test
++  consumers with symbol search; read the source against both diagrams and this
++  contract. The operation owns the full sequence and both callers supply only
++  rows and transport. No old step-protocol references remain in source/tests/README.
++- SHA-256 comparison confirmed the original test file and all 20 local skill
++  files remain unchanged. No dependencies or runtime configuration were added.
++
++The follow-up schema/eligibility change stays inside `exportSelection` and its
++contract tests; neither entry needs sequencing changes. This preserves a small
++change boundary without a new policy framework. No browser UI, DOM event binding
++or real transport exists in this workspace, so those were not validated.
+diff --git a/src/export-selection.mjs b/src/export-selection.mjs
+new file mode 100644
+index 0000000..bcb2fb3
+--- /dev/null
++++ b/src/export-selection.mjs
+@@ -0,0 +1,13 @@
++export async function exportSelection(rows, write) {
++  if (rows.length === 0) return { kind: 'empty' };
++
++  const blockedIds = rows
++    .filter((row) => row.status !== 'ready')
++    .map((row) => row.id);
++  if (blockedIds.length) return { kind: 'blocked', ids: blockedIds };
++
++  // Capture the selected intent before awaiting transport acceptance.
++  const ids = rows.map((row) => row.id);
++  await write({ schema: 1, document_ids: ids });
++  return { kind: 'sent', ids };
++}
+diff --git a/src/export-steps.mjs b/src/export-steps.mjs
+deleted file mode 100644
+index 06dcb55..0000000
+--- a/src/export-steps.mjs
++++ /dev/null
+@@ -1,24 +0,0 @@
+-export function begin(rows, write) {
+-  return { rows, write, decision: undefined, payload: undefined };
+-}
+-
+-export function classify(context) {
+-  const blocked = context.rows.filter((row) => row.status !== 'ready');
+-  context.decision = context.rows.length === 0
+-    ? { kind: 'empty' }
+-    : blocked.length
+-      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }
+-      : { kind: 'ready', ids: context.rows.map((row) => row.id) };
+-}
+-
+-export function encode(context) {
+-  if (context.decision.kind === 'ready') {
+-    context.payload = { schema: 1, document_ids: context.decision.ids };
+-  }
+-}
+-
+-export async function dispatch(context) {
+-  if (context.decision.kind !== 'ready') return context.decision;
+-  await context.write(context.payload);
+-  return { kind: 'sent', ids: context.decision.ids };
+-}
+diff --git a/src/keyboard.mjs b/src/keyboard.mjs
+index c04db7c..e9bf259 100644
+--- a/src/keyboard.mjs
++++ b/src/keyboard.mjs
+@@ -1,8 +1 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
+-
+-export async function handleKeyboardExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
+-}
++export { exportSelection as handleKeyboardExport } from './export-selection.mjs';
+diff --git a/src/toolbar.mjs b/src/toolbar.mjs
+index 4ee21aa..fabc602 100644
+--- a/src/toolbar.mjs
++++ b/src/toolbar.mjs
+@@ -1,8 +1 @@
+-import { begin, classify, encode, dispatch } from './export-steps.mjs';
+-
+-export async function handleToolbarExport(rows, write) {
+-  const context = begin(rows, write);
+-  classify(context);
+-  encode(context);
+-  return dispatch(context);
+-}
++export { exportSelection as handleToolbarExport } from './export-selection.mjs';
+diff --git a/test/export-regression.test.mjs b/test/export-regression.test.mjs
+new file mode 100644
+index 0000000..5f7f973
+--- /dev/null
++++ b/test/export-regression.test.mjs
+@@ -0,0 +1,70 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { exportSelection } from '../src/export-selection.mjs';
++import { handleToolbarExport } from '../src/toolbar.mjs';
++import { handleKeyboardExport } from '../src/keyboard.mjs';
++
++const exporters = {
++  shared: exportSelection,
++  toolbar: handleToolbarExport,
++  keyboard: handleKeyboardExport,
++};
++
++for (const [name, exportRows] of Object.entries(exporters)) {
++  test(name + ': every blocked ID is reported in selection order', async () => {
++    const rows = Object.freeze([
++      Object.freeze({ id: 'c', status: 'pending' }),
++      Object.freeze({ id: 'a', status: 'ready' }),
++      Object.freeze({ id: 'b', status: 'failed' }),
++    ]);
++    const outcome = await exportRows(rows, () => assert.fail('Unexpected write'));
++    assert.deepEqual(outcome, { kind: 'blocked', ids: ['c', 'b'] });
++  });
++
++  test(name + ': frozen ready selection remains exportable', async () => {
++    const rows = Object.freeze([
++      Object.freeze({ id: 'b', status: 'ready' }),
++      Object.freeze({ id: 'a', status: 'ready' }),
++    ]);
++    const calls = [];
++    const outcome = await exportRows(rows, (body) => { calls.push(body); });
++    assert.deepEqual(calls, [{ schema: 1, document_ids: ['b', 'a'] }]);
++    assert.deepEqual(outcome, { kind: 'sent', ids: ['b', 'a'] });
++  });
++
++  test(name + ': pending export retains the whole selection until acceptance', async () => {
++    let accept;
++    const acceptance = new Promise((resolve) => { accept = resolve; });
++    const rows = [{ id: 'a', status: 'ready' }, { id: 'b', status: 'ready' }];
++    const calls = [];
++    let settled = false;
++    const pending = exportRows(rows, (body) => {
++      calls.push(body);
++      return acceptance;
++    }).then((outcome) => {
++      settled = true;
++      return outcome;
++    });
++
++    rows[0].id = 'changed';
++    rows[1].status = 'pending';
++    rows.reverse();
++    rows.splice(0, rows.length, { id: 'new', status: 'ready' });
++    await Promise.resolve();
++    assert.equal(settled, false);
++    assert.deepEqual(calls, [{ schema: 1, document_ids: ['a', 'b'] }]);
++
++    accept();
++    assert.deepEqual(await pending, { kind: 'sent', ids: ['a', 'b'] });
++    assert.equal(settled, true);
++    assert.equal(calls.length, 1);
++  });
++
++  test(name + ': synchronous transport errors reject unchanged', async () => {
++    const failure = new Error('Transport rejected the request');
++    const pending = exportRows([{ id: 'a', status: 'ready' }], () => {
++      throw failure;
++    });
++    await assert.rejects(pending, (error) => error === failure);
++  });
++}

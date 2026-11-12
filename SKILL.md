@@ -24,11 +24,49 @@ Ask only when a consequential choice remains unresolved after investigation;
 continue independent work. Do not stop at a plan when implementation is requested.
 
 Use the full applicable shared standard throughout development, design and review.
-Task size changes scope, design detail and verification effort, not whether clarity,
-correctness and maintainability matter. "Highest standard" does not justify invented
+The user sets delivery scope; task size changes design detail and verification
+effort, while clarity, correctness and maintainability still matter. "Highest standard" does not justify invented
 defects, speculative frameworks or claims beyond evidence. Respect an explicitly
 limited scope and existing authorization; design-only and review-only requests do
 not authorize implementation. Routine workflow selection needs no approval.
+
+## Follow the development workflow
+
+For a development request, complete this connected workflow. Its stages define
+obligations and completion conditions; task size changes their depth and artifacts.
+A settled local change can satisfy several stages in one short operation. It still
+needs requirement understanding, a design decision, implementation, code-quality
+inspection and relevant verification before delivery.
+
+| Stage | Required outcome before treating it as complete |
+| --- | --- |
+| Understand the requirement and current system | Locate the requested outcome, authorized scope, relevant owners, consumers and authoritative contracts; keep consequential unknowns explicit |
+| Decompose behavior and acceptance | Identify the functionality, meaningful branches and checks that could expose failure; establish dependency order, even when the work is one local increment |
+| Design the solution and contracts | Choose an existing capability or justified extension from business facts; settle important rules, ownership and effect semantics; use the preparation depth below, saving a design before implementation when required |
+| Implement coherent increments | Complete the required code and affected consumers/types within scope, following the chosen contracts; feed discovered constraints back into requirements and design |
+| Verify behavior and inspect engineering quality | Run decisive available checks and inspect actual code/callers against the shared standard; resolve in-scope defects and separate blocked evidence from verified outcomes |
+| Reconcile artifacts and deliver | Align necessary records with final definitions and results, account for each required outcome, and report only the achieved state and remaining limits |
+
+Iterate as evidence changes. These are not a one-pass waterfall: investigation,
+reproduction and baseline checks can precede design; a failed check or changed
+contract reopens the affected decision and dependent work. Keep independent work
+moving while a consequential unknown blocks its dependent part. A disclosed missing
+required outcome remains incomplete; do not close the whole task because another
+increment passed or because its stages were named.
+
+Local implementation choices may change mechanisms, boundaries and detail within
+these obligations. They do not waive a stage, redefine accepted product behavior,
+expand authorization or turn unverified work into completed delivery. Lightweight
+preparation reduces documentation; it does not remove analysis, design judgment,
+engineering inspection or verification. Do not add per-stage files, status ledgers,
+approval gates or narrated checklists solely to demonstrate compliance.
+
+Respect the requested endpoint. A design-only task completes discovery,
+decomposition and design, checks that design and delivers it with proposed checks
+clearly marked; it does not implement or claim application acceptance. A review-only
+task establishes scope/contracts, inspects the actual implementation and evidence,
+and reports actionable findings and coverage; it does not start implementation
+unless requested. These scope choices come from the user, not from task size.
 
 ## Shared engineering standard
 
@@ -67,7 +105,13 @@ Apply these defaults to code, configuration, scripts and operations in scope:
 ## Work from behavior to evidence
 
 Establish the actor, trigger, outcome and meaningful branches; inspect the relevant
-code, consumers and authoritative contracts. Model identities, minimal state,
+code, consumers and authoritative contracts. Choose the implementation from these
+business facts and existing capabilities, using the
+[scenario-based choice](references/architecture-and-code.md#choose-an-implementation-from-the-business-scenario)
+when the tradeoff is unsettled. A named pattern is a means to meet a real need,
+not the starting requirement. Check consequential semantic guarantees at their
+source; types, plausible field names and newly written tests do not establish them.
+Model identities, minimal state,
 transitions and effect owners, then connect a complete flow to a check that could
 expose its failure. Shared rules must agree across the paths that implement them.
 For a confirmed effect followed by fallible work, use the
@@ -95,9 +139,9 @@ comments and documentation.
 
 | Requested work | Execution and completion |
 | --- | --- |
-| Clear local edit | Implement directly within established behavior and boundaries; check the affected outcome |
-| Feature | Decompose requirements and design their supporting architecture together; save the initial technical design, implement and verify ordered increments, and reconcile contracts and diagrams with the evidence |
-| Design-only delivery | Carry the same requirement-to-architecture work through an implementation-ready document with functional steps, code contracts and both diagrams; save and link it, distinguish proposed checks from executed evidence, and respect the requested stopping point |
+| Clear local edit | Complete the same workflow briefly: confirm the existing contract and owner, choose the local change, implement, inspect and check the affected outcome |
+| Feature | Complete the development workflow; choose preparation depth and implementation from the business behavior, keeping affected contracts and necessary records aligned |
+| Design-only delivery | Save and link an implementation-ready design at the depth the problem or user requires; resolve concrete behavior and contracts, use both diagrams for substantial architecture/data-flow work, distinguish proposed checks from executed evidence and respect the stopping point |
 | Defect | Reproduce the symptom, distinguish hypotheses, fix its responsible boundary and repeat the decisive check |
 | Refactor or simplification | Preserve intended contracts; remove mechanisms serving abandoned requirements while retaining real consumers; verify surviving behavior |
 | Shared foundation | Establish consumers and a narrow public contract; complete applicable types, diagnostics, artifacts, compatibility and consumer checks |
@@ -112,14 +156,26 @@ real event/layout conditions before changing production code.
 
 ### Design before and during implementation
 
-For new or changed business workflows, refactors that redistribute responsibilities,
-shared foundations and migrations, create or update a technical document before
-editing implementation, even when the user asks only for the feature. Read
+This section scales the design stage's detail and durable artifacts. It does not
+select which stages of the overall workflow a development task may omit.
+
+Choose preparation from what must be designed, not from the words "feature" or
+"business change". A narrow rule extension using established ownership, state,
+dependencies and failure handling can proceed after brief reasoning and an
+affected-outcome check. Update an existing contract/record when it changes;
+no standalone design or diagrams are required solely because behavior changes.
+
+When work introduces or redistributes meaningful ownership/dependency boundaries,
+nontrivial state/concurrency or recovery mechanisms, cross-consumer contracts or
+migration coordination, save the initial technical design before implementation.
+The same applies when the user requests that deliverable. Read
 [technical design](references/architecture-and-code.md#turn-requirements-into-an-executable-technical-design).
 Decompose the requirement into an explicitly counted, dependency-ordered sequence;
 map each step's functions or classes to its functionality, contracts and acceptance.
-Include both a technical architecture diagram and a data-flow diagram. Keep this
-design aligned with implementation and verification through delivery.
+For substantial architecture or data-flow changes, include both a technical
+architecture diagram and a data-flow diagram. Reuse unchanged owned views; do not
+copy diagrams or catalogue private helpers without new information. Keep the
+needed design aligned with implementation and verification through delivery.
 
 Use the shared engineering standard and relevant routed guidance to make these
 decisions throughout development. Connect reuse, responsibility and dependency
@@ -135,11 +191,22 @@ technique. Use the [behavior-to-design lenses](references/architecture-and-code.
 before settling steps and contracts, then read the matching sections. For example,
 spatial continuity during reordering calls for transition-mechanism evaluation,
 including FLIP when geometry mapping is needed. Carry the selected method's
-invariants, ownership and checks into the design and implementation.
+invariants, ownership and checks into concrete operations and their callers.
+Resolve the actual algorithm, state transition or lifecycle wiring for important
+behavior; naming a principle or assigning it to a file leaves that work open.
+Use an established method or the framework's documented mechanism, preserving
+its primary source, actual procedure and applicable boundary. When the mechanics
+are unclear, consult the relevant
+[published implementation method](references/implementation-patterns.md#choose-from-published-methods)
+and adapt it to existing project contracts. Distinguish formal specifications,
+author methods and local adaptations; do not invent a new pattern or portray a
+local example as an industry standard. Trace the enforcing code through its
+consumer and a check that would expose its omission.
 
-A settled local edit that only follows established behavior and boundaries needs
-no design document: for example a label, spacing token or existing filter binding.
-Do not use file count or the absence of ambiguity to exempt a new business flow.
+A settled local edit or narrow business rule within established mechanisms needs
+no standalone design: for example a label, spacing token, existing filter binding
+or conditional required field in an existing schema. File count is not the test;
+a small change can still require design when it changes a consequential mechanism.
 Investigation and read-only review need no implementation document unless requested;
 an unexplained defect needs causal evidence before a proposed redesign.
 Use the project's existing documentation location and relevant owned record; if
@@ -163,12 +230,16 @@ component update the rendering guide.
 
 | Unresolved decision | Start here; follow further sections only as needed |
 | --- | --- |
-| Domain meaning or lasting decision | [Domain knowledge](references/architecture-and-code.md#preserve-domain-knowledge-and-decisions) |
+| Domain meaning or lasting decision | [Domain knowledge](references/architecture-and-code.md#preserve-domain-knowledge-and-decisions); [domain models and data flow](references/domain-and-data-flow.md#contents) when their meaning or direction needs resolution |
+| A selected principle needs its established implementation method | [Published methods](references/implementation-patterns.md#choose-from-published-methods), then the matching procedure and primary source |
+| Responsibility, extension, substitution, interface size or behavior contracts | [SOLID and contract principles](references/design-principles.md#contents), select the unresolved property |
+| Interchangeable policy, eligibility, factories, adapters, wrappers, events or undo | [Collaboration patterns](references/collaboration-patterns.md#contents), select the actual collaboration |
 | Function clarity, call contracts, utilities or local refactor | [Readable operations](references/architecture-and-code.md#construct-a-readable-operation); [utility contracts](references/architecture-and-code.md#design-utilities-around-explicit-contracts) for a general utility |
 | State, data, component/API ownership or abstraction | [Architecture contents](references/architecture-and-code.md#contents), then the relevant section |
 | Async commands, request policy, reconciliation or cleanup | [Async and lifecycles](references/async-and-lifecycles.md) |
 | Application/feature organization or dependency direction | [Module contents](references/module-boundaries.md#contents), then the relevant scale |
 | Functions, objects, closures, reducers or state machines | [Paradigm decision matrix](references/programming-paradigms.md#decision-matrix), then the relevant representation |
+| IoC, DIP, DI, containers, providers, composition roots or dependency scopes | [Dependency composition](references/dependency-composition.md#distinguish-the-concepts), then mechanism, assembly and lifetime sections as needed |
 | Execution placement, routing, hydration, caches, bundles or rollout | [Runtime and delivery](references/runtime-and-delivery.md), select the relevant heading |
 | Measured update-to-display, frames, lists, images or memory | [Rendering contents](references/rendering-and-performance.md#contents): common model and the relevant platform extension; multiple extensions only for an actual cross-platform difference |
 | Libraries, SDKs, shared packages, build tools or versioned contracts | [Infrastructure contract](references/frontend-infrastructure.md#design-the-contract-before-the-internals), then applicable artifact, consumer and evolution obligations |
@@ -184,6 +255,10 @@ authorities; applicable correctness and safety obligations still hold.
 
 ## Verify and report
 
+Close the [workflow's completion conditions](#follow-the-development-workflow)
+through actual outcomes and evidence; stage names, a plan or a document alone
+cannot establish that the work is complete.
+
 Before delivering a design, inspect its proposed contracts, ownership and flows
 against the same engineering standard; resolve evidenced design gaps and keep
 unsettled facts explicit.
@@ -192,11 +267,11 @@ callers against the same engineering standard used in a requested review; remedy
 in-scope defects and maintenance problems. Passing behavior checks is not this
 code-quality check, and the check needs no separate review ceremony.
 
-Use the design's functional increments to close the delivery: each required outcome
-needs its located implementation and decisive evidence, with the same status in
-the owned document. A disclosed omission remains incomplete; other passing checks
-do not cancel it. After the last check, reconcile the document from final files
-and actual results rather than leaving completed work as future instructions.
+Use the functional increments to close delivery: each required outcome needs its
+located implementation and decisive evidence. Where a design/owned record is
+needed, give it the same status and reconcile it from final files and actual
+results after the last check. A disclosed omission remains incomplete; other
+passing checks do not cancel it. Do not leave completed work as future instructions.
 
 Choose checks that can expose the changed outcome at its real consumer boundary.
 Check the consumer's settled outcome, not just that a handler ran: pending work,
@@ -208,7 +283,7 @@ representative conditions; recover an original snapshot if the baseline was miss
 After the final source edit, rebuild important implemented contract entries from
 their located definitions, retaining injected/context parameters and actual calling
 conventions. Replace proposed names with the actual callable or inline owner;
-check representative callers, both diagrams and executed evidence. Updating test
+check representative callers, any required diagrams and executed evidence. Updating test
 status alone does not complete this check. Preserve user
 preferences and relevant loading, empty, error, permission, stale, cancellation
 and race behavior.

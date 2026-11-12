@@ -22,6 +22,15 @@ Ask what the current unit needs to express:
 
 Prefer the representation that makes those properties visible and testable.
 
+Representation and assembly are separate decisions. Functions, closures and
+objects can all receive dependencies. Use
+[IoC, DIP, DI and container guidance](dependency-composition.md#distinguish-the-concepts)
+when the unresolved question concerns who supplies collaborators or owns their
+scope rather than which paradigm represents their behavior.
+For interchangeable behavior or owned collaboration, use the relevant
+[established pattern](collaboration-patterns.md#contents); a Strategy or Command
+need not become a class, while its consumer contract still matters.
+
 ## Use a functional core and imperative shell by default
 
 Most frontend systems benefit from:
@@ -48,6 +57,11 @@ in a thin explicit shell.
 This is a direction, not a demand that every helper be mathematically pure.
 Copying large structures or threading dependencies through many layers can cost
 more than carefully contained mutation.
+
+For the original method and implementation path, see
+[functional core and dependency boundaries](implementation-patterns.md#domain-logic-and-dependency-boundaries).
+Use value-based rule inputs/results and an explicit effect owner, adapting the
+published approach to the project rather than introducing a new pattern name.
 
 ## Prefer functions and plain data when
 
@@ -230,6 +244,6 @@ Mixed-design smells:
 - React documentation,
   [Keeping Components Pure](https://react.dev/learn/keeping-components-pure):
   predictable rendering through pure calculations.
-- Refactoring.Guru,
-  [Replace Inheritance with Delegation](https://refactoring.guru/replace-inheritance-with-delegation):
+- Martin Fowler,
+  [Replace Superclass with Delegate](https://refactoring.com/catalog/replaceSuperclassWithDelegate.html):
   prefer delegation when inheritance does not represent genuine substitutability.

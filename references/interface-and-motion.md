@@ -256,8 +256,11 @@ Performance checks:
 - inspect rendering, layout, paint, and scripting costs for animation issues;
 - measure before and after material optimization.
 
-Use RAIL as a mental model—response, animation, idle, and load—but validate with
-current product metrics and representative hardware.
+Use RAIL as a mental model—response, animation, idle, and load. Its
+[official guidance](https://web.dev/articles/rail) recommends
+[Core Web Vitals](https://web.dev/articles/vitals) for current web performance
+goals; validate applicable metrics with representative hardware. Use the selected
+native platform's metrics for native work.
 
 ## Influences
 

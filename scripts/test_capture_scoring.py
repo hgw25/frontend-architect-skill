@@ -1,6 +1,7 @@
 """Exercise the real capture-to-score handoff without an external model service."""
 import argparse
 import contextlib
+import copy
 import io
 import json
 import re
@@ -20,23 +21,120 @@ from test_support import passing_audit
 
 
 class CaptureScoringTests(unittest.TestCase):
+    def test_each_attempt_rejects_changed_missing_or_added_guidance(self):
+        mutations = {
+            'changed': "Path('.frontend-architect/SKILL.md').write_text('changed guidance')",
+            'deleted': "Path('.frontend-architect/SKILL.md').unlink()",
+            'cleaned': "shutil.rmtree('.frontend-architect')",
+            'added': "Path('.frontend-architect/extra.md').write_text('extra guidance')",
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(mutation=name):
+                self.check_guidance_capture(mutation=mutation)
+
+    def test_repair_cannot_hide_its_guidance_change(self):
+        self.check_guidance_capture(
+            mutation="Path('.frontend-architect/SKILL.md').write_text('changed guidance')",
+            mutate_on_repair=True,
+        )
+
+    def test_archived_guidance_evidence_survives_workspace_cleanup(self):
+        self.check_guidance_capture()
+
+    def test_initial_guidance_mismatch_stops_before_generation(self):
+        for mode in ('baseline', 'candidate'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                workspace = runner.initialize_workspace({'id':'initial-identity'},mode)
+                self.addCleanup(shutil.rmtree,workspace)
+                expected = runner.local_guidance_hashes(workspace)
+                guide = workspace/'.frontend-architect'
+                guide.mkdir(exist_ok=True)
+                (guide/'SKILL.md').write_text('Unexpected local guidance')
+                with patch.object(runner,'codex_command') as generator:
+                    record = runner.capture_attempt(argparse.Namespace(timeout_seconds=10),{},workspace,
+                        'eval-fixture-base',Path(temporary)/'attempt','Task',expected_guidance=expected)
+                generator.assert_not_called()
+                self.assertEqual(record['generation']['exit_code'],1)
+                self.assertTrue(any('guidance' in e.lower() for e in runner.capture_errors({**record,'mode':mode})))
+
+    def check_guidance_capture(self, mutation='', mutate_on_repair=False):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root/'references').mkdir()
+            (root/'SKILL.md').write_text('Frozen local guidance')
+            (root/'CONTRIBUTING.md').write_text('Maintenance source')
+            fixture = root/'fixture'; fixture.mkdir()
+            (fixture/'state.txt').write_text('0' if mutate_on_repair else '1')
+            (fixture/'check.py').write_text("from pathlib import Path\nassert Path('state.txt').read_text() == '1'\n")
+            case = {'id':'guidance', 'prompt':'Complete the task', 'artifact':'', 'fixture':'fixture',
+                    'protected_paths':['check.py'],
+                    'validation_commands':[shlex.quote(sys.executable)+' check.py']}
+            generator = root/'generator.py'
+            generator.write_text('''import json,sys,shutil
+from pathlib import Path
+prompt=sys.stdin.read()
+repair='HOST FEEDBACK AFTER YOUR PREVIOUS DELIVERY:' in prompt
+skill=Path('.frontend-architect/SKILL.md')
+print(json.dumps({'type':'item.completed','item':{'id':'read','type':'command_execution',
+ 'command':'cat .frontend-architect/SKILL.md','exit_code':0,'aggregated_output':skill.read_text()}}))
+if repair: Path('state.txt').write_text('1')
+if not sys.argv[3] or repair: exec(sys.argv[2])
+Path(sys.argv[1]).write_text('Task submitted; host checks pending.')
+print(json.dumps({'type':'turn.completed'}))
+''')
+            args = argparse.Namespace(case_ids=None, mode='candidate', model='test', reasoning_effort='medium',
+                                      results_dir=root/'results', timeout_seconds=10, append=False,
+                                      host_feedback=mutate_on_repair or bool(mutation))
+            real_run = subprocess.run
+            def run(command, **kwargs):
+                if command == ['codex','--version']:
+                    return subprocess.CompletedProcess(command,0,'test-generator','')
+                return real_run(command,**kwargs)
+            with patch.object(runner,'ROOT',root), patch.object(runner,'load_cases',return_value=[case]), \
+                 patch.object(runner,'parse_args',return_value=args), \
+                 patch.object(runner,'codex_command',side_effect=lambda a,w,o:[sys.executable,str(generator),str(o),mutation,'repair' if mutate_on_repair else '']) as calls, \
+                 patch.object(runner.subprocess,'run',side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+                code = runner.main()
+            record = json.loads((args.results_dir/'manifest.json').read_text())['cases'][0]
+            self.addCleanup(shutil.rmtree, record['workspace'], ignore_errors=True)
+            folder = args.results_dir/'guidance/candidate'
+            if mutation:
+                self.assertEqual(code,1)
+                self.assertEqual(calls.call_count,2 if mutate_on_repair else 1)
+                self.assertTrue(any('guidance' in e.lower() for e in runner.capture_errors(record)))
+                with patch.object(scorer,'ROOT',root):
+                    self.assertTrue(any('guidance' in e.lower() for e in scorer.captured_evidence_errors(record,case,folder)))
+            else:
+                self.assertEqual(code,0)
+                shutil.rmtree(record['workspace'])
+                with patch.object(scorer,'ROOT',root):
+                    self.assertEqual(scorer.captured_evidence_errors(record,case,folder),[])
+                    (folder/'attempts/0/guidance-integrity.json').write_text('{}')
+                    self.assertTrue(any('attempt artifact changed' in e for e in scorer.captured_evidence_errors(record,case,folder)))
+
     def test_host_feedback_does_not_retry_invalid_reading_or_modified_harness(self):
         for invalid_read in (True,False):
             with self.subTest(invalid_read=invalid_read), tempfile.TemporaryDirectory()as temporary:
                 workspace=Path(temporary);folder=workspace/'results';folder.mkdir()
+                guide=workspace/'.frontend-architect';guide.mkdir()
+                (guide/'SKILL.md').write_text('Local guidance')
                 args=argparse.Namespace(host_feedback=True)
                 event={'type':'item.completed','item':{'type':'command_execution',
                        'command':'cat .frontend-architect/SKILL.md',
                        'exit_code':-1 if invalid_read else 0,'aggregated_output':'read result'}}
-                def attempt(a,c,w,b,d,p):
+                def attempt(a,c,w,b,d,p,*,expected_guidance):
                     d.mkdir(parents=True)
                     (d/'events.jsonl').write_text(json.dumps(event)+'\n')
                     (d/'response.md').write_text('Submitted')
-                    return {'generation':{'exit_code':0,'duration_seconds':1},'validations':[
+                    return {'generation':{'exit_code':0,'duration_seconds':1},
+                        'guidance_checks':[{'expected_sha256':expected_guidance,
+                                            'before_sha256':expected_guidance,'after_sha256':expected_guidance}],
+                        'validations':[
                         {'command':'verify protected evaluation harness'if not invalid_read else'node check.mjs',
                          'exit_code':1,'duration_seconds':0}]}
                 with patch.object(runner,'capture_attempt',side_effect=attempt)as calls:
-                    delivery,_=runner.capture_delivery(args,{'fixture':'fixture'},'candidate',workspace,'base',folder,'task')
+                    delivery,_=runner.capture_delivery(args,{'fixture':'fixture'},'candidate',workspace,'base',folder,'task',
+                                                      expected_guidance=runner.local_guidance_hashes(workspace))
                 self.assertEqual(calls.call_count,1)
                 self.assertEqual(len(delivery['attempts']),1)
 
@@ -99,6 +197,20 @@ print(json.dumps({'type':'turn.completed'}))
                         self.assertIn('response_before_host_checks',prompt)
                         self.assertIn('state not accepted',prompt)
                         self.assertNotIn('PRIVATE LOCAL GUIDANCE',prompt)
+                        for mutation in ('missing_round','changed_summary','missing_attempts','changed_check','changed_final'):
+                            with self.subTest(guidance_metadata=mutation):
+                                changed = copy.deepcopy(record)
+                                if mutation == 'missing_round':
+                                    changed['guidance_checks'].pop(0)
+                                elif mutation == 'changed_summary':
+                                    changed['attempts'][0]['guidance_checks'][0]['after_sha256']['SKILL.md'] = 'wrong'
+                                elif mutation == 'changed_check':
+                                    changed['attempts'][0]['validations'][-1]['exit_code'] = 0
+                                elif mutation == 'changed_final':
+                                    changed['validations'][-1]['exit_code'] = 1 if repair_succeeds else 0
+                                else:
+                                    changed.pop('attempts')
+                                self.assertTrue(scorer.captured_evidence_errors(changed,case,folder))
                         (folder/'attempts/0/response.md').write_text('Overwritten favorable history')
                         self.assertTrue(any('attempt artifact changed'in e for e in scorer.captured_evidence_errors(record,case,folder)))
                     before=(args.results_dir/'manifest.json').read_bytes()
@@ -153,6 +265,17 @@ print(json.dumps({'type':'turn.completed'}))
             for record in manifest['cases']:
                 self.addCleanup(shutil.rmtree, record['workspace'])
                 self.assertEqual([v['exit_code'] for v in record['validations']], [0, 0])
+            legacy = {key:value for key,value in manifest.items() if key != 'guidance_integrity_version'}
+            (results/'manifest.json').write_text(json.dumps(legacy))
+            args.append = True
+            with patch.object(runner,'ROOT',root), patch.object(runner,'load_cases',return_value=[case]), \
+                 patch.object(runner,'parse_args',return_value=args), patch.object(runner,'codex_command') as generator:
+                with self.assertRaisesRegex(SystemExit,'without guidance integrity evidence'):
+                    runner.main()
+                generator.assert_not_called()
+                self.assertEqual(json.loads((results/'manifest.json').read_text()),legacy)
+            (results/'manifest.json').write_text(json.dumps(manifest))
+            args.append = False
             args.batch_size = 4
             args.force = False
             def score(a, prompt, schema, output):
@@ -169,6 +292,20 @@ print(json.dumps({'type':'turn.completed'}))
                 self.assertEqual(model.call_count, 4)
                 self.assertEqual(scorer.main(), 0)
                 self.assertEqual(model.call_count, 4)
+                candidate = results/'handoff/candidate'
+                for name in ('response.md','changes.diff','validation-2.log','guidance-integrity.json'):
+                    with self.subTest(changed_scoring_copy=name):
+                        path = candidate/name
+                        original = path.read_bytes()
+                        path.write_text('Accidentally changed scoring copy')
+                        self.assertEqual(scorer.main(),1)
+                        self.assertEqual(model.call_count,4)
+                        state = json.loads((results/'blind-scores/scores.json').read_text())['conditions']['candidate'][0]
+                        self.assertEqual(state['verdict'],'invalid')
+                        self.assertTrue(any('artifact changed' in e for e in state['invalid_reasons']))
+                        path.write_bytes(original)
+                        self.assertEqual(scorer.main(),0)
+                        self.assertEqual(model.call_count,4)
                 # Both modes must lose their old passing verdict before the first model call.
                 args.force = True
                 model.side_effect = subprocess.TimeoutExpired('codex', 10)

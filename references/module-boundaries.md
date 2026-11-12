@@ -218,6 +218,11 @@ site. Colocation is still modular when the ownership boundary is clear.
 
 ### Hide complexity, not just code
 
+The [information-hiding principle](design-principles.md#hide-decisions-that-consumers-should-not-know)
+supplies the original decision criterion; use
+[SOLID](design-principles.md#apply-solid-to-the-responsible-boundary) when the
+unsettled boundary concerns responsibility, client roles or substitution.
+
 A useful boundary reduces what its consumers must know. It may hide a volatile
 implementation decision such as a transport shape, SDK mechanism, validation or
 cache policy, platform-specific lifecycle, or it may contain cohesive complexity
@@ -237,6 +242,12 @@ Before extracting, ask:
 - Is the public surface meaningfully simpler than the behavior it provides?
 
 If none has a concrete answer, keep the code with its current owner.
+
+Follow the extracted contract through an actual call before accepting the split.
+Use established [module/refactoring methods](implementation-patterns.md#modularity-and-reuse)
+or [ports and adapters](implementation-patterns.md#domain-logic-and-dependency-boundaries)
+when their conditions fit; retain their source and actual semantics instead of
+naming a local split as a new architecture pattern.
 
 Exercise a proposed boundary with a plausible change from the actual task or
 consumer history. For example, trace adding a filter, replacing a response shape,
@@ -282,6 +293,10 @@ decide presentation. UI should receive domain-relevant values and actions rather
 than parse transport responses. In a simple feature, direct framework-native
 composition may express the same direction without formal ports or dependency
 injection.
+For configurable collaborators or scoped instances, distinguish source dependency
+direction from runtime assembly using [dependency composition](dependency-composition.md#distinguish-the-concepts).
+Follow the existing injector/provider boundaries or explicit composition point;
+directory layering alone does not define which instance a consumer receives.
 
 Coordination is not ownership. For a feature with several independent external
 lifecycles, prefer focused capabilities such as coupon application, inventory

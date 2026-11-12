@@ -12,6 +12,7 @@ for execution, placement, cache, or delivery boundaries.
 ## Contents
 
 - [Understand before changing](#understand-before-changing)
+- [Choose an implementation from the business scenario](#choose-an-implementation-from-the-business-scenario)
 - [Preserve domain knowledge and decisions](#preserve-domain-knowledge-and-decisions)
 - [Turn requirements into an executable technical design](#turn-requirements-into-an-executable-technical-design)
 - [Match design lenses to behavior](#match-design-lenses-to-behavior)
@@ -51,6 +52,61 @@ client-side joins, or guessed IDs. Reconcile generated types, documentation,
 explicit product requirements, and available response evidence; report a missing
 contract precisely and complete independent work. A missing author-to-user
 mapping, for example, must remain an explicit incomplete navigation path.
+
+When an algorithm depends on a consequential guarantee, locate what actually
+establishes it: an accepted product/API contract, the responsible implementation,
+a documented platform guarantee or an existing authoritative consumer check.
+Distinguish that evidence from a plausible interpretation. A numeric `version`
+does not by itself establish revision ordering or equal-version identity; a
+timestamp need not be a conflict token. Shape validation and a test written to
+match the proposed rule cannot supply the missing semantics.
+
+Investigate only facts that could change the solution or its acceptance. Reuse
+settled contracts without re-proving them. If a material guarantee remains unknown,
+use a complete existing path that does not depend on it when the product permits;
+otherwise keep the dependent choice unresolved and ask the precise contract
+question while completing independent work. Do not quietly change required
+interaction or write semantics to avoid that question. Retain the guarantee and
+its source beside the relevant decision in an existing record when maintainers
+will need it; no separate assumption registry is required.
+
+## Choose an implementation from the business scenario
+
+Start with a representative user operation and its meaningful branches: who acts,
+what must change, what must remain true, what confirms success, and what happens
+on a credible failure or interruption. Establish actual consumers, data authority,
+interaction frequency/scale and compatibility needs only where they affect the
+choice. A pattern name, fashionable stack or theoretical future product is not
+a business requirement.
+
+Trace that operation through the existing project. Prefer an existing owner,
+framework primitive or maintained capability when its semantics cover the need.
+If there is a real gap, compare the plausible local extension or replacement by
+behavioral fit, clarity at callers, state/resource ownership and integration,
+verification and ongoing change cost. When one existing mechanism clearly fits,
+use it without manufacturing alternative proposals or a scoring matrix.
+
+| Actual business situation | Proportionate implementation starting point |
+| --- | --- |
+| One existing form adds a conditional required rule; its schema and submit/error paths already support it | Change the owned rule/schema and exercise the affected submit paths; do not add a rule interpreter, new state owner or architecture layers |
+| The same eligibility rule governs a button, validation and payload admission | Share the owned predicate/participation rule where semantics agree; let each consumer present its own feedback and verify their agreement |
+| Two pages share controls but one applies drafts and the other filters immediately | Reuse stable UI primitives; retain the different workflow/state owners rather than a universal page hook with policy flags |
+| An integration changes wire fields while the business operation stays the same | Adapt the existing boundary and its consumer check; do not replace the application's model or introduce a repository per endpoint |
+| Searches supersede each other, while every submitted save may matter | Choose publication versus ordered-write/conflict semantics from the actual service contract; reuse its data layer, adding only a missing local policy |
+
+These are applications of the existing principles, not mandatory implementations
+or new named patterns. Use the [relevant design lens](#match-design-lenses-to-behavior)
+to solve an identified decision; methods do not create extra requirements.
+Necessary complexity is allowed when it owns a real rule, lifecycle, interaction
+or dependency. Before adding a layer, option family, registry or dependency,
+identify the current consumer or ordinary domain change it improves and why a
+smaller existing mechanism is insufficient. A small seam can earn its place before
+duplication; a generalized mechanism needs stronger evidence. Stop once the complete
+behavior, ownership and credible evolution are clear. See
+[abstraction timing](#abstract-at-the-right-time) and the original
+[Google review guidance](https://google.github.io/eng-practices/review/reviewer/looking-for.html)
+for design fit and complexity; this is project decision guidance, not an industry
+standard algorithm.
 
 ## Preserve domain knowledge and decisions
 
@@ -94,7 +150,15 @@ find the definition or decision and apply it without the original conversation?
 
 ## Turn requirements into an executable technical design
 
-Use this section for the design-bearing work identified in SKILL.md. The document
+Use this section for the design-bearing work identified in SKILL.md. Narrow rules
+within established mechanisms use its lightweight path: a brief implementation
+reason and decisive check, with an existing contract/record updated if needed.
+No standalone document or diagrams are required merely because business behavior
+changes. This scales the design stage inside the
+[overall workflow](../SKILL.md#follow-the-development-workflow): still establish the
+requirement and acceptance, choose the responsible change, inspect its quality
+and verify the result. A local implementation mechanism cannot exempt those
+obligations. For work needing a persistent technical design, the document
 connects requirement development with architecture and implementation. Derive
 boundaries and code contracts from the functional steps and acceptance; use those
 contracts to expose missing cases or dependencies in the decomposition. Revisit
@@ -124,26 +188,32 @@ Discover applicable ideas from the behavior and constraints, without requiring t
 user to name a method. This is a navigation map into existing decision guidance;
 read the relevant sections and use their tradeoffs and stopping conditions.
 
-| Requirement signal | Design lens and consequential decision | Guidance |
-| --- | --- | --- |
-| Features change independently or technical folders scatter one change | Colocation, information hiding and Feature-Sliced Design: choose owned feature boundaries, public APIs and dependency direction that fit this ecosystem | [Module grouping](module-boundaries.md#compare-the-two-grouping-strategies); [hide complexity](module-boundaries.md#hide-complexity-not-just-code) |
-| Screens share controls or visual patterns but differ in product rules | Atomic Design and composition: identify stable parts and wholes, shared policy and product ownership | [Component-system boundaries](interface-and-motion.md#choose-component-system-boundaries) |
-| Business rules mix with effects, identity or legal state transitions | Functional core/imperative shell, objects and reducers/state machines: choose representation per responsibility and lifecycle | [Paradigm choices](programming-paradigms.md#decision-matrix); [functional boundary](programming-paradigms.md#use-a-functional-core-and-imperative-shell-by-default) |
-| UI facts duplicate source data or effects copy derived values | Minimal state and synchronization boundaries: derive facts, keep genuine edit state, give effects an external owner | [State model](#model-data-and-state); [forms](#model-forms-and-navigation-state) |
-| Similar code or expected change suggests a shared abstraction | AHA and the wrong-abstraction lens: compare stable common semantics, caller convenience and change locality | [Abstraction timing](#abstract-at-the-right-time) |
-| Content, translations, zoom or available space vary | Intrinsic layout, inclusive interaction and progressive enhancement: use content constraints, native semantics and a supported baseline | [Layout constraints](interface-and-motion.md#design-layout-from-content-and-constraints); [resilient baseline](interface-and-motion.md#build-the-semantic-and-resilient-layer-first); [locale](interface-and-motion.md#control-styles-and-internationalized-content) |
-| Reordering, expansion or shared elements must preserve spatial continuity | Compare the lightest transition mechanism; use FLIP when measured geometry must map old to new layout | [Mechanism choice](interface-and-motion.md#choose-the-lightest-transition-mechanism); [First/Last/Invert/Play](interface-and-motion.md#apply-flip-deliberately) |
-| Input response, motion, loading, frames or memory are problematic | RAIL and update-to-display cost: localize work, invalidation, transfer, layout/paint or resource cost on the actual runtime | [Perceived response](interface-and-motion.md#protect-accessibility-and-performance); [rendering model](rendering-and-performance.md#model-the-path-from-update-to-display) |
-| Async results race, optimistic edits fail or resources outlive a view | Execution versus publication, ordering and acknowledgement: choose current-result or ordered-command policy, reconcile authority and own acquisition/release | [Async policy](async-and-lifecycles.md#choose-policy-from-the-operation); [reconciliation](async-and-lifecycles.md#reconcile-optimistic-state-with-acknowledgements); [resource ownership](async-and-lifecycles.md#own-acquisition-replacement-and-release) |
-| Data crosses environments or caches represent remote facts | Runtime placement and cache ownership: define serialization, scope, authority, freshness and invalidation | [Environment boundaries](runtime-and-delivery.md#map-environments-before-components); [cache owner](runtime-and-delivery.md#give-every-cache-an-owner) |
-| Untrusted content or privileged actions cross a boundary | Source-to-sink reasoning and server authorization: reuse established guarantees and protect the actual trust boundary | [Data path](security-and-trust.md#trace-data-from-source-to-sink); [authorization](security-and-trust.md#separate-presentation-from-authorization) |
-| A capability becomes a shared package, SDK or tool | Contract-first design and consumer evolution: define public types/artifacts, compatibility and verification at real consumers | [Infrastructure contract](frontend-infrastructure.md#design-the-contract-before-the-internals); [public artifact](frontend-infrastructure.md#verify-the-public-artifact) |
+| Requirement signal | Design lens and consequential decision | Guidance | Published implementation path |
+| --- | --- | --- | --- |
+| Features change independently or technical folders scatter one change | Colocation, information hiding and Feature-Sliced Design: choose owned feature boundaries, public APIs and dependency direction that fit this ecosystem | [Module grouping](module-boundaries.md#compare-the-two-grouping-strategies); [hide complexity](module-boundaries.md#hide-complexity-not-just-code) | [Method and source](implementation-patterns.md#modularity-and-reuse) |
+| Responsibilities, extension points or replacement implementations are unclear | SOLID, information hiding and Design by Contract: identify change reasons, client roles and behavioral obligations | [Design principles](design-principles.md#contents) | [Method and source](implementation-patterns.md#design-principles-and-contracts) |
+| Terms, identifiers or external models differ across product areas | Ubiquitous Language, Bounded Context, entity/value semantics and Anti-Corruption Layer: establish meaning and actual translation | [Domain boundaries](domain-and-data-flow.md#keep-contexts-and-external-models-distinct) | [Method and source](implementation-patterns.md#domain-models-and-data-flow) |
+| Screens share controls or visual patterns but differ in product rules | Atomic Design and composition: identify stable parts and wholes, shared policy and product ownership | [Component-system boundaries](interface-and-motion.md#choose-component-system-boundaries) | [Method and source](implementation-patterns.md#interface-composition-and-interaction) |
+| Business rules mix with effects, identity or legal state transitions | Functional core/imperative shell, objects and reducers/state machines: choose representation per responsibility and lifecycle | [Paradigm choices](programming-paradigms.md#decision-matrix); [functional boundary](programming-paradigms.md#use-a-functional-core-and-imperative-shell-by-default) | [Method and source](implementation-patterns.md#domain-logic-and-dependency-boundaries) |
+| Policies vary, rules repeat across paths, integrations differ or operations need history | Strategy, Specification, factory/adapter/wrapper/observer/command patterns: choose the actual collaboration before its representation | [Collaboration choices](collaboration-patterns.md#contents) | [Method and source](implementation-patterns.md#collaboration-patterns) |
+| Collaborators need replacement, scoped instances or framework-managed supply | Distinguish IoC, DIP, DI and containers; choose Pure DI, the existing injector or a justified container, with explicit graph and lifetime owners | [Dependency concepts](dependency-composition.md#distinguish-the-concepts); [assembly and scopes](dependency-composition.md#apply-the-published-assembly-procedures) | [Method and source](implementation-patterns.md#control-and-dependency-composition) |
+| UI facts duplicate source data or effects copy derived values | Minimal state and synchronization boundaries: derive facts, keep genuine edit state, give effects an external owner | [State model](#model-data-and-state); [forms](#model-forms-and-navigation-state) | [Method and source](implementation-patterns.md#state-and-type-modeling) |
+| Similar code or expected change suggests a shared abstraction | AHA and the wrong-abstraction lens: compare stable common semantics, caller convenience and change locality | [Abstraction timing](#abstract-at-the-right-time) | [Method and source](implementation-patterns.md#modularity-and-reuse) |
+| Content, translations, zoom or available space vary | Intrinsic layout, inclusive interaction and progressive enhancement: use content constraints, native semantics and a supported baseline | [Layout constraints](interface-and-motion.md#design-layout-from-content-and-constraints); [resilient baseline](interface-and-motion.md#build-the-semantic-and-resilient-layer-first); [locale](interface-and-motion.md#control-styles-and-internationalized-content) | [Method and source](implementation-patterns.md#layout-and-motion) |
+| Reordering, expansion or shared elements must preserve spatial continuity | Compare the lightest transition mechanism; use FLIP when measured geometry must map old to new layout | [Mechanism choice](interface-and-motion.md#choose-the-lightest-transition-mechanism); [First/Last/Invert/Play](interface-and-motion.md#apply-flip-deliberately) | [Method and source](implementation-patterns.md#layout-and-motion) |
+| Input response, motion, loading, frames or memory are problematic | RAIL and update-to-display cost: localize work, invalidation, transfer, layout/paint or resource cost on the actual runtime | [Perceived response](interface-and-motion.md#protect-accessibility-and-performance); [rendering model](rendering-and-performance.md#model-the-path-from-update-to-display) | [Method and source](implementation-patterns.md#runtime-and-performance) |
+| Async results race, optimistic edits fail or resources outlive a view | Execution versus publication, ordering and acknowledgement: choose current-result or ordered-command policy, reconcile authority and own acquisition/release | [Async policy](async-and-lifecycles.md#choose-policy-from-the-operation); [reconciliation](async-and-lifecycles.md#reconcile-optimistic-state-with-acknowledgements); [resource ownership](async-and-lifecycles.md#own-acquisition-replacement-and-release) | [Method and source](implementation-patterns.md#effects-and-concurrency) |
+| Data crosses environments or caches represent remote facts | Runtime placement and cache ownership: define serialization, scope, authority, freshness and invalidation | [Environment boundaries](runtime-and-delivery.md#map-environments-before-components); [cache owner](runtime-and-delivery.md#give-every-cache-an-owner) | [Method and source](implementation-patterns.md#runtime-and-performance) |
+| Untrusted content or privileged actions cross a boundary | Source-to-sink reasoning and server authorization: reuse established guarantees and protect the actual trust boundary | [Data path](security-and-trust.md#trace-data-from-source-to-sink); [authorization](security-and-trust.md#separate-presentation-from-authorization) | [Method and source](implementation-patterns.md#security-and-public-artifacts) |
+| A capability becomes a shared package, SDK or tool | Contract-first design and consumer evolution: define public types/artifacts, compatibility and verification at real consumers | [Infrastructure contract](frontend-infrastructure.md#design-the-contract-before-the-internals); [public artifact](frontend-infrastructure.md#verify-the-public-artifact) | [Method and source](implementation-patterns.md#security-and-public-artifacts) |
 
 Selecting a lens means applying its decision rules, not adding its name or folder
 template to the document. Preserve the original method's conditional scope: FLIP
 is appropriate only when its visual relationship and measurement needs exist;
-Atomic Design and Feature-Sliced Design do not mandate directory trees; RAIL
-does not prove performance or impose a universal frame budget. Other tasks may
+Atomic Design does not mandate a folder hierarchy. Adopting FSD means preserving
+its documented layer semantics, public APIs and dependency rules; borrowing
+colocation alone is not adoption of FSD. RAIL does not prove performance or impose
+a universal frame budget. Other tasks may
 need other sections from the existing topic navigation.
 
 For a selected motion method, make the visual contract part of the functional
@@ -182,6 +252,14 @@ a mandatory heading template:
    [paradigm matrix](programming-paradigms.md#decision-matrix) when those choices
    need resolution. Apply runtime, trust, interaction/accessibility and measured
    performance guidance where the requirement establishes those concerns.
+   Resolve the critical algorithm, transition or effect sequence as well as its
+   signature. Use a short execution sketch for an unsettled mechanism, then trace
+   it into the implementation and caller; see
+   [published implementation methods](implementation-patterns.md#choose-from-published-methods).
+   Preserve the chosen method's source and semantics when adapting it.
+   When assembly is consequential, locate the composition/provider boundary and
+   relevant instance scopes, using [dependency composition](dependency-composition.md#choose-the-composition-mechanism).
+   This does not require pseudocode for routine helpers.
 4. **Technical architecture diagram.** Show the concrete modules or components,
    runtime/external boundaries, responsibilities and dependency or call direction.
    Label significant interfaces/operations; a directory tree alone is insufficient.
@@ -198,13 +276,16 @@ a mandatory heading template:
    gaps in the requested deliverable; a list of planned tests or complete diagrams
    is not evidence that these engineering properties hold.
 
-Both diagrams must be readable in the document and agree with its symbol and data
+For substantial architecture/data-flow work, both views are required; a narrow
+design with no new relationships or flow can use a short owned record without
+duplicating unchanged diagrams. Honor an explicit user/repository diagram requirement.
+The needed diagrams must be readable in the document and agree with its symbol and data
 contracts. Prefer the repository's supported format and existing renderer/parser.
 For a diagram DSL such as Mermaid, actually check its syntax before calling the
 design complete; merely disclosing that no renderer ran does not validate it.
 If no usable diagram tool is available, use self-contained, labelled plain-text
-diagrams with explicit arrows and branches rather than unverified DSL. Both views
-remain required, and a directory tree is still insufficient. Do not install a
+diagrams with explicit arrows and branches rather than unverified DSL. A directory
+tree alone does not explain an architecture or data-flow view. Do not install a
 separate toolchain merely to draw a small design. Retain editable sources for any
 generated assets, verify references and distinguish syntax from visual validation.
 In Mermaid, quote node and edge labels containing punctuation such as function
@@ -212,7 +293,7 @@ calls. A diagram that cannot parse is an incomplete deliverable.
 Use a small number of representative flows, expanding only for materially
 different behavior. Detail should enable
 another engineer to implement the next step without reconstructing the chat;
-length, diagram count beyond the two required views, and exhaustive pseudocode
+length, redundant views, and exhaustive pseudocode
 are not goals.
 
 Once the design is concrete enough to act, implement its ordered increments within
@@ -251,7 +332,7 @@ supplied as inline source or contracts and the workspace has no application file
 use those inputs, label proposed paths and unsettled facts, and save the design
 without fabricating an existing repository or adding implementation skeletons.
 Do not silently start development.
-For settled local edits, retain the lightweight path in SKILL.md; do not create
+For settled local edits and narrow rule extensions, retain the lightweight path in SKILL.md; do not create
 diagrams just to satisfy a workflow intended for design-bearing requirements.
 
 ## Construct a readable operation
@@ -323,6 +404,9 @@ eligibility does not make server writes atomic or authorize an export.
 
 Separate meanings that actually differ; do not mechanically create DTO, entity,
 model and view-model copies for every object.
+Use [identity, value and transport semantics](domain-and-data-flow.md#choose-identity-and-value-semantics)
+when these meanings need resolution; plain records do not settle equality or
+authority by themselves.
 
 | Representation | Reason to keep it distinct |
 | --- | --- |
@@ -406,6 +490,12 @@ provides stable field identity; otherwise preserve a form-level recovery path.
 Do not introduce a form library merely because a form exists, but use the
 project's established form model when it already owns these lifecycles.
 
+When eligibility affects validation and payload construction, compute the
+participating set consistently across those paths. The
+[HTML processing and URL methods](implementation-patterns.md#forms-and-url-state)
+point to standard platform behavior; retain the project's own value/schema
+contract rather than treating arbitrary JavaScript drafts as native controls.
+
 State belongs in the URL when users must be able to bookmark, share, reload, or
 navigate back and forward through it. Define one parser and serializer with
 defaults, validation, canonical ordering, and unknown-value behavior. Decide
@@ -415,6 +505,10 @@ client interpretation, `popstate` or router navigation, focus, scroll restoratio
 and interactions between URL state and cached data when those behaviors apply.
 
 ## Place behavior by ownership
+
+Use [Presentation Model and unidirectional flow](domain-and-data-flow.md#separate-presentation-behavior-and-direct-data-flow)
+when presentation behavior or update direction needs a named implementation
+approach. Keep independent state/resource owners rather than one giant view model.
 
 - Pure transformation belongs near the domain data or use site.
 - User-event logic belongs in the event path that explains why it ran.

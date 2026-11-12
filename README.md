@@ -6,7 +6,7 @@
 它既要求代理完成高质量产品代码，也要求代理在真实共性问题出现时具备建设组件库、
 设计系统、SDK、共享数据层、构建插件、代码生成器和 Monorepo 包的能力。
 
-当前发布版本：[v0.6.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.6.0)。
+当前发布版本：[v0.7.0](https://github.com/hgw25/frontend-architect-skill/releases/tag/v0.7.0)。
 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 它解决什么问题
@@ -50,6 +50,11 @@ frontend-architect-skill/
 │   ├── async-and-lifecycles.md
 │   ├── module-boundaries.md
 │   ├── programming-paradigms.md
+│   ├── implementation-patterns.md
+│   ├── dependency-composition.md
+│   ├── design-principles.md
+│   ├── collaboration-patterns.md
+│   ├── domain-and-data-flow.md
 │   ├── frontend-infrastructure.md
 │   ├── runtime-and-delivery.md
 │   ├── rendering-and-performance.md
@@ -80,6 +85,24 @@ frontend-architect-skill/
 `SKILL.md` 保存共同工程标准、核心工作方式和条件路由。明确局部任务可以只用入口；
 遇到未解决的判断时，先读取对应专题的相关章节，依据实际缺口扩读并及时停止。
 专题目录提供章节链接，避免为一个函数问题读取整篇前端知识；运行校验会检查本地章节链接。
+
+实现方案先从业务行为、已确认契约和项目已有能力选择，只有真实缺口才引入相应模式或
+机制。沿既有机制的窄业务规则扩展采用轻量准备；所有权、状态/并发、跨消费者契约及
+迁移发生实质变化时保存技术设计，重要架构/数据流工作保留两类视图。文档、层数和模式
+数量不作为质量指标；新增测试也不能自行证明服务端未承诺的版本、顺序或确认语义。
+
+[成熟实现方法](references/implementation-patterns.md) 将已有思想映射到 FSD、Atomic Design、
+函数核心与命令式外壳、Reducer/状态图、框架副作用清理、RxJS 并发操作符、FLIP 等已有
+方法，给出主要来源、具体实施步骤和适用边界，并区分正式规范、原作者方法与框架机制。
+
+[依赖关系与装配](references/dependency-composition.md) 单独区分 IoC、DIP、DI、Pure DI、
+组合根、IoC/DI 容器和 Service Locator，连接原有装配方法、框架注入机制、token、作用域
+与资源释放。当前方法目录是条件导航，不能当作所有工程思想的穷尽清单。
+
+[设计原则与契约](references/design-principles.md)、[协作模式](references/collaboration-patterns.md)
+和[领域与数据流](references/domain-and-data-flow.md) 补充 SOLID、信息隐藏、DRY/YAGNI、
+策略/规格/工厂/适配器等协作、领域上下文、表现模型和读写/历史架构的实际用法。
+重试幂等、渐进迁移、契约与属性测试分别保留在原有专题；按真实决策加载，沿用项目能力。
 
 ### 跨项目工程原则：用 AGENTS.md 承载
 
@@ -130,8 +153,9 @@ frontend-architect-skill/
 
 开发时沿用本仓库校验与行为评测；发布前核对 VERSION、CHANGELOG、标签和验证提交。
 [评测及安装维护技术设计](docs/engineering/evaluation-and-maintenance.md)记录本轮职责、数据流与验收。
-实际生成、正反例与剩余限制见[本轮复核](evals/results/2026-10-19-evaluation-acceptance/report.md)，
-发布检查见[v0.6.0 发布验收](evals/results/2026-10-19-release-0.6.0/report.md)。
+实际生成与剩余限制见[业务选型复测](evals/results/2026-11-12-business-driven-choices/report.md)，
+评测工具的正反例见[证据一致性复核](evals/results/2026-11-12-evidence-integrity/report.md)，
+发布检查见[v0.7.0 发布验收](evals/results/2026-11-12-release-0.7.0/report.md)。
 
 ## 使用
 
@@ -179,16 +203,24 @@ Skill 按四个部分组织：入口中的核心判断体系和任务执行方�
 状态或资源的所有者、实际执行位置和可发现错误的验证；新边界用有现实依据的变化
 检验，而不靠目录数量证明架构质量。证据变化时可以回到前面的决定重新调整。
 
-执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。新建或改变
-业务流程、重新分配职责的重构、共享基建和迁移，默认先形成技术文档再改实现，无需
-用户额外提醒。文档明确拆成多少步、每步功能与依赖、支撑的类型及函数或类契约、
-技术架构图、数据流转图和逐步验收；实现中同步修订，交付时补回实际验证结果。
-文案、间距或沿用既有契约的局部接线仍可直接完成。文档不增加默认审批门槛。
+执行方式按局部修改、功能、故障、重构、共享基建、迁移和只读评审区分。准备深度看
+真正需要设计的变化：新增或重新分配所有权、非平凡状态/并发和恢复机制、跨消费者
+契约及迁移协调，需要先保存技术设计，无需用户额外提醒。实质架构/数据流工作明确
+功能步骤、支撑契约与验收，并保留架构图及数据流图；实现中同步修订与回填结果。
+文案、间距、局部接线或沿既有 schema 增加窄业务规则，可以简短说明后直接实施并验证，
+只更新确实变化的记录，不强制新建文档或复制图示。文档不增加默认审批门槛。
 详见[需求到技术设计](references/architecture-and-code.md#turn-requirements-into-an-executable-technical-design)。
+
+[整体开发工作流](SKILL.md#follow-the-development-workflow)固定为理解需求与现状、拆解功能
+及验收、设计方案与契约、实现、验证和工程审查、成果对齐与交付。阶段有明确完成条件，
+根据新事实和失败回到相关决定继续迭代；小任务可以简短完成多个阶段，但局部方案和
+免写独立文档均不授予跳过阶段的权利。无需六份阶段报告或新增审批，仅设计/仅审查
+按用户明确的交付范围执行，不能自行扩成开发。现有检查和验收负责可观察的完成证据，
+这不是新增的程序流程引擎。
 
 验证还要沿实际消费路径检查跨步骤结果：结构变化后能否继续键盘操作，已确认命令遇到
 后续读取失败时用户能否仍看到确认，性能样本是否来自原始与最终代码的可比条件。
-成本基线在实现前取得；交付前通过定义和调用查找核对技术文档的重要契约与两类图示。
+成本基线在实现前取得；交付前通过定义和调用查找核对必要设计的重要契约与相关图示。
 已有测试没有覆盖的重要完成组合，由代理自主补查。
 
 领域概念和重要决策优先沉淀到项目已有说明：定义保存概念、身份和关系，决策记录保留

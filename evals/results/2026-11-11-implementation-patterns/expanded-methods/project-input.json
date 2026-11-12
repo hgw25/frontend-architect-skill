@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "files": {
+    "README.md": {
+      "sha256": "0f69bd070dc0b8933600a0ecc9d68cf77132e67cf18df2b736581ae589cc7a42",
+      "size": 1112,
+      "text": "# Selection export\n\nThis frontend capability has toolbar and keyboard entry points. Both export one\nselection as one operation; no consumer needs a pausable preparation workflow.\nThe files in src are internal except for the two entry points below.\n\nKeep these public contracts:\n\n- `handleToolbarExport(rows, write)` and `handleKeyboardExport(rows, write)`.\n- Rows are already validated internal data with `id` and `status`. Only `ready`\n  rows are eligible. Preserve selection order; do not mutate the caller's rows.\n- Empty selection returns `{ kind: 'empty' }`. Any ineligible row prevents all\n  writes and returns `{ kind: 'blocked', ids }` naming the ineligible rows.\n- Eligible selection writes exactly once with `{ schema: 1, document_ids: ids }`\n  and returns `{ kind: 'sent', ids }` after acceptance. `write` is the existing\n  trusted transport capability and borrows the payload without mutating it.\n- The submitted IDs remain stable while awaiting acceptance. A transport failure\n  rejects with the original error; it does not become a successful empty result.\n\nRun `node --test test/export.test.mjs`.\n"
+    },
+    "src/export-steps.mjs": {
+      "sha256": "3ced265be53288ba9c7aeb5b148ec03e9f99a4b255417ec084443305affae660",
+      "size": 801,
+      "text": "export function begin(rows, write) {\n  return { rows, write, decision: undefined, payload: undefined };\n}\n\nexport function classify(context) {\n  const blocked = context.rows.filter((row) => row.status !== 'ready');\n  context.decision = context.rows.length === 0\n    ? { kind: 'empty' }\n    : blocked.length\n      ? { kind: 'blocked', ids: blocked.map((row) => row.id) }\n      : { kind: 'ready', ids: context.rows.map((row) => row.id) };\n}\n\nexport function encode(context) {\n  if (context.decision.kind === 'ready') {\n    context.payload = { schema: 1, document_ids: context.decision.ids };\n  }\n}\n\nexport async function dispatch(context) {\n  if (context.decision.kind !== 'ready') return context.decision;\n  await context.write(context.payload);\n  return { kind: 'sent', ids: context.decision.ids };\n}\n"
+    },
+    "src/keyboard.mjs": {
+      "sha256": "3acfe4335219182078d4a177acc093d7c542438a5a65e3e682fcb494523b8491",
+      "size": 239,
+      "text": "import { begin, classify, encode, dispatch } from './export-steps.mjs';\n\nexport async function handleKeyboardExport(rows, write) {\n  const context = begin(rows, write);\n  classify(context);\n  encode(context);\n  return dispatch(context);\n}\n"
+    },
+    "src/toolbar.mjs": {
+      "sha256": "9c7a77f8a8e08732daeb0034f35f848342d84a277f05d33c71edb3ab8f1d229f",
+      "size": 238,
+      "text": "import { begin, classify, encode, dispatch } from './export-steps.mjs';\n\nexport async function handleToolbarExport(rows, write) {\n  const context = begin(rows, write);\n  classify(context);\n  encode(context);\n  return dispatch(context);\n}\n"
+    },
+    "test/export.test.mjs": {
+      "sha256": "0133f736f093f372e968dcb708c48a998e9dad9d335059e508c2cf73af741a1f",
+      "size": 2269,
+      "text": "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { handleToolbarExport } from '../src/toolbar.mjs';\nimport { handleKeyboardExport } from '../src/keyboard.mjs';\n\nfor (const [name, exportSelection] of Object.entries({ toolbar: handleToolbarExport, keyboard: handleKeyboardExport })) {\n  test(name + ': empty does not write', async () => {\n    const outcome = await exportSelection([], () => assert.fail('Unexpected write'));\n    assert.deepEqual(outcome, { kind: 'empty' });\n  });\n  test(name + ': ineligible selection is all-or-nothing', async () => {\n    const rows = [{ id: 'a', status: 'ready' }, { id: 'b', status: 'pending' }];\n    const outcome = await exportSelection(rows, () => assert.fail('Unexpected partial write'));\n    assert.deepEqual(outcome, { kind: 'blocked', ids: ['b'] });\n    assert.deepEqual(rows, [{ id: 'a', status: 'ready' }, { id: 'b', status: 'pending' }]);\n  });\n  test(name + ': ready selection writes the owned protocol once in selection order', async () => {\n    const calls = [];\n    const rows = [{ id: 'b', status: 'ready' }, { id: 'a', status: 'ready' }];\n    const outcome = await exportSelection(rows, async (body) => { calls.push(body); });\n    assert.deepEqual(calls, [{ schema: 1, document_ids: ['b', 'a'] }]);\n    assert.deepEqual(outcome, { kind: 'sent', ids: ['b', 'a'] });\n    assert.deepEqual(rows, [{ id: 'b', status: 'ready' }, { id: 'a', status: 'ready' }]);\n  });\n  test(name + ': transport errors retain their meaning', async () => {\n    const failure = new Error('Storage unavailable');\n    await assert.rejects(exportSelection([{ id: 'a', status: 'ready' }], async () => { throw failure; }),\n      (error) => error === failure);\n  });\n  test(name + ': accepted intent does not drift during a pending write', async () => {\n    let release;\n    const accepted = new Promise((resolve) => { release = resolve; });\n    const rows = [{ id: 'a', status: 'ready' }];\n    let payload;\n    const outcome = exportSelection(rows, async (body) => { payload = body; await accepted; });\n    rows[0].id = 'changed'; rows[0].status = 'pending';\n    release();\n    assert.deepEqual(await outcome, { kind: 'sent', ids: ['a'] });\n    assert.deepEqual(payload, { schema: 1, document_ids: ['a'] });\n  });\n}\n"
+    }
+  }
+}
